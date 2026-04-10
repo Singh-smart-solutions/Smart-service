@@ -1,0 +1,88 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", serif;
+  
+  --color-midnight: #121212;
+  --color-gold: #D4AF37;
+  --color-champagne: #F7E7CE;
+  --color-claret: #722F37;
+  
+  --breakpoint-xs: 375px;
+}
+
+@layer base {
+  body {
+    @apply bg-black text-white antialiased selection:bg-gold/30;
+  }
+}
+
+.sticky-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  z-index: 9999;
+  background: #000000;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.3);
+  height: 80px;
+  display: flex;
+  align-items: center;
+}
+
+main {
+  padding-top: 100px; /* Increased offset for fixed header */
+}
+
+/* Global Gold Icons */
+svg {
+  color: #D4AF37 !important;
+}
+
+.luxury-text-shadow {
+  text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+}
+
+.gold-gradient-text {
+  background: linear-gradient(135deg, #D4AF37 0%, #F7E7CE 50%, #D4AF37 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Mobile Header & Grid Fix */
+@media (max-width: 768px) {
+  /* Dashboard Grid Fix: 2-column brick grid with aspect-ratio 1/1 */
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+    padding: 1rem !important;
+  }
+
+  .dashboard-card {
+    aspect-ratio: 1/1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: center !important;
+    text-align: center !important;
+    padding: 1.5rem !important;
+    border-radius: 1.5rem !important;
+    margin: 0 !important;
+  }
+
+  .dashboard-card svg {
+    width: 32px !important;
+    height: 32px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .dashboard-card h3 {
+    font-size: 12px !important;
+    line-height: 1.2 !important;
+    font-weight: 500 !important;
+  }
+}

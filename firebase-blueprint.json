@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "Request": {
+      "title": "Service Request",
+      "description": "A guest's request for hotel services or amenities.",
+      "type": "object",
+      "properties": {
+        "roomNumber": {
+          "type": "string",
+          "description": "The room number of the guest."
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of service requested (e.g., Towels, Cleaning)."
+        },
+        "message": {
+          "type": "string",
+          "description": "Optional additional notes from the guest."
+        },
+        "department": {
+          "type": "string",
+          "enum": ["Housekeeping", "Security", "Concierge", "F&B"],
+          "description": "The department responsible for the request."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Pending", "Accepted", "In Progress", "Completed"],
+          "description": "The current status of the request."
+        },
+        "guestId": {
+          "type": "string",
+          "description": "The UID of the guest who made the request."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the request was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the request was last updated."
+        }
+      },
+      "required": ["roomNumber", "type", "department", "status", "guestId"]
+    },
+    "User": {
+      "title": "User Profile",
+      "description": "Profile information for staff and admins.",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "manager", "staff", "guest"],
+          "description": "The user's role in the system."
+        },
+        "department": {
+          "type": "string",
+          "enum": ["Housekeeping", "Security", "Concierge", "F&B", "None"],
+          "description": "The staff member's department."
+        }
+      },
+      "required": ["email", "role"]
+    },
+    "MenuItem": {
+      "title": "Menu Item",
+      "description": "An item on the room service menu.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "category": { "type": "string" }
+      },
+      "required": ["name", "price", "category"]
+    }
+  },
+  "firestore": {
+    "/requests/{requestId}": {
+      "schema": "Request",
+      "description": "Collection of all guest requests."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user profiles."
+    },
+    "/menu/{itemId}": {
+      "schema": "MenuItem",
+      "description": "Collection of room service menu items."
+    }
+  }
+}
