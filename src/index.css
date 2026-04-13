@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Noto+Sans+Arabic:wght@400;700&display=swap');
 @import "tailwindcss";
 
 * {
@@ -209,8 +209,8 @@ html, body {
 
 /* Buttons & Inputs */
 .gold-button {
-  background-color: #C5A059 !important;
-  color: white !important;
+  background-color: #D4AF37 !important;
+  color: #001f3f !important;
   font-family: "Inter", sans-serif !important;
   text-transform: uppercase !important;
   letter-spacing: 0.2em !important;
@@ -225,11 +225,11 @@ html, body {
 
 .gold-button:hover {
   background-color: #B48E48 !important;
-  box-shadow: 0 0 15px rgba(197, 160, 89, 0.4); /* Subtle Hover Glow */
+  box-shadow: 0 0 15px rgba(212, 175, 55, 0.4); /* Subtle Hover Glow */
 }
 
 .navy-button {
-  background-color: #002349 !important;
+  background-color: #001f3f !important;
   color: white !important;
   font-family: "Inter", sans-serif !important;
   text-transform: uppercase !important;
@@ -245,27 +245,37 @@ html, body {
 
 .navy-button:hover {
   background-color: #001a36 !important;
-  box-shadow: 0 0 15px rgba(0, 35, 73, 0.3);
+  box-shadow: 0 0 15px rgba(0, 31, 63, 0.3);
 }
 
-.login-input {
+input, select, textarea, .login-input {
   width: 100%;
-  background: white;
-  border: 1px solid rgba(197, 160, 89, 0.3);
+  background-color: #FFFFFF !important;
+  color: #001f3f !important;
+  border: 1px solid #D4AF37 !important;
   padding: 1rem;
   font-family: "Inter", sans-serif;
   font-size: 0.9rem;
   outline: none;
-  transition: border-color 0.3s;
+  transition: all 0.3s;
   border-radius: 0;
 }
 
-.login-input:focus {
-  border-color: #C5A059;
+input::placeholder, textarea::placeholder {
+  color: #001f3f !important;
+  opacity: 0.5;
 }
 
-.rtl {
+input:focus, select:focus, textarea:focus, .login-input:focus {
+  border-color: #D4AF37 !important;
+  box-shadow: 0 0 5px rgba(212, 175, 55, 0.5) !important;
+  background-color: #FFFFFF !important;
+  color: #001f3f !important;
+}
+
+.rtl, [dir="rtl"] {
   direction: rtl;
+  font-family: "Noto Sans Arabic", sans-serif !important;
 }
 
 /* Custom Toggle for Staff/Manager */

@@ -89,6 +89,13 @@
     "/menu/{itemId}": {
       "schema": "MenuItem",
       "description": "Collection of room service menu items."
+    },
+    "/staff/{staffId}": {
+      "schema": "User",
+      "description": "Collection of staff profiles and their approval status."
+    },
+    "/guests/{guestId}": {
+      "description": "Collection of guest profiles for onboarding."
     }
   }
 }

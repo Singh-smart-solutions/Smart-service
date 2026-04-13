@@ -9,6 +9,9 @@ export interface UserProfile {
   role: UserRole;
   department: Department;
   roomNumber?: string;
+  status?: 'Pending' | 'Approved' | 'Terminated';
+  deviceId?: string;
+  staffIdNumber?: string;
 }
 
 export interface MenuItem {
@@ -20,10 +23,13 @@ export interface MenuItem {
   image?: string;
 }
 
+export type Language = 'English' | 'Arabic' | 'Russian' | 'Hindi' | 'Tagalog';
+
 export interface ServiceRequest {
   id: string;
   roomNumber: string;
   type: string;
+  serviceKey?: string;
   message?: string;
   items?: { name: string, quantity: number }[];
   totalPrice?: number;
@@ -49,7 +55,7 @@ export interface ServiceRequest {
   housekeepingOption?: string;
   dietaryRequirements?: string;
   specialOccasion?: 'Birthday' | 'Anniversary' | 'None';
-  language?: 'English' | 'Arabic' | 'Russian' | 'Mandarin' | 'Turkish' | 'German' | 'French';
+  language?: Language;
   priority?: 'High' | 'Normal';
   assignedStaffEmail?: string;
   rating?: number;
@@ -59,6 +65,7 @@ export interface ServiceRequest {
   isCritical?: boolean;
   guestName?: string;
   delayReason?: string;
+  assignedStaffName?: string;
 }
 
 export enum OperationType {
