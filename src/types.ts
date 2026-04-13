@@ -53,8 +53,12 @@ export interface ServiceRequest {
   priority?: 'High' | 'Normal';
   assignedStaffEmail?: string;
   rating?: number;
-  feedback?: string;
+  feedbackComment?: string;
+  feedbackAt?: any;
+  feedbackDismissed?: boolean;
   isCritical?: boolean;
+  guestName?: string;
+  delayReason?: string;
 }
 
 export enum OperationType {
