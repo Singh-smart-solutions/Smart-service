@@ -7,7 +7,8 @@ import {
   Shield, Coffee, Key, Sparkles, UtensilsCrossed, Send, X,
   Globe, Home, Plus, Minus, Check, ChevronDown,
   User, ClipboardList, TrendingUp, Star, ShieldCheck,
-  Car, MapPin, Briefcase, Zap, FileText, Mail, Download
+  Car, MapPin, Briefcase, Zap, FileText, Mail, Download,
+  Phone, ArrowRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage, Language } from './contexts/TranslationContext';
@@ -15,75 +16,47 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const OCCUPATIONS = [
-  'Housekeeping Attendant',
-  'Housekeeping Supervisor',
-  'F&B Waiter',
-  'F&B Supervisor',
-  'Chef',
-  'Concierge Agent',
-  'Concierge Supervisor',
-  'Security Officer',
-  'Security Supervisor',
-  'Front Office Agent',
-  'Front Office Supervisor',
-  'Maintenance Technician',
-  'Maintenance Supervisor',
-  'Housekeeping Manager',
-  'F&B Manager',
-  'Concierge Manager',
-  'Security Manager',
-  'Front Office Manager',
-  'Executive',
+  'Housekeeping Attendant', 'Housekeeping Supervisor',
+  'F&B Waiter', 'F&B Supervisor', 'Chef',
+  'Concierge Agent', 'Concierge Supervisor',
+  'Security Officer', 'Security Supervisor',
+  'Front Office Agent', 'Front Office Supervisor',
+  'Maintenance Technician', 'Maintenance Supervisor',
+  'Housekeeping Manager', 'F&B Manager', 'Concierge Manager',
+  'Security Manager', 'Front Office Manager', 'Executive',
 ];
 
-// These occupations need Executive approval and get manager-level access
 const MANAGER_OCCUPATIONS = [
-  'Housekeeping Manager',
-  'F&B Manager',
-  'Concierge Manager',
-  'Security Manager',
-  'Front Office Manager',
-  'Executive',
+  'Housekeeping Manager', 'F&B Manager', 'Concierge Manager',
+  'Security Manager', 'Front Office Manager', 'Executive',
 ];
 
 const DEPT_FROM_OCCUPATION: Record<string, Department> = {
-  'Housekeeping Manager': 'Housekeeping',
-  'F&B Manager': 'F&B',
-  'Concierge Manager': 'Concierge',
-  'Security Manager': 'Security & Safety',
-  'Front Office Manager': 'Front Office',
-  'Executive': 'None',
-  'Housekeeping Attendant': 'Housekeeping',
-  'Housekeeping Supervisor': 'Housekeeping',
-  'F&B Waiter': 'F&B',
-  'F&B Supervisor': 'F&B',
-  'Chef': 'F&B',
-  'Concierge Agent': 'Concierge',
-  'Concierge Supervisor': 'Concierge',
-  'Security Officer': 'Security & Safety',
-  'Security Supervisor': 'Security & Safety',
-  'Front Office Agent': 'Front Office',
-  'Front Office Supervisor': 'Front Office',
-  'Maintenance Technician': 'Front Office',
-  'Maintenance Supervisor': 'Front Office',
+  'Housekeeping Manager': 'Housekeeping', 'F&B Manager': 'F&B',
+  'Concierge Manager': 'Concierge', 'Security Manager': 'Security & Safety',
+  'Front Office Manager': 'Front Office', 'Executive': 'None',
+  'Housekeeping Attendant': 'Housekeeping', 'Housekeeping Supervisor': 'Housekeeping',
+  'F&B Waiter': 'F&B', 'F&B Supervisor': 'F&B', 'Chef': 'F&B',
+  'Concierge Agent': 'Concierge', 'Concierge Supervisor': 'Concierge',
+  'Security Officer': 'Security & Safety', 'Security Supervisor': 'Security & Safety',
+  'Front Office Agent': 'Front Office', 'Front Office Supervisor': 'Front Office',
+  'Maintenance Technician': 'Front Office', 'Maintenance Supervisor': 'Front Office',
 };
 
+const DEPARTMENTS: Department[] = ['Housekeeping', 'F&B', 'Concierge', 'Security & Safety', 'Front Office'];
+
 const DELAY_REASONS = [
-  'High Volume of Requests',
-  'Staff Shortage',
-  'Technical Issue',
-  'Guest Not in Room',
-  'Waiting for Supplies',
-  'Too Many Simultaneous Requests',
-  'Other',
+  'High Volume of Requests', 'Staff Shortage', 'Technical Issue',
+  'Guest Not in Room', 'Waiting for Supplies', 'Too Many Simultaneous Requests', 'Other',
 ];
+
+const DEFAULT_SLA: Record<string, number> = {
+  'Security & Safety': 2, 'F&B': 5, 'Housekeeping': 5, 'Concierge': 5, 'Front Office': 5,
+};
 
 const getDeviceId = () => {
   let id = localStorage.getItem('sentinel_device_id');
-  if (!id) {
-    id = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-    localStorage.setItem('sentinel_device_id', id);
-  }
+  if (!id) { id = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase(); localStorage.setItem('sentinel_device_id', id); }
   return id;
 };
 
@@ -91,23 +64,9 @@ const queryParams = new URLSearchParams(window.location.search);
 const roomNumberFromUrl = queryParams.get('room') || '';
 const isRoomLocked = !!roomNumberFromUrl;
 
-const DEFAULT_SLA: Record<string, number> = {
-  'Security & Safety': 2,
-  'F&B': 5,
-  'Housekeeping': 5,
-  'Concierge': 5,
-  'Front Office': 5,
-};
-
 // ─── ERROR BOUNDARY ───────────────────────────────────────────────────────────
-export class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean }
-> {
-  constructor(props: any) {
-    super(props);
-    this.state = { hasError: false };
-  }
+export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: any) { super(props); this.state = { hasError: false }; }
   static getDerivedStateFromError() { return { hasError: true }; }
   render() {
     if (this.state.hasError) return (
@@ -131,17 +90,17 @@ const GlobalLanguageSelector: React.FC = () => {
   return (
     <div className={cn('fixed top-4 z-[10005]', isRTL ? 'left-4' : 'right-4')}>
       <div className="relative group">
-        <button className="flex items-center gap-2 bg-navy/80 backdrop-blur-md text-white/90 hover:text-gold px-4 py-2 border border-gold/30 shadow-2xl">
-          <Globe size={16} className="text-gold" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em]">{flags[language]}</span>
-          <ChevronDown size={12} className="group-hover:rotate-180 transition-transform" />
+        <button className="flex items-center gap-2 bg-navy/80 backdrop-blur-md text-white/90 hover:text-gold px-3 py-2 border border-gold/30 shadow-2xl">
+          <Globe size={14} className="text-gold" />
+          <span className="text-[9px] font-bold uppercase tracking-[0.2em]">{flags[language]}</span>
+          <ChevronDown size={10} className="group-hover:rotate-180 transition-transform" />
         </button>
-        <div className={cn('absolute top-full mt-2 w-56 bg-navy border border-gold/30 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[10006]', isRTL ? 'left-0' : 'right-0')}>
+        <div className={cn('absolute top-full mt-2 w-48 bg-navy border border-gold/30 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[10006]', isRTL ? 'left-0' : 'right-0')}>
           <div className="absolute top-0 left-0 w-full h-0.5 bg-gold" />
           {(Object.keys(flags) as Language[]).map(lang => (
-            <button key={lang} onClick={() => setLanguage(lang)} className={cn('w-full px-6 py-4 text-left text-[10px] font-bold uppercase tracking-widest hover:bg-gold/10 flex items-center justify-between border-b border-gold/5 last:border-0', language === lang ? 'text-gold bg-gold/5' : 'text-white/60')}>
-              <span className="flex items-center gap-3"><span className="text-base">{flags[lang]}</span>{labels[lang]}</span>
-              {language === lang && <Check size={14} className="text-gold" />}
+            <button key={lang} onClick={() => setLanguage(lang)} className={cn('w-full px-4 py-3 text-left text-[9px] font-bold uppercase tracking-widest hover:bg-gold/10 flex items-center justify-between border-b border-gold/5 last:border-0', language === lang ? 'text-gold bg-gold/5' : 'text-white/60')}>
+              <span className="flex items-center gap-2"><span className="text-sm">{flags[lang]}</span>{labels[lang]}</span>
+              {language === lang && <Check size={12} className="text-gold" />}
             </button>
           ))}
         </div>
@@ -155,24 +114,83 @@ const Header: React.FC<{ roomNumber: string; user: any; logout: () => void; navi
   const { t, isRTL } = useLanguage();
   return (
     <nav className="sticky-header">
-      <div className={cn('flex items-center gap-1 sm:gap-2 px-4', isRTL && 'flex-row-reverse')}>
-        {user && <button onClick={navigateToGuest} className="p-1 sm:p-2 text-gold hover:text-white transition-colors"><Home size={18} strokeWidth={1.5} /></button>}
+      <div className={cn('flex items-center px-3', isRTL && 'flex-row-reverse')}>
+        {user && <button onClick={navigateToGuest} className="p-1.5 text-gold hover:text-white transition-colors"><Home size={16} strokeWidth={1.5} /></button>}
       </div>
-      <div className="logo-container cursor-pointer" onClick={navigateToGuest}>
-        <div className="flex flex-col items-center">
-          <h1 className="logo-text">Sentinel Pro</h1>
-          <span className="text-[7px] sm:text-[8px] font-bold text-gold/60 uppercase tracking-[0.3em] -mt-1">Luxury Hotel & Residences</span>
+      <div className="logo-container cursor-pointer flex-1 flex justify-center" onClick={navigateToGuest}>
+        <div className="flex flex-col items-center min-w-0">
+          <h1 className="font-serif tracking-[0.15em] text-gold uppercase text-base sm:text-2xl whitespace-nowrap">Sentinel Pro</h1>
+          <span className="text-[6px] sm:text-[7px] font-bold text-gold/60 uppercase tracking-[0.25em]">Luxury Hotel & Residences</span>
         </div>
       </div>
-      <div className={cn('flex items-center gap-1 sm:gap-2 px-4', isRTL && 'flex-row-reverse')}>
-        <div className="flex flex-col items-end mr-2 hidden xs:flex">
-          <span className="text-[10px] font-bold text-white tracking-widest uppercase">{t('room')} {roomNumber || '---'}</span>
-          <span className="text-[7px] text-gold font-bold uppercase tracking-tighter">Executive Level</span>
-        </div>
-        {user && <button onClick={logout} className="p-1 sm:p-2 text-gold hover:text-white transition-colors"><LogOut size={18} strokeWidth={1} /></button>}
+      <div className={cn('flex items-center px-3', isRTL && 'flex-row-reverse')}>
+        {user && roomNumber && (
+          <div className="flex flex-col items-end mr-2 hidden sm:flex">
+            <span className="text-[9px] font-bold text-white tracking-widest uppercase">{t('room')} {roomNumber}</span>
+            <span className="text-[6px] text-gold font-bold uppercase tracking-tighter">Executive Level</span>
+          </div>
+        )}
+        {user && <button onClick={logout} className="p-1.5 text-gold hover:text-white transition-colors"><LogOut size={16} strokeWidth={1} /></button>}
       </div>
     </nav>
   );
+};
+
+// ─── LUXURY GUEST FOOTER ──────────────────────────────────────────────────────
+const GuestFooter: React.FC = () => (
+  <div className="mt-12 border-t border-gold/20 pt-8 pb-16 space-y-6 px-4">
+    <div className="text-center space-y-1">
+      <p className="text-[8px] uppercase tracking-[0.3em] text-gold font-bold">24 / 7 Concierge Services</p>
+      <h3 className="text-xl font-serif text-navy">We Are Always Here For You</h3>
+    </div>
+    <div className="grid grid-cols-2 gap-4">
+      <div className="border border-gold/20 p-4 text-center space-y-2 bg-navy/2">
+        <div className="w-8 h-8 border border-gold/30 flex items-center justify-center mx-auto">
+          <Phone size={14} className="text-gold" />
+        </div>
+        <p className="text-[8px] uppercase tracking-widest text-navy/50 font-bold">Speak with Operator</p>
+        <p className="text-2xl font-serif text-navy font-bold">0</p>
+        <p className="text-[8px] text-navy/40 italic">Dial from your room landline</p>
+      </div>
+      <div className="border border-red-200 p-4 text-center space-y-2 bg-red-50/30">
+        <div className="w-8 h-8 border border-red-300 flex items-center justify-center mx-auto">
+          <Shield size={14} className="text-red-500" />
+        </div>
+        <p className="text-[8px] uppercase tracking-widest text-red-500/80 font-bold">Emergency</p>
+        <p className="text-2xl font-serif text-red-600 font-bold">777</p>
+        <p className="text-[8px] text-navy/40 italic">Dial from your room landline</p>
+      </div>
+    </div>
+    <div className="border border-gold/10 p-4 space-y-3 bg-[#FAFAF8]">
+      <p className="text-[8px] uppercase tracking-[0.25em] text-gold font-bold text-center">Hotel Services</p>
+      {[
+        { label: 'Room Service Hours', value: '24 Hours' },
+        { label: 'Concierge Desk', value: 'Lobby Level' },
+        { label: 'Swimming Pool', value: '6 AM – 10 PM' },
+        { label: 'Fitness Centre', value: '24 Hours' },
+        { label: 'Valet Parking', value: '24 Hours' },
+      ].map(item => (
+        <div key={item.label} className="flex justify-between items-center border-b border-navy/5 pb-2 last:border-0 last:pb-0">
+          <span className="text-[9px] text-navy/50 uppercase tracking-wider">{item.label}</span>
+          <span className="text-[9px] font-bold text-navy">{item.value}</span>
+        </div>
+      ))}
+    </div>
+    <p className="text-center text-[7px] text-navy/20 uppercase tracking-widest">Sentinel Pro · Luxury Hotel Management</p>
+  </div>
+);
+
+// ─── GUEST REQUEST STATUS CARD ────────────────────────────────────────────────
+const statusColor = (status: string) => {
+  if (status === 'Completed') return 'text-green-600 bg-green-50 border-green-200';
+  if (status === 'In Progress') return 'text-blue-600 bg-blue-50 border-blue-200';
+  return 'text-gold bg-gold/5 border-gold/30';
+};
+
+const statusIcon = (status: string) => {
+  if (status === 'Completed') return <CheckCircle2 size={14} className="text-green-600" />;
+  if (status === 'In Progress') return <Clock size={14} className="text-blue-600" />;
+  return <Clock size={14} className="text-gold" />;
 };
 
 // ─── FEEDBACK MODAL ───────────────────────────────────────────────────────────
@@ -220,41 +238,32 @@ const RoomService: React.FC<{ cart: { [id: string]: number }; updateCart: (id: s
     { id: 'd2', name: t('item_signature_espresso_name'), price: 28, category: 'beverages' },
     { id: 'd3', name: t('item_sparkling_mineral_water_name'), price: 45, category: 'beverages' },
   ];
-  const total = Object.entries(cart).reduce((acc, [id, qty]) => {
-    const item = menuItems.find(m => m.id === id);
-    return acc + (item?.price || 0) * qty;
-  }, 0);
+  const total = Object.entries(cart).reduce((acc, [id, qty]) => { const item = menuItems.find(m => m.id === id); return acc + (item?.price || 0) * qty; }, 0);
   return (
-    <div className="space-y-8 pb-32 w-full px-4 sm:px-8">
-      <div className="flex gap-2 border-b border-gold/20 pb-2">
+    <div className="space-y-6 pb-32 w-full px-4 sm:px-8">
+      <div className="flex gap-1 border-b border-gold/20 pb-2">
         {['breakfast', 'all_day', 'beverages'].map(cat => (
-          <button key={cat} onClick={() => setActiveCategory(cat)} className={cn('px-4 py-2 text-[10px] font-bold uppercase tracking-widest', activeCategory === cat ? 'text-gold border-b-2 border-gold' : 'text-navy/40')}>{t(cat)}</button>
+          <button key={cat} onClick={() => setActiveCategory(cat)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest', activeCategory === cat ? 'text-gold border-b-2 border-gold' : 'text-navy/40')}>{t(cat)}</button>
         ))}
       </div>
       <div className="space-y-1">
         {menuItems.filter(i => i.category === activeCategory).map(item => (
-          <div key={item.id} className="flex items-center justify-between p-4 border-b border-navy/5">
-            <div>
-              <span className="text-navy font-serif text-lg">{item.name}</span>
-              {cart[item.id] > 0 && <span className="text-[10px] text-gold font-bold uppercase block">Qty: {cart[item.id]}</span>}
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-navy font-bold">{item.price} {t('currency_label')}</span>
-              <button onClick={() => updateCart(item.id, -1)} className="w-8 h-8 bg-navy/10 flex items-center justify-center"><Minus size={12} /></button>
+          <div key={item.id} className="flex items-center justify-between p-3 border-b border-navy/5">
+            <div><span className="text-navy font-serif">{item.name}</span>{cart[item.id] > 0 && <span className="text-[9px] text-gold font-bold uppercase block">Qty: {cart[item.id]}</span>}</div>
+            <div className="flex items-center gap-2">
+              <span className="text-navy font-bold text-sm">{item.price} {t('currency_label')}</span>
+              <button onClick={() => updateCart(item.id, -1)} className="w-7 h-7 bg-navy/10 flex items-center justify-center"><Minus size={11} /></button>
               <span className="w-4 text-center text-sm font-bold">{cart[item.id] || 0}</span>
-              <button onClick={() => updateCart(item.id, 1)} className="w-8 h-8 bg-gold flex items-center justify-center text-white"><Plus size={12} /></button>
+              <button onClick={() => updateCart(item.id, 1)} className="w-7 h-7 bg-gold flex items-center justify-center text-white"><Plus size={11} /></button>
             </div>
           </div>
         ))}
       </div>
-      <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-24 resize-none w-full bg-white text-navy border border-gold p-4" />
+      <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-20 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
       <AnimatePresence>
         {Object.values(cart).some(q => q > 0) && (
           <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="fixed bottom-4 left-4 right-4 bg-navy p-4 flex items-center justify-between shadow-2xl z-[9999]">
-            <div>
-              <span className="text-[8px] text-white/50 uppercase tracking-widest block">{t('your_tray')}</span>
-              <span className="text-gold font-bold">{total} {t('currency_label')}</span>
-            </div>
+            <div><span className="text-[8px] text-white/50 uppercase tracking-widest block">{t('your_tray')}</span><span className="text-gold font-bold">{total} {t('currency_label')}</span></div>
             <button onClick={() => onSubmit(notes)} className="bg-gold text-white px-6 py-2 text-[10px] font-bold uppercase tracking-widest">{t('order_now')}</button>
           </motion.div>
         )}
@@ -273,27 +282,26 @@ const RestaurantBooking: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubm
     { id: 'lolivo', name: t('lolivo'), desc: t('italian_cuisine') },
   ];
   return (
-    <div className="w-full py-8 space-y-8 px-4 sm:px-8">
-      <div className="text-center space-y-2">
-        <h2 className="text-3xl font-serif text-navy">{t('restaurant_bookings')}</h2>
-        <p className="text-gold text-[10px] uppercase tracking-widest font-bold">{t('reserve_table')}</p>
+    <div className="w-full py-6 space-y-6 px-4 sm:px-8">
+      <div className="text-center space-y-1">
+        <h2 className="text-2xl font-serif text-navy">{t('restaurant_bookings')}</h2>
+        <p className="text-gold text-[9px] uppercase tracking-widest font-bold">{t('reserve_table')}</p>
       </div>
-      <div className="grid grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 gap-2">
         {restaurants.map(r => (
-          <button key={r.id} onClick={() => setData({ ...data, restaurant: r.id })} className={cn('p-4 border text-left transition-all', data.restaurant === r.id ? 'border-gold bg-gold/5' : 'border-navy/10')}>
-            <p className="text-navy font-bold">{r.name}</p>
-            <p className="text-[10px] text-navy/60 italic">{r.desc}</p>
+          <button key={r.id} onClick={() => setData({ ...data, restaurant: r.id })} className={cn('p-3 border text-left transition-all', data.restaurant === r.id ? 'border-gold bg-gold/5' : 'border-navy/10')}>
+            <p className="text-navy font-bold text-sm">{r.name}</p><p className="text-[9px] text-navy/60 italic">{r.desc}</p>
           </button>
         ))}
       </div>
-      <div className="space-y-4">
+      <div className="space-y-3">
         {[{ label: t('label_pax'), key: 'pax', type: 'number' }, { label: t('label_date'), key: 'date', type: 'date' }, { label: t('label_time'), key: 'time', type: 'time' }].map(f => (
           <div key={f.key} className="space-y-1">
-            <label className="text-[10px] uppercase tracking-widest text-gold font-bold">{f.label}</label>
-            <input type={f.type} value={(data as any)[f.key]} onChange={e => setData({ ...data, [f.key]: e.target.value })} className="w-full bg-white text-navy border border-gold p-4" />
+            <label className="text-[9px] uppercase tracking-widest text-gold font-bold">{f.label}</label>
+            <input type={f.type} value={(data as any)[f.key]} onChange={e => setData({ ...data, [f.key]: e.target.value })} className="w-full bg-white text-navy border border-gold p-3 text-sm" />
           </div>
         ))}
-        <textarea value={data.notes} onChange={e => setData({ ...data, notes: e.target.value })} placeholder={t('message_placeholder')} className="h-24 resize-none w-full bg-white text-navy border border-gold p-4" />
+        <textarea value={data.notes} onChange={e => setData({ ...data, notes: e.target.value })} placeholder={t('message_placeholder')} className="h-20 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
         <button onClick={() => onSubmit({ type: `Restaurant: ${data.restaurant}`, pax: Number(data.pax), preferredTiming: `${data.date} ${data.time}`, notes: data.notes })} className="gold-button w-full m-0">{t('confirm')}</button>
       </div>
     </div>
@@ -321,63 +329,63 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubmit }) =>
     { id: 'local_tours', name: t('local_tours'), icon: Globe },
   ];
   return (
-    <div className="w-full py-8 space-y-8 px-4 sm:px-8">
-      <div className="text-center space-y-2">
-        <h2 className="text-3xl font-serif text-navy">{t('concierge_services')}</h2>
-        <p className="text-gold text-[10px] uppercase tracking-widest font-bold">Luxury Assistance</p>
+    <div className="w-full py-6 space-y-6 px-4 sm:px-8">
+      <div className="text-center space-y-1">
+        <h2 className="text-2xl font-serif text-navy">{t('concierge_services')}</h2>
+        <p className="text-gold text-[9px] uppercase tracking-widest font-bold">Luxury Assistance</p>
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         {options.map(opt => (
           <button key={opt.id} onClick={() => setSelected(opt.id)} className={cn('premium-card', selected === opt.id ? 'border-gold bg-gold/5' : '')}>
-            <div className="icon-wrapper"><opt.icon size={20} className="text-gold" strokeWidth={1} /></div>
-            <h3>{opt.name}</h3>
+            <div className="icon-wrapper"><opt.icon size={18} className="text-gold" strokeWidth={1} /></div>
+            <h3 className="text-xs">{opt.name}</h3>
           </button>
         ))}
       </div>
       {selected === 'rent_a_car' && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {cars.map(car => (
-            <div key={car.id} className="flex items-center gap-4 bg-white border border-gold/10 p-3 shadow-sm">
-              <img src={car.img} alt={car.name} className="w-24 h-16 object-cover" referrerPolicy="no-referrer" />
-              <div className="flex-1"><h4 className="font-serif text-navy">{car.name}</h4><p className="text-gold font-bold text-xs">{car.price} {t('currency_label')}</p></div>
-              <button onClick={() => onSubmit({ type: `Rent a Car: ${car.name}`, dept: 'Concierge', totalPrice: car.price, notes: `Car: ${car.name}. ${notes}` })} className="bg-gold text-white px-4 py-2 text-[10px] font-bold uppercase">{t('book_now')}</button>
+            <div key={car.id} className="flex items-center gap-3 bg-white border border-gold/10 p-3 shadow-sm">
+              <img src={car.img} alt={car.name} className="w-20 h-14 object-cover" referrerPolicy="no-referrer" />
+              <div className="flex-1"><h4 className="font-serif text-navy text-sm">{car.name}</h4><p className="text-gold font-bold text-xs">{car.price} {t('currency_label')}</p></div>
+              <button onClick={() => onSubmit({ type: `Rent a Car: ${car.name}`, dept: 'Concierge', totalPrice: car.price, notes: `Car: ${car.name}. ${notes}` })} className="bg-gold text-white px-3 py-1.5 text-[9px] font-bold uppercase">{t('book_now')}</button>
             </div>
           ))}
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-20 resize-none w-full bg-white text-navy border border-gold p-4" />
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
         </div>
       )}
       {selected === 'taxi_limousine' && (
-        <div className="bg-white p-6 shadow-xl border border-gold/10 space-y-6">
+        <div className="bg-white p-4 shadow-xl border border-gold/10 space-y-4">
           <div className="pill-container">
             <button onClick={() => setSubTab('taxi')} className={cn('pill-btn', subTab === 'taxi' ? 'active' : 'inactive')}>{t('taxi')}</button>
             <button onClick={() => setSubTab('limousine')} className={cn('pill-btn', subTab === 'limousine' ? 'active' : 'inactive')}>{t('limousine')}</button>
           </div>
-          <div className="space-y-4">
-            <div className="space-y-1"><label className="text-[10px] uppercase tracking-widest text-gold font-bold">{t('label_pickup')}</label><input type="time" value={pickupTime} onChange={e => setPickupTime(e.target.value)} className="w-full bg-white text-navy border border-gold p-4" /></div>
-            <div className="space-y-1"><label className="text-[10px] uppercase tracking-widest text-gold font-bold">{t('label_destination')}</label><input type="text" value={destination} onChange={e => setDestination(e.target.value)} placeholder={t('drop_off_destination')} className="w-full bg-white text-navy border border-gold p-4" /></div>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-20 resize-none w-full bg-white text-navy border border-gold p-4" />
+          <div className="space-y-3">
+            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">{t('label_pickup')}</label><input type="time" value={pickupTime} onChange={e => setPickupTime(e.target.value)} className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
+            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">{t('label_destination')}</label><input type="text" value={destination} onChange={e => setDestination(e.target.value)} placeholder={t('drop_off_destination')} className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
           </div>
           <button onClick={() => onSubmit({ type: `Concierge: ${subTab}`, dept: 'Concierge', pickupTime, destination, notes })} className="gold-button w-full m-0">{t('submit')}</button>
         </div>
       )}
       {selected === 'luggage_service' && (
-        <div className="bg-white p-6 shadow-xl border border-gold/10 space-y-6">
+        <div className="bg-white p-4 shadow-xl border border-gold/10 space-y-4">
           <div className="pill-container">
             <button onClick={() => setSubTab('pickup')} className={cn('pill-btn', subTab === 'pickup' ? 'active' : 'inactive')}>{t('pickup')}</button>
             <button onClick={() => setSubTab('delivery')} className={cn('pill-btn', subTab === 'delivery' ? 'active' : 'inactive')}>{t('delivery')}</button>
           </div>
-          <div className="space-y-4">
-            <div className="space-y-1"><label className="text-[10px] uppercase tracking-widest text-gold font-bold">{t('luggage')}</label><input type="number" value={numBags} onChange={e => setNumBags(e.target.value)} min="1" className="w-full bg-white text-navy border border-gold p-4" /></div>
-            <div className="space-y-1"><label className="text-[10px] uppercase tracking-widest text-gold font-bold">{t('label_pickup')}</label><input type="time" value={pickupTime} onChange={e => setPickupTime(e.target.value)} className="w-full bg-white text-navy border border-gold p-4" /></div>
+          <div className="space-y-3">
+            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">{t('luggage')}</label><input type="number" value={numBags} onChange={e => setNumBags(e.target.value)} min="1" className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
+            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">{t('label_pickup')}</label><input type="time" value={pickupTime} onChange={e => setPickupTime(e.target.value)} className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
           </div>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-20 resize-none w-full bg-white text-navy border border-gold p-4" />
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
           <button onClick={() => onSubmit({ type: `Luggage: ${subTab}`, dept: 'Concierge', numBags, pickupTime, notes })} className="gold-button w-full m-0">{t('submit')}</button>
         </div>
       )}
       {selected === 'local_tours' && (
-        <div className="bg-white p-6 shadow-xl border border-gold/10 space-y-6">
-          <p className="text-navy/60 font-serif italic text-center py-4">Discover Abu Dhabi with our curated local tours.</p>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-20 resize-none w-full bg-white text-navy border border-gold p-4" />
+        <div className="bg-white p-4 shadow-xl border border-gold/10 space-y-4">
+          <p className="text-navy/60 font-serif italic text-center py-4 text-sm">Discover Abu Dhabi with our curated local tours.</p>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
           <button onClick={() => onSubmit({ type: 'Concierge: Local Tours', dept: 'Concierge', notes })} className="gold-button w-full m-0">{t('submit')}</button>
         </div>
       )}
@@ -414,34 +422,29 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
 
   const handleManagerAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Executive master password
     if (managerPassword === 'Manager12345') {
       const adminProfile: UserProfile = { uid: 'admin_override', email: 'admin@sentinel.pro', displayName: 'Executive Director', role: 'manager', department: 'None', status: 'Approved' };
       localStorage.setItem('sentinel_local_session', JSON.stringify(adminProfile));
-      onLoginSuccess(adminProfile);
-      return;
+      onLoginSuccess(adminProfile); return;
     }
-    // Try managers table (legacy)
     const { data: manager } = await supabase.from('managers').select('*').eq('password', managerPassword).single();
     if (manager) {
       const managerProfile: UserProfile = { uid: manager.id, email: manager.email, displayName: manager.name, role: 'manager', department: manager.department as Department, status: 'Approved' };
       localStorage.setItem('sentinel_local_session', JSON.stringify(managerProfile));
-      onLoginSuccess(managerProfile);
-      return;
+      onLoginSuccess(managerProfile); return;
     }
-    const newCount = failCount + 1;
-    setFailCount(newCount);
+    const newCount = failCount + 1; setFailCount(newCount);
     if (newCount >= 3) { alert('Too many failed attempts.'); setShowManagerLock(false); setShowSecret(false); setFailCount(0); setManagerPassword(''); }
     else alert(`Invalid password. Attempt ${newCount} of 3.`);
   };
 
   return (
     <div className="min-h-screen bg-navy flex flex-col items-center justify-center p-6 relative">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md space-y-8 sm:space-y-16 bg-[#001c36] p-6 sm:p-12 shadow-2xl border border-[#C5A059]">
-        <div className="text-center space-y-4 sm:space-y-6">
-          <div className="inline-block p-4 sm:p-6 border border-gold mb-2 sm:mb-4"><ShieldCheck className="w-10 h-10 sm:w-16 sm:h-16 text-gold" strokeWidth={1} /></div>
-          <h1 className="text-2xl sm:text-5xl font-serif tracking-[0.1em] sm:tracking-[0.3em] text-white uppercase">Sentinel Pro</h1>
-          <p className="text-gold text-[8px] sm:text-[10px] tracking-[0.2em] sm:tracking-[0.4em] uppercase font-bold">Luxury Management Systems</p>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md space-y-8 sm:space-y-12 bg-[#001c36] p-6 sm:p-12 shadow-2xl border border-[#C5A059]">
+        <div className="text-center space-y-4">
+          <div className="inline-block p-4 sm:p-6 border border-gold"><ShieldCheck className="w-10 h-10 sm:w-14 sm:h-14 text-gold" strokeWidth={1} /></div>
+          <h1 className="text-2xl sm:text-4xl font-serif tracking-[0.1em] text-white uppercase">Sentinel Pro</h1>
+          <p className="text-gold text-[8px] sm:text-[9px] tracking-[0.2em] uppercase font-bold">Luxury Management Systems</p>
         </div>
         {showManagerLock ? (
           <form onSubmit={handleManagerAuth} className="space-y-6">
@@ -453,13 +456,11 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
             </div>
           </form>
         ) : showSecret ? (
-          <div className="space-y-6">
-            <p className="text-gold text-[10px] text-center uppercase tracking-widest font-bold">Security Override Detected</p>
-            <div className="space-y-4">
-              <button onClick={() => setShowManagerLock(true)} className="gold-button w-full flex items-center justify-center gap-3"><ShieldCheck size={18} /> Executive Dashboard</button>
-              <button onClick={onNavigateToStaff} className="navy-button w-full border border-gold/30 flex items-center justify-center gap-3"><User size={18} /> Staff Portal</button>
-              <button onClick={() => setShowSecret(false)} className="text-[10px] text-white/40 uppercase tracking-widest w-full text-center hover:text-white">{t('cancel')}</button>
-            </div>
+          <div className="space-y-4">
+            <p className="text-gold text-[10px] text-center uppercase tracking-widest font-bold">Security Override</p>
+            <button onClick={() => setShowManagerLock(true)} className="gold-button w-full flex items-center justify-center gap-3"><ShieldCheck size={16} /> Executive Dashboard</button>
+            <button onClick={onNavigateToStaff} className="navy-button w-full border border-gold/30 flex items-center justify-center gap-3"><User size={16} /> Staff Portal</button>
+            <button onClick={() => setShowSecret(false)} className="text-[10px] text-white/40 uppercase tracking-widest w-full text-center hover:text-white">{t('cancel')}</button>
           </div>
         ) : (
           <form onSubmit={handleGuestLogin} className="space-y-4 w-full">
@@ -490,51 +491,33 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
   const derivedDept = DEPT_FROM_OCCUPATION[occupation] || 'Front Office';
 
   const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+    e.preventDefault(); setLoading(true);
     try {
       if (mode === 'register') {
         const { data: existing } = await supabase.from('staff').select('id').eq('email', email).single();
         if (existing) { alert('Profile already exists. Please login.'); setMode('login'); setLoading(false); return; }
         const { error } = await supabase.from('staff').insert({
-          name: fullName,
-          staff_id: staffIdNumber,
-          email,
-          password,
-          department: derivedDept,
-          occupation,
-          approved: false,
+          name: fullName, staff_id: staffIdNumber, email, password,
+          department: derivedDept, occupation, approved: false,
           needs_executive_approval: isManagerOccupation,
-          logged_in: false,
-          tasks_completed: 0,
-          tasks_on_time: 0,
-          violations: 0,
+          logged_in: false, tasks_completed: 0, tasks_on_time: 0, violations: 0,
         });
         if (error) throw error;
-        setPendingMessage(
-          isManagerOccupation
-            ? `Your ${occupation} profile has been submitted for Executive approval.`
-            : `Your profile has been submitted for your Department Manager's approval.`
-        );
+        setPendingMessage(isManagerOccupation ? `Your ${occupation} profile has been submitted for Executive approval.` : `Your profile has been submitted for Department Manager approval.`);
         setShowPending(true);
       } else {
-        // LOGIN
         const { data: staffData, error } = await supabase.from('staff').select('*').eq('email', email).eq('password', password).single();
         if (error || !staffData) { alert('Invalid credentials.'); setLoading(false); return; }
         if (!staffData.approved) { alert('ACCESS DENIED: Your account is pending approval.'); setLoading(false); return; }
         const deviceId = getDeviceId();
-        if (staffData.device_id && staffData.device_id !== deviceId) { alert('ACCESS DENIED: This account is active on another device.'); setLoading(false); return; }
+        if (staffData.device_id && staffData.device_id !== deviceId) { alert('ACCESS DENIED: Account active on another device.'); setLoading(false); return; }
         await supabase.from('staff').update({ device_id: deviceId, logged_in: true }).eq('id', staffData.id);
         const isManager = MANAGER_OCCUPATIONS.includes(staffData.occupation || '');
         const profile: UserProfile = {
-          uid: staffData.id,
-          email: staffData.email,
-          displayName: staffData.name,
+          uid: staffData.id, email: staffData.email, displayName: staffData.name,
           role: isManager ? 'manager' : 'staff',
           department: (staffData.department as Department) || 'Front Office',
-          staffIdNumber: staffData.staff_id,
-          occupation: staffData.occupation,
-          status: 'Approved',
+          staffIdNumber: staffData.staff_id, occupation: staffData.occupation, status: 'Approved',
         };
         localStorage.setItem('sentinel_local_session', JSON.stringify(profile));
         onLoginSuccess(profile);
@@ -548,22 +531,22 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         {showPending && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[5000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
             <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="bg-[#001c36] p-10 text-center border-2 border-gold max-w-lg shadow-xl relative">
-              <div className="absolute top-0 left-0 w-full h-1 bg-gold " />
-              <ShieldCheck className="w-20 h-20 text-gold mx-auto mb-8" strokeWidth={1} />
-              <h2 className="text-3xl font-serif text-white mb-6">Profile Submitted</h2>
-              <p className="text-white/70 text-sm font-serif italic mb-10">{pendingMessage}</p>
-              <button onClick={onReturnToGuest} className="gold-button w-full py-5 text-sm tracking-[0.3em]">Close & Return</button>
+              <div className="absolute top-0 left-0 w-full h-1 bg-gold" />
+              <ShieldCheck className="w-16 h-16 text-gold mx-auto mb-6" strokeWidth={1} />
+              <h2 className="text-3xl font-serif text-white mb-4">Profile Submitted</h2>
+              <p className="text-white/70 text-sm font-serif italic mb-8">{pendingMessage}</p>
+              <button onClick={onReturnToGuest} className="gold-button w-full py-4">Close & Return</button>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md space-y-8 bg-[#001c36] p-6 sm:p-12 shadow-2xl border border-[#C5A059]">
-        <div className="text-center space-y-4">
-          <div className="inline-block p-4 border border-gold"><ShieldCheck className="w-10 h-10 text-gold" strokeWidth={1} /></div>
-          <h1 className="text-2xl sm:text-5xl font-serif tracking-widest text-white uppercase">Sentinel Pro</h1>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md space-y-6 bg-[#001c36] p-6 sm:p-10 shadow-2xl border border-[#C5A059]">
+        <div className="text-center space-y-3">
+          <div className="inline-block p-3 border border-gold"><ShieldCheck className="w-8 h-8 text-gold" strokeWidth={1} /></div>
+          <h1 className="text-2xl font-serif tracking-widest text-white uppercase">Sentinel Pro</h1>
           <p className="text-gold text-[8px] uppercase font-bold">Staff Portal</p>
         </div>
-        <form onSubmit={handleAuth} className="space-y-4">
+        <form onSubmit={handleAuth} className="space-y-3">
           {mode === 'register' && (
             <>
               <div className="space-y-1">
@@ -583,53 +566,39 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
                     <option>Housekeeping Manager</option>
                   </optgroup>
                   <optgroup label="── F&B">
-                    <option>F&B Waiter</option>
-                    <option>F&B Supervisor</option>
-                    <option>Chef</option>
-                    <option>F&B Manager</option>
+                    <option>F&B Waiter</option><option>F&B Supervisor</option><option>Chef</option><option>F&B Manager</option>
                   </optgroup>
                   <optgroup label="── Concierge">
-                    <option>Concierge Agent</option>
-                    <option>Concierge Supervisor</option>
-                    <option>Concierge Manager</option>
+                    <option>Concierge Agent</option><option>Concierge Supervisor</option><option>Concierge Manager</option>
                   </optgroup>
                   <optgroup label="── Security">
-                    <option>Security Officer</option>
-                    <option>Security Supervisor</option>
-                    <option>Security Manager</option>
+                    <option>Security Officer</option><option>Security Supervisor</option><option>Security Manager</option>
                   </optgroup>
                   <optgroup label="── Front Office">
-                    <option>Front Office Agent</option>
-                    <option>Front Office Supervisor</option>
-                    <option>Maintenance Technician</option>
-                    <option>Maintenance Supervisor</option>
-                    <option>Front Office Manager</option>
+                    <option>Front Office Agent</option><option>Front Office Supervisor</option>
+                    <option>Maintenance Technician</option><option>Maintenance Supervisor</option><option>Front Office Manager</option>
                   </optgroup>
-                  <optgroup label="── Executive">
-                    <option>Executive</option>
-                  </optgroup>
+                  <optgroup label="── Executive"><option>Executive</option></optgroup>
                 </select>
                 <div className="mt-1 flex items-center gap-2">
                   <span className="text-[9px] text-white/40">Department:</span>
                   <span className="text-[9px] text-gold font-bold">{derivedDept === 'None' ? 'All Departments' : derivedDept}</span>
                 </div>
-                {isManagerOccupation && (
-                  <p className="text-[9px] text-gold mt-1 font-bold">⚡ Requires Executive approval</p>
-                )}
+                {isManagerOccupation && <p className="text-[9px] text-gold mt-1 font-bold">⚡ Requires Executive approval</p>}
               </div>
             </>
           )}
           <div className="space-y-1">
             <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Email</label>
-            <input type="text" required value={email} onChange={e => setEmail(e.target.value)} className="login-input bg-white text-navy" placeholder={t('email')} />
+            <input type="text" required value={email} onChange={e => setEmail(e.target.value)} className="login-input bg-white text-navy" placeholder="Email address" />
           </div>
           <div className="space-y-1">
             <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Password</label>
-            <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="login-input bg-white text-navy" placeholder={t('password')} />
+            <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="login-input bg-white text-navy" placeholder="Password" />
           </div>
           <button type="submit" disabled={loading} className="gold-button w-full">{loading ? '...' : (mode === 'login' ? t('sign_in') : 'Create Profile')}</button>
         </form>
-        <div className="text-center space-y-3">
+        <div className="text-center space-y-2">
           <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="text-[10px] font-bold text-gold uppercase tracking-widest block w-full">
             {mode === 'login' ? "Don't have a profile? Create Profile" : "Already have a profile? Login"}
           </button>
@@ -649,37 +618,25 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const [newOrderAlert, setNewOrderAlert] = useState<string | null>(null);
   const [delayModalTask, setDelayModalTask] = useState<any | null>(null);
   const [delayReason, setDelayReason] = useState('');
+  const [forwardModalTask, setForwardModalTask] = useState<any | null>(null);
+  const [forwardDept, setForwardDept] = useState<Department>('Housekeeping');
   const slaLimits = DEFAULT_SLA;
 
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
 
   const mapRow = (row: any) => ({
-    id: row.id,
-    roomNumber: row.guest_room || '',
-    type: row.service || '',
-    message: row.notes,
-    department: row.department,
-    status: row.status,
-    guestId: row.guest_id || '',
-    guestName: row.guest_name,
-    timestamp: row.created_at,
-    assignedStaffName: row.assigned_to,
-    delayReason: row.late_reason,
-    rating: row.rating,
+    id: row.id, roomNumber: row.guest_room || '', type: row.service || '',
+    message: row.notes, department: row.department, status: row.status,
+    guestId: row.guest_id || '', guestName: row.guest_name, timestamp: row.created_at,
+    assignedStaffName: row.assigned_to, delayReason: row.late_reason,
   });
 
   const fetchTasks = async () => {
     const dept = userProfile.department;
     let query = supabase.from('requests').select('*').order('created_at', { ascending: false });
-
-    if (dept === 'Security & Safety') {
-      query = query.in('department', ['Security & Safety', 'Security']);
-    } else {
-      query = query.eq('department', dept);
-    }
-
-    const { data, error } = await query;
-    if (error) { console.error('Staff fetch error:', error); return; }
+    if (dept === 'Security & Safety') query = query.in('department', ['Security & Safety', 'Security']);
+    else query = query.eq('department', dept);
+    const { data } = await query;
     if (data) {
       const mapped = data.map(mapRow);
       setTasks(mapped.filter((t: any) => t.status !== 'Completed'));
@@ -693,7 +650,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           const dept = (payload.new as any).department;
-          if (dept === userProfile.department || (userProfile.department === 'Security & Safety' && dept === 'Security')) {
+          if (dept === userProfile.department) {
             setNewOrderAlert(`New Request: Room #${(payload.new as any).guest_room} - ${(payload.new as any).service}`);
             setTimeout(() => setNewOrderAlert(null), 5000);
           }
@@ -714,7 +671,6 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     const limit = (slaLimits[task.department as keyof typeof slaLimits] || 5) * 60;
     if (elapsed > limit) { setDelayModalTask(task); return; }
     await supabase.from('requests').update({ status: 'Completed', closed_at: new Date().toISOString() }).eq('id', task.id);
-    // Increment on-time count
     const { data: staffRow } = await supabase.from('staff').select('tasks_completed,tasks_on_time').eq('id', userProfile.uid).single();
     if (staffRow) await supabase.from('staff').update({ tasks_completed: (staffRow.tasks_completed || 0) + 1, tasks_on_time: (staffRow.tasks_on_time || 0) + 1 }).eq('id', userProfile.uid);
   };
@@ -722,11 +678,23 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const handleCompleteWithReason = async () => {
     if (!delayReason || !delayModalTask) return;
     await supabase.from('requests').update({ status: 'Completed', closed_at: new Date().toISOString(), late_reason: delayReason }).eq('id', delayModalTask.id);
-    // Increment violations
     const { data: staffRow } = await supabase.from('staff').select('tasks_completed,violations').eq('id', userProfile.uid).single();
     if (staffRow) await supabase.from('staff').update({ tasks_completed: (staffRow.tasks_completed || 0) + 1, violations: (staffRow.violations || 0) + 1 }).eq('id', userProfile.uid);
-    setDelayModalTask(null);
-    setDelayReason('');
+    setDelayModalTask(null); setDelayReason('');
+  };
+
+  const handleForward = async () => {
+    if (!forwardModalTask || !forwardDept) return;
+    await supabase.from('requests').update({
+      department: forwardDept,
+      status: 'Pending',
+      assigned_to: null,
+      assigned_to_email: null,
+      accepted_at: null,
+      notes: (forwardModalTask.message || '') + ` [Forwarded from ${userProfile.department} by ${userProfile.displayName}]`
+    }).eq('id', forwardModalTask.id);
+    alert(`✅ Request forwarded to ${forwardDept} department. Guest has been notified.`);
+    setForwardModalTask(null);
   };
 
   return (
@@ -736,16 +704,37 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         {delayModalTask && (
           <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#001c36] p-8 max-w-md w-full border-t-4 border-red-600 shadow-2xl">
-              <div className="flex items-center gap-3 mb-4"><AlertCircle className="text-red-500" size={28} /><h2 className="text-xl font-serif text-white">SLA Violation — Reason Required</h2></div>
+              <div className="flex items-center gap-3 mb-4"><AlertCircle className="text-red-500" size={24} /><h2 className="text-xl font-serif text-white">SLA Violation — Reason Required</h2></div>
               <p className="text-sm text-white/60 mb-2">Task: <span className="text-gold font-bold">{delayModalTask.type}</span></p>
-              <p className="text-sm text-white/60 mb-6">You cannot close this request without selecting a delay reason.</p>
+              <p className="text-sm text-white/60 mb-4">Select a delay reason to close this request.</p>
               <select value={delayReason} onChange={e => setDelayReason(e.target.value)} className="w-full p-4 bg-white border border-red-500 mb-6 text-sm text-navy outline-none">
                 <option value="">-- Select Reason (Required) --</option>
                 {DELAY_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
-              <div className="flex gap-4">
+              <div className="flex gap-3">
                 <button onClick={() => { setDelayModalTask(null); setDelayReason(''); }} className="flex-1 py-3 border border-gold/20 text-gold text-[10px] font-bold uppercase">Cancel</button>
                 <button disabled={!delayReason} onClick={handleCompleteWithReason} className="flex-1 py-3 bg-red-600 text-white text-[10px] font-bold uppercase disabled:opacity-40">Submit & Close</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Forward Modal */}
+      <AnimatePresence>
+        {forwardModalTask && (
+          <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#001c36] p-8 max-w-md w-full border-t-4 border-gold shadow-2xl">
+              <div className="flex items-center gap-3 mb-4"><ArrowRight className="text-gold" size={24} /><h2 className="text-xl font-serif text-white">Forward Request</h2></div>
+              <p className="text-sm text-white/60 mb-2">Task: <span className="text-gold font-bold">{forwardModalTask.type}</span></p>
+              <p className="text-sm text-white/60 mb-2">Current Department: <span className="text-white font-bold">{forwardModalTask.department}</span></p>
+              <p className="text-sm text-white/60 mb-4">Select the correct department to forward this request to:</p>
+              <select value={forwardDept} onChange={e => setForwardDept(e.target.value as Department)} className="w-full p-4 bg-white border border-gold mb-6 text-sm text-navy outline-none">
+                {DEPARTMENTS.filter(d => d !== forwardModalTask.department).map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+              <div className="flex gap-3">
+                <button onClick={() => setForwardModalTask(null)} className="flex-1 py-3 border border-gold/20 text-gold text-[10px] font-bold uppercase">Cancel</button>
+                <button onClick={handleForward} className="flex-1 py-3 bg-gold text-navy text-[10px] font-bold uppercase">Forward Request</button>
               </div>
             </motion.div>
           </div>
@@ -755,88 +744,88 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       <AnimatePresence>
         {newOrderAlert && (
           <motion.div initial={{ y: -100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -100, opacity: 0 }} className="fixed top-20 left-1/2 -translate-x-1/2 z-[10002] bg-gold text-navy px-6 py-3 shadow-2xl flex items-center gap-3 border-2 border-white">
-            <AlertCircle size={20} /><span className="font-bold uppercase tracking-widest text-xs">{newOrderAlert}</span>
+            <AlertCircle size={18} /><span className="font-bold uppercase tracking-widest text-xs">{newOrderAlert}</span>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <header className="p-6 bg-navy text-white flex justify-between items-center border-b border-gold/20">
+      <header className="p-4 sm:p-6 bg-navy text-white flex justify-between items-center border-b border-gold/20">
         <div>
-          <h1 className="text-2xl font-serif text-gold">{userProfile.displayName}</h1>
-          <p className="text-white/60 text-[10px] uppercase tracking-widest font-bold">{userProfile.department} · {userProfile.occupation || 'Staff'}</p>
+          <h1 className="text-xl font-serif text-gold">{userProfile.displayName}</h1>
+          <p className="text-white/60 text-[9px] uppercase tracking-widest font-bold">{userProfile.department} · {userProfile.occupation || 'Staff'}</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <div className="flex bg-navy/50 border border-gold/20 p-1">
-            <button onClick={() => setActiveTab('active')} className={cn('px-4 py-2 text-[10px] font-bold uppercase', activeTab === 'active' ? 'bg-gold text-navy' : 'text-gold/60')}>Active ({tasks.length})</button>
-            <button onClick={() => setActiveTab('history')} className={cn('px-4 py-2 text-[10px] font-bold uppercase', activeTab === 'history' ? 'bg-gold text-navy' : 'text-gold/60')}>History ({history.length})</button>
+            <button onClick={() => setActiveTab('active')} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === 'active' ? 'bg-gold text-navy' : 'text-gold/60')}>Active ({tasks.length})</button>
+            <button onClick={() => setActiveTab('history')} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === 'history' ? 'bg-gold text-navy' : 'text-gold/60')}>History</button>
           </div>
-          <button onClick={async () => { await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid); localStorage.clear(); window.location.replace('/'); }} className="p-2 text-gold hover:text-white flex flex-col items-center gap-1">
-            <LogOut size={20} /><span className="text-[8px] uppercase font-bold">Logout</span>
+          <button onClick={async () => { await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid); localStorage.clear(); window.location.replace('/'); }} className="p-2 text-gold hover:text-white">
+            <LogOut size={18} />
           </button>
         </div>
       </header>
 
-      <div className="staff-grid p-6">
+      <div className="staff-grid p-4 sm:p-6">
         {activeTab === 'active' ? (
           tasks.length === 0 ? (
             <div className="col-span-full py-20 text-center">
-              <CheckCircle2 className="w-12 h-12 text-gold/20 mx-auto" strokeWidth={1} />
-              <p className="text-white/40 font-serif italic mt-4">No active requests. Standing by.</p>
+              <CheckCircle2 className="w-10 h-10 text-gold/20 mx-auto" strokeWidth={1} />
+              <p className="text-white/40 font-serif italic mt-3">No active requests. Standing by.</p>
             </div>
-          ) : (
-            tasks.map(task => {
-              const elapsed = getElapsed(task.timestamp);
-              const limit = (slaLimits[task.department as keyof typeof slaLimits] || 5) * 60;
-              const isViolated = elapsed > limit;
-              return (
-                <motion.div key={task.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={cn('staff-task-card bg-[#001c36]', isViolated ? 'border-red-500 bg-red-900/10' : 'border-gold/10')}>
-                  {isViolated && (
-                    <div className="w-full py-2 px-3 bg-red-600 text-white text-[10px] font-bold uppercase flex items-center gap-2 mb-2 ">
-                      <AlertCircle size={14} /> SLA EXCEEDED by {Math.floor((elapsed - limit) / 60)}m
-                    </div>
+          ) : tasks.map(task => {
+            const elapsed = getElapsed(task.timestamp);
+            const limit = (slaLimits[task.department as keyof typeof slaLimits] || 5) * 60;
+            const isViolated = elapsed > limit;
+            return (
+              <motion.div key={task.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={cn('staff-task-card bg-[#001c36] relative', isViolated ? 'border-red-500 bg-red-900/10' : 'border-gold/10')}>
+                {isViolated && (
+                  <div className="w-full py-2 px-3 bg-red-600 text-white text-[9px] font-bold uppercase flex items-center gap-2 mb-2">
+                    <AlertCircle size={12} /> SLA EXCEEDED by {Math.floor((elapsed - limit) / 60)}m
+                  </div>
+                )}
+                <div className="flex justify-between items-start">
+                  <div className="bg-navy/50 px-2 py-1 text-gold text-[9px] font-bold border border-gold/20">ROOM #{task.roomNumber}</div>
+                  <div className={cn('font-mono text-base font-bold', isViolated ? 'text-red-400' : 'text-white')}>{Math.floor(elapsed / 60)}:{(elapsed % 60).toString().padStart(2, '0')}</div>
+                </div>
+                <div className="space-y-1 mt-2">
+                  <h3 className="text-base font-serif text-white">{task.type}</h3>
+                  <p className={cn('text-[9px] uppercase tracking-widest font-bold', task.status === 'Pending' ? 'text-gold' : 'text-blue-400')}>{task.status}</p>
+                  {task.guestName && <p className="text-[8px] text-white/40">Guest: {task.guestName}</p>}
+                </div>
+                {task.message && <div className="bg-navy/30 p-2 border-l-2 border-gold/20 italic text-xs text-white/60 mt-2">"{task.message}"</div>}
+                <div className="mt-3 h-1 bg-navy/50 rounded-full overflow-hidden">
+                  <div className={cn('h-full rounded-full transition-all', isViolated ? 'bg-red-500' : elapsed / limit > 0.8 ? 'bg-orange-400' : 'bg-green-500')} style={{ width: `${Math.min((elapsed / limit) * 100, 100)}%` }} />
+                </div>
+                <div className="pt-3 space-y-2">
+                  {task.status === 'Pending' ? (
+                    <button onClick={() => handleAccept(task.id)} className="gold-button w-full m-0 py-2.5 text-[10px]">Accept Task</button>
+                  ) : (
+                    <button onClick={() => handleComplete(task)} className={cn('w-full py-2.5 font-bold uppercase tracking-widest text-[10px]', isViolated ? 'bg-red-600 text-white' : 'bg-green-600 text-white')}>
+                      {isViolated ? '⚠ Close (Reason Required)' : '✓ Mark Completed'}
+                    </button>
                   )}
-                  <div className="flex justify-between items-start">
-                    <div className="bg-navy/50 px-3 py-1 text-gold text-[10px] font-bold border border-gold/20">ROOM #{task.roomNumber}</div>
-                    <div className={cn('font-mono text-lg font-bold', isViolated ? 'text-red-400' : 'text-white')}>{Math.floor(elapsed / 60)}:{(elapsed % 60).toString().padStart(2, '0')}</div>
-                  </div>
-                  <div className="space-y-1 mt-2">
-                    <h3 className="text-lg font-serif text-white">{task.type}</h3>
-                    <p className={cn('text-[10px] uppercase tracking-widest font-bold', task.status === 'Pending' ? 'text-gold' : 'text-blue-400')}>{task.status}</p>
-                    {task.guestName && <p className="text-[9px] text-white/40">Guest: {task.guestName}</p>}
-                  </div>
-                  {task.message && <div className="bg-navy/30 p-3 border-l-2 border-gold/20 italic text-xs text-white/60 mt-2">"{task.message}"</div>}
-                  <div className="mt-3 h-1.5 bg-navy/50 rounded-full overflow-hidden">
-                    <div className={cn('h-full rounded-full transition-all', isViolated ? 'bg-red-500' : elapsed / limit > 0.8 ? 'bg-orange-400' : 'bg-green-500')} style={{ width: `${Math.min((elapsed / limit) * 100, 100)}%` }} />
-                  </div>
-                  <div className="pt-3">
-                    {task.status === 'Pending' ? (
-                      <button onClick={() => handleAccept(task.id)} className="gold-button w-full m-0 py-3">Accept Task</button>
-                    ) : (
-                      <button onClick={() => handleComplete(task)} className={cn('w-full py-3 font-bold uppercase tracking-widest text-[10px]', isViolated ? 'bg-red-600 text-white' : 'bg-green-600 text-white')}>
-                        {isViolated ? '⚠ Close (Reason Required)' : '✓ Mark Completed'}
-                      </button>
-                    )}
-                  </div>
-                </motion.div>
-              );
-            })
-          )
+                  {/* Forward to correct department button */}
+                  <button onClick={() => { setForwardDept(DEPARTMENTS.find(d => d !== task.department) || 'F&B'); setForwardModalTask(task); }} className="w-full py-2 border border-gold/30 text-gold text-[9px] font-bold uppercase tracking-widest flex items-center justify-center gap-2">
+                    <ArrowRight size={12} /> Forward to Correct Dept
+                  </button>
+                </div>
+              </motion.div>
+            );
+          })
         ) : (
           history.length === 0 ? (
             <div className="col-span-full py-20 text-center text-white/20 italic font-serif">No history yet.</div>
-          ) : (
-            history.map(task => (
-              <div key={task.id} className="bg-[#001c36] border border-gold/10 p-4 opacity-70">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-[10px] font-bold text-white/40 uppercase">ROOM #{task.roomNumber}</span>
-                  <span className="text-[10px] font-bold text-green-500 uppercase">COMPLETED</span>
-                </div>
-                <h3 className="text-sm font-serif text-white">{task.type}</h3>
-                {task.guestName && <p className="text-[9px] text-white/40 mt-1">Guest: {task.guestName}</p>}
-                {task.delayReason && <p className="text-[9px] text-red-400 mt-1 font-bold">Late Reason: {task.delayReason}</p>}
+          ) : history.map(task => (
+            <div key={task.id} className="bg-[#001c36] border border-gold/10 p-4 opacity-70">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[9px] font-bold text-white/40 uppercase">ROOM #{task.roomNumber}</span>
+                <span className="text-[9px] font-bold text-green-500 uppercase">COMPLETED</span>
               </div>
-            ))
-          )
+              <h3 className="text-sm font-serif text-white">{task.type}</h3>
+              {task.guestName && <p className="text-[8px] text-white/40 mt-1">Guest: {task.guestName}</p>}
+              {task.delayReason && <p className="text-[8px] text-red-400 mt-1 font-bold">Late: {task.delayReason}</p>}
+            </div>
+          ))
         )}
       </div>
     </div>
@@ -844,7 +833,6 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 };
 
 // ─── DEPARTMENT MANAGER DASHBOARD ─────────────────────────────────────────────
-// Only sees: their dept requests + SLA violations + can approve/reject their dept staff
 const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [requests, setRequests] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
@@ -856,22 +844,12 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
 
   const fetchData = async () => {
     const dept = profile.department;
-
-    // Fetch requests for this department only
     let reqQuery = supabase.from('requests').select('*').order('created_at', { ascending: false });
-    if (dept === 'Security & Safety') {
-      reqQuery = reqQuery.in('department', ['Security & Safety', 'Security']);
-    } else {
-      reqQuery = reqQuery.eq('department', dept);
-    }
+    if (dept === 'Security & Safety') reqQuery = reqQuery.in('department', ['Security & Safety', 'Security']);
+    else reqQuery = reqQuery.eq('department', dept);
     const { data: reqData } = await reqQuery;
     if (reqData) setRequests(reqData);
-
-    // Fetch staff for this department only
-    const { data: staffData } = await supabase.from('staff')
-      .select('*')
-      .eq('department', dept)
-      .order('created_at', { ascending: false });
+    const { data: staffData } = await supabase.from('staff').select('*').eq('department', dept).order('created_at', { ascending: false });
     if (staffData) setStaffList(staffData);
   };
 
@@ -886,11 +864,8 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
 
   const getSLAExceeded = (req: any) => {
     if (!req.created_at || req.status === 'Completed') return false;
-    const elapsed = (now - new Date(req.created_at).getTime()) / 1000;
-    const limit = (slaLimits[req.department as keyof typeof slaLimits] || 5) * 60;
-    return elapsed > limit;
+    return (now - new Date(req.created_at).getTime()) / 1000 > (slaLimits[req.department as keyof typeof slaLimits] || 5) * 60;
   };
-
   const getElapsedMin = (ts: any) => Math.floor((now - new Date(ts).getTime()) / 60000);
 
   const violations = requests.filter(r => getSLAExceeded(r));
@@ -902,63 +877,55 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
 
   return (
-    <div className="min-h-screen bg-[#001529] text-white p-4 sm:p-8 space-y-6">
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gold/20 pb-6">
+    <div className="min-h-screen bg-[#001529] text-white p-4 sm:p-6 space-y-6">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gold/20 pb-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-serif text-gold">{profile.department} Manager Dashboard</h1>
-          <p className="text-gold/60 text-[10px] uppercase tracking-widest mt-1">{profile.displayName} · {profile.occupation}</p>
+          <h1 className="text-2xl font-serif text-gold">{profile.department} Manager</h1>
+          <p className="text-gold/60 text-[9px] uppercase tracking-widest mt-1">{profile.displayName}</p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Tabs */}
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="flex bg-navy border border-gold/20 p-1">
             {[
               { key: 'requests', label: `Requests (${requests.filter(r => r.status !== 'Completed').length})` },
-              { key: 'sla', label: `SLA ${violations.length > 0 ? `(${violations.length})` : ''}` },
-              { key: 'staff', label: `Staff ${pendingStaff.length > 0 ? `(${pendingStaff.length})` : ''}` },
+              { key: 'sla', label: `SLA${violations.length > 0 ? ` (${violations.length})` : ''}` },
+              { key: 'staff', label: `Staff${pendingStaff.length > 0 ? ` (${pendingStaff.length})` : ''}` },
             ].map(tab => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-3 py-2 text-[9px] font-bold uppercase tracking-widest', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>
-                {tab.label}
-              </button>
+              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
-          <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-2 text-gold/60 hover:text-gold border border-gold/20 px-4 py-2 text-[9px] font-bold uppercase">
-            <LogOut size={14} /> Logout
+          <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase">
+            <LogOut size={12} /> Logout
           </button>
         </div>
       </header>
 
-      {/* SLA Alert Banner */}
       {violations.length > 0 && (
-        <div className="border border-red-600 p-4 flex items-center gap-4 " style={{ background: 'rgba(220,38,38,0.1)' }}>
-          <AlertCircle className="text-red-500" size={24} />
-          <div>
-            <h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''} IN {profile.department}</h3>
-            <p className="text-red-400/80 text-xs">Immediate attention required</p>
-          </div>
+        <div className="border border-red-600 p-3 flex items-center gap-3" style={{ background: 'rgba(220,38,38,0.1)' }}>
+          <AlertCircle className="text-red-500 flex-shrink-0" size={20} />
+          <div><h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''}</h3><p className="text-red-400/80 text-xs">Immediate attention required</p></div>
         </div>
       )}
 
-      {/* REQUESTS TAB */}
       {activeTab === 'requests' && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-serif text-gold">{profile.department} — All Requests</h2>
+        <div className="space-y-3">
+          <h2 className="text-lg font-serif text-gold">{profile.department} — All Requests</h2>
           {requests.length === 0 && <p className="text-white/20 italic font-serif py-12 text-center">No requests yet.</p>}
           {requests.map(req => {
             const over = getSLAExceeded(req);
             return (
-              <div key={req.id} className={cn('border p-5', over ? 'border-red-500 bg-red-900/10 ' : 'border-gold/10 bg-[#001c36]')}>
+              <div key={req.id} className={cn('border p-4', over ? 'border-red-500 bg-red-900/10' : 'border-gold/10 bg-[#001c36]')}>
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="flex gap-2 mb-2 flex-wrap">
-                      <span className={cn('text-[10px] font-bold px-2 py-1 border', req.status === 'Completed' ? 'border-green-500 text-green-400' : over ? 'border-red-500 text-red-400' : 'border-gold text-gold')}>{req.status}</span>
-                      {over && <span className="text-[10px] font-bold px-2 py-1 bg-red-600 text-white">⚠ SLA EXCEEDED</span>}
+                      <span className={cn('text-[9px] font-bold px-2 py-1 border', req.status === 'Completed' ? 'border-green-500 text-green-400' : over ? 'border-red-500 text-red-400' : 'border-gold text-gold')}>{req.status}</span>
+                      {over && <span className="text-[9px] font-bold px-2 py-1 bg-red-600 text-white">⚠ SLA EXCEEDED</span>}
                     </div>
-                    <p className="text-base font-serif text-white">{req.service}</p>
-                    <p className="text-[10px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to ? `Staff: ${req.assigned_to}` : 'Unassigned'}</p>
-                    {req.late_reason && <p className="text-[10px] text-red-400 mt-1 font-bold">⚠ Late Reason: {req.late_reason}</p>}
+                    <p className="text-sm font-serif text-white">{req.service}</p>
+                    <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to ? `Staff: ${req.assigned_to}` : 'Unassigned'}</p>
+                    {req.late_reason && <p className="text-[9px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
                   </div>
-                  <div className="text-right flex-shrink-0 ml-4">
-                    <p className="text-[10px] text-white/40">{new Date(req.created_at).toLocaleTimeString()}</p>
+                  <div className="text-right ml-4">
+                    <p className="text-[9px] text-white/40">{new Date(req.created_at).toLocaleTimeString()}</p>
                     {over && <p className="text-red-400 font-bold text-xs mt-1">{getElapsedMin(req.created_at)}m elapsed</p>}
                   </div>
                 </div>
@@ -968,26 +935,17 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         </div>
       )}
 
-      {/* SLA TAB */}
       {activeTab === 'sla' && (
-        <div className="space-y-6">
-          <h2 className="text-xl font-serif text-gold">SLA Monitoring — {profile.department}</h2>
-          <div className="bg-[#001c36] border border-gold/10 p-6">
-            <h3 className="text-lg font-serif text-white mb-4">Currently Delayed Tasks</h3>
-            {violations.length === 0 ? (
-              <p className="text-green-400 font-bold">✓ All tasks within SLA limits</p>
-            ) : (
+        <div className="space-y-4">
+          <h2 className="text-lg font-serif text-gold">SLA — {profile.department}</h2>
+          <div className="bg-[#001c36] border border-gold/10 p-5">
+            <h3 className="text-base font-serif text-white mb-3">Currently Delayed</h3>
+            {violations.length === 0 ? <p className="text-green-400 font-bold text-sm">✓ All within SLA</p> : (
               <div className="space-y-3">
                 {violations.map(req => (
-                  <div key={req.id} className="flex items-center justify-between p-4 bg-red-900/20 border border-red-500 ">
-                    <div>
-                      <p className="text-white font-bold">{req.assigned_to || 'Unassigned'}</p>
-                      <p className="text-[10px] text-red-400 uppercase">Room {req.guest_room} · {req.service}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-red-400 font-bold text-lg">{getElapsedMin(req.created_at)}m</p>
-                      <p className="text-[9px] text-white/40">SLA: {slaLimits[req.department as keyof typeof slaLimits] || 5}m</p>
-                    </div>
+                  <div key={req.id} className="flex items-center justify-between p-3 bg-red-900/20 border border-red-500">
+                    <div><p className="text-white font-bold text-sm">{req.assigned_to || 'Unassigned'}</p><p className="text-[9px] text-red-400 uppercase">Room {req.guest_room} · {req.service}</p></div>
+                    <div className="text-right"><p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m</p><p className="text-[9px] text-white/40">SLA: {slaLimits[req.department as keyof typeof slaLimits] || 5}m</p></div>
                   </div>
                 ))}
               </div>
@@ -996,62 +954,35 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         </div>
       )}
 
-      {/* STAFF TAB */}
       {activeTab === 'staff' && (
-        <div className="bg-[#001c36] border border-gold/10 p-6 space-y-6">
-          <h2 className="text-xl font-serif text-gold">{profile.department} Staff Management</h2>
-
-          {/* Pending approvals */}
+        <div className="bg-[#001c36] border border-gold/10 p-5 space-y-5">
+          <h2 className="text-lg font-serif text-gold">{profile.department} Staff</h2>
           {pendingStaff.length > 0 && (
             <div>
-              <h3 className="text-[11px] font-bold uppercase tracking-widest text-gold mb-4">Pending Approval ({pendingStaff.length})</h3>
-              <div className="space-y-3">
+              <h3 className="text-[10px] font-bold uppercase tracking-widest text-gold mb-3">Pending Approval ({pendingStaff.length})</h3>
+              <div className="space-y-2">
                 {pendingStaff.map(staff => (
-                  <div key={staff.id} className="flex items-center justify-between p-4 bg-navy/50 border border-gold/20">
-                    <div>
-                      <p className="text-white font-bold">{staff.name}</p>
-                      <p className="text-[9px] text-gold uppercase font-bold">{staff.occupation} · ID: {staff.staff_id}</p>
-                      <p className="text-[9px] text-white/40">{staff.email}</p>
-                    </div>
+                  <div key={staff.id} className="flex items-center justify-between p-3 bg-navy/50 border border-gold/20">
+                    <div><p className="text-white font-bold text-sm">{staff.name}</p><p className="text-[9px] text-gold uppercase font-bold">{staff.occupation} · {staff.staff_id}</p></div>
                     <div className="flex gap-2">
-                      <button onClick={() => approveStaff(staff.id)} className="px-4 py-2 bg-gold text-navy text-[9px] font-bold uppercase">Approve ✓</button>
-                      <button onClick={() => rejectStaff(staff.id)} className="px-4 py-2 bg-red-600 text-white text-[9px] font-bold uppercase">Reject</button>
+                      <button onClick={() => approveStaff(staff.id)} className="px-3 py-1.5 bg-gold text-navy text-[9px] font-bold uppercase">Approve ✓</button>
+                      <button onClick={() => rejectStaff(staff.id)} className="px-3 py-1.5 bg-red-600 text-white text-[9px] font-bold uppercase">Reject</button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-
-          {/* Approved staff */}
           <div>
-            <h3 className="text-[11px] font-bold uppercase tracking-widest text-gold mb-4">Approved Staff ({approvedStaff.length})</h3>
-            {approvedStaff.length === 0 ? <p className="text-white/20 italic">No approved staff yet.</p> : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead><tr className="bg-navy/50 text-gold text-[10px] uppercase tracking-widest border-b border-gold/20">
-                    <th className="p-4 text-left">Name</th>
-                    <th className="p-4 text-left">ID</th>
-                    <th className="p-4 text-left">Occupation</th>
-                    <th className="p-4 text-center">Tasks</th>
-                    <th className="p-4 text-center">Violations</th>
-                    <th className="p-4 text-right">Action</th>
-                  </tr></thead>
-                  <tbody>
-                    {approvedStaff.map(staff => (
-                      <tr key={staff.id} className="border-b border-gold/10 hover:bg-gold/5">
-                        <td className="p-4"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-gold/10 flex items-center justify-center text-gold font-bold border border-gold/20 text-xs">{staff.name?.[0]}</div><div><p className="text-sm text-white">{staff.name}</p><p className="text-[8px] text-white/40">{staff.email}</p></div></div></td>
-                        <td className="p-4 text-xs font-bold text-gold/80">{staff.staff_id || 'N/A'}</td>
-                        <td className="p-4 text-xs text-white/60">{staff.occupation}</td>
-                        <td className="p-4 text-center text-sm font-bold text-white">{staff.tasks_completed || 0}</td>
-                        <td className="p-4 text-center"><span className={cn('text-sm font-bold', (staff.violations || 0) > 0 ? 'text-red-400' : 'text-green-400')}>{staff.violations || 0}</span></td>
-                        <td className="p-4 text-right">
-                          <button onClick={() => terminateStaff(staff.id)} className="px-3 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Terminate</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-gold mb-3">Approved Staff ({approvedStaff.length})</h3>
+            {approvedStaff.length === 0 ? <p className="text-white/20 italic text-sm">No approved staff yet.</p> : (
+              <div className="space-y-2">
+                {approvedStaff.map(staff => (
+                  <div key={staff.id} className="flex items-center justify-between p-3 border border-gold/10">
+                    <div><p className="text-sm text-white font-bold">{staff.name}</p><p className="text-[9px] text-gold uppercase">{staff.occupation} · {staff.tasks_completed || 0} tasks · {staff.violations || 0} violations</p></div>
+                    <button onClick={() => terminateStaff(staff.id)} className="px-3 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Terminate</button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1062,7 +993,6 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
 };
 
 // ─── EXECUTIVE DASHBOARD ──────────────────────────────────────────────────────
-// Sees everything: all depts, all tabs including analytics + leaderboard
 const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [requests, setRequests] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
@@ -1083,7 +1013,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
 
   useEffect(() => {
     fetchData();
-    const channel = supabase.channel('executive-dashboard')
+    const channel = supabase.channel('exec-dash')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, fetchData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, fetchData)
       .subscribe();
@@ -1092,9 +1022,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
 
   const getSLAExceeded = (req: any) => {
     if (!req.created_at || req.status === 'Completed') return false;
-    const elapsed = (now - new Date(req.created_at).getTime()) / 1000;
-    const limit = (slaLimits[req.department as keyof typeof slaLimits] || 5) * 60;
-    return elapsed > limit;
+    return (now - new Date(req.created_at).getTime()) / 1000 > (slaLimits[req.department as keyof typeof slaLimits] || 5) * 60;
   };
   const getElapsedMin = (ts: any) => Math.floor((now - new Date(ts).getTime()) / 60000);
 
@@ -1102,22 +1030,10 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const completed = requests.filter(r => r.status === 'Completed').length;
   const pending = requests.filter(r => r.status !== 'Completed').length;
   const revenue = requests.reduce((s, r) => s + (r.total_price || 0), 0);
-
-  // Manager profiles needing executive approval
   const pendingManagers = staffList.filter(s => !s.approved && MANAGER_OCCUPATIONS.includes(s.occupation || ''));
-  // Regular staff (dept managers will handle these, but exec can see all)
-  const allPendingStaff = staffList.filter(s => !s.approved && !MANAGER_OCCUPATIONS.includes(s.occupation || ''));
   const approvedStaff = staffList.filter(s => s.approved);
-
-  // Leaderboard
-  const leaderboard = approvedStaff
-    .filter(s => (s.tasks_completed || 0) > 0)
-    .sort((a, b) => {
-      const aRate = (a.tasks_on_time || 0) / (a.tasks_completed || 1);
-      const bRate = (b.tasks_on_time || 0) / (b.tasks_completed || 1);
-      return bRate - aRate;
-    });
-
+  const allPendingCount = staffList.filter(s => !s.approved).length;
+  const leaderboard = approvedStaff.filter(s => (s.tasks_completed || 0) > 0).sort((a, b) => ((b.tasks_on_time || 0) / (b.tasks_completed || 1)) - ((a.tasks_on_time || 0) / (a.tasks_completed || 1)));
   const slaViolators = staffList.filter(s => (s.violations || 0) > 0).sort((a, b) => (b.violations || 0) - (a.violations || 0));
 
   const approveStaff = async (id: string) => { await supabase.from('staff').update({ approved: true }).eq('id', id); };
@@ -1151,95 +1067,88 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
       link.href = url; link.download = `SentinelPro_${reportPeriod}_${new Date().toISOString().split('T')[0]}.txt`;
       link.click(); URL.revokeObjectURL(url);
     } else {
-      alert(`✅ ${reportPeriod} report sent to all department managers.\n\nRecipients: Housekeeping, F&B, Concierge, Security, Front Office`);
+      alert(`✅ ${reportPeriod} report sent to all department managers.`);
     }
   };
 
-  const totalPending = pendingManagers.length + allPendingStaff.length;
-
   return (
-    <div className="min-h-screen bg-[#001529] text-white p-4 sm:p-8 space-y-6">
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gold/20 pb-6">
+    <div className="min-h-screen bg-[#001529] text-white p-4 sm:p-6 space-y-6">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gold/20 pb-4">
         <div>
-          <h1 className="text-2xl sm:text-4xl font-serif text-gold">Executive Operations Center</h1>
-          <p className="text-gold/60 text-[10px] uppercase tracking-widest mt-1">{profile.displayName} · All Departments</p>
+          <h1 className="text-2xl sm:text-3xl font-serif text-gold">Executive Operations Center</h1>
+          <p className="text-gold/60 text-[9px] uppercase tracking-widest mt-1">{profile.displayName} · All Departments</p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Report Button */}
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <div className="flex items-center bg-navy border border-gold/20">
-              <select value={reportPeriod} onChange={e => setReportPeriod(e.target.value as any)} className="bg-transparent text-gold text-[10px] font-bold uppercase px-3 py-2 outline-none">
+              <select value={reportPeriod} onChange={e => setReportPeriod(e.target.value as any)} className="bg-transparent text-gold text-[9px] font-bold uppercase px-2 py-2 outline-none">
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
               </select>
-              <button onClick={() => setReportMenuOpen(!reportMenuOpen)} className="flex items-center gap-2 bg-gold text-navy px-4 py-2 text-[10px] font-bold uppercase">
-                <FileText size={14} /> Report
+              <button onClick={() => setReportMenuOpen(!reportMenuOpen)} className="flex items-center gap-1 bg-gold text-navy px-3 py-2 text-[9px] font-bold uppercase">
+                <FileText size={12} /> Report
               </button>
             </div>
             <AnimatePresence>
               {reportMenuOpen && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="absolute right-0 mt-2 w-52 bg-navy border border-gold/30 shadow-2xl z-50">
-                  <button onClick={() => generateReport('pdf')} className="w-full px-5 py-3 text-left text-[10px] uppercase tracking-widest hover:bg-gold/10 flex items-center gap-3 border-b border-gold/10"><Download size={13} className="text-gold" /> Download PDF</button>
-                  <button onClick={() => generateReport('email')} className="w-full px-5 py-3 text-left text-[10px] uppercase tracking-widest hover:bg-gold/10 flex items-center gap-3 border-b border-gold/10"><Mail size={13} className="text-gold" /> Email to Departments</button>
-                  <button onClick={() => generateReport('csv')} className="w-full px-5 py-3 text-left text-[10px] uppercase tracking-widest hover:bg-gold/10 flex items-center gap-3"><ClipboardList size={13} className="text-gold" /> Export CSV</button>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="absolute right-0 mt-2 w-48 bg-navy border border-gold/30 shadow-2xl z-50">
+                  <button onClick={() => generateReport('pdf')} className="w-full px-4 py-3 text-left text-[9px] uppercase hover:bg-gold/10 flex items-center gap-2 border-b border-gold/10"><Download size={12} className="text-gold" /> Download PDF</button>
+                  <button onClick={() => generateReport('email')} className="w-full px-4 py-3 text-left text-[9px] uppercase hover:bg-gold/10 flex items-center gap-2 border-b border-gold/10"><Mail size={12} className="text-gold" /> Email to Departments</button>
+                  <button onClick={() => generateReport('csv')} className="w-full px-4 py-3 text-left text-[9px] uppercase hover:bg-gold/10 flex items-center gap-2"><ClipboardList size={12} className="text-gold" /> Export CSV</button>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
-          {/* Tabs */}
           <div className="flex bg-navy border border-gold/20 p-1 flex-wrap gap-0.5">
             {[
               { key: 'analytics', label: 'Analytics' },
               { key: 'leaderboard', label: 'Leaderboard' },
-              { key: 'sla', label: `SLA${violations.length > 0 ? ` (${violations.length})` : ''}` },
+              { key: 'sla', label: `SLA${violations.length > 0 ? `(${violations.length})` : ''}` },
               { key: 'requests', label: 'Requests' },
-              { key: 'staff', label: `Staff${totalPending > 0 ? ` (${totalPending})` : ''}` },
+              { key: 'staff', label: `Staff${allPendingCount > 0 ? `(${allPendingCount})` : ''}` },
             ].map(tab => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>
-                {tab.label}
-              </button>
+              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>{tab.label}</button>
             ))}
           </div>
-          <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-2 text-gold/60 hover:text-gold border border-gold/20 px-4 py-2 text-[9px] font-bold uppercase">
-            <LogOut size={14} /> Logout
+          <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase">
+            <LogOut size={12} /> Logout
           </button>
         </div>
       </header>
 
       {violations.length > 0 && (
-        <div className="border border-red-600 p-4 flex items-center gap-4 " style={{ background: 'rgba(220,38,38,0.1)' }}>
-          <AlertCircle className="text-red-500" size={24} />
+        <div className="border border-red-600 p-3 flex items-center gap-3" style={{ background: 'rgba(220,38,38,0.1)' }}>
+          <AlertCircle className="text-red-500 flex-shrink-0" size={20} />
           <div>
-            <h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''} ACROSS ALL DEPARTMENTS</h3>
-            <div className="flex gap-2 mt-1 flex-wrap">{violations.slice(0, 5).map(v => <span key={v.id} className="bg-red-600 text-white text-[9px] font-bold px-2 py-0.5">RM {v.guest_room}</span>)}</div>
+            <h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''}</h3>
+            <div className="flex gap-1 mt-1 flex-wrap">{violations.slice(0, 5).map(v => <span key={v.id} className="bg-red-600 text-white text-[8px] font-bold px-1.5 py-0.5">RM {v.guest_room}</span>)}</div>
           </div>
         </div>
       )}
 
-      {/* ANALYTICS */}
       {activeTab === 'analytics' && (
-        <div className="space-y-8">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: 'Total Revenue (AED)', value: revenue.toLocaleString(), color: '#C5A059' },
-              { label: 'Active Requests', value: pending, color: '#C5A059' },
+              { label: 'Revenue (AED)', value: revenue.toLocaleString(), color: '#C5A059' },
+              { label: 'Active', value: pending, color: '#C5A059' },
               { label: 'Completed', value: completed, color: '#4CAF50' },
               { label: 'SLA Violations', value: violations.length, color: violations.length > 0 ? '#EF4444' : '#4CAF50' },
             ].map(k => (
-              <div key={k.label} className="bg-[#001c36] border border-gold/10 p-6 text-center">
-                <div className="text-4xl font-serif mb-2" style={{ color: k.color }}>{k.value}</div>
-                <div className="text-[10px] uppercase tracking-widest text-white/40 font-bold">{k.label}</div>
+              <div key={k.label} className="bg-[#001c36] border border-gold/10 p-4 text-center">
+                <div className="text-3xl font-serif mb-1" style={{ color: k.color }}>{k.value}</div>
+                <div className="text-[9px] uppercase tracking-widest text-white/40 font-bold">{k.label}</div>
               </div>
             ))}
           </div>
-          <div className="bg-[#001c36] border border-gold/10 p-6">
-            <h3 className="text-lg font-serif text-white mb-4 flex items-center gap-2"><TrendingUp size={18} className="text-gold" /> Revenue — {reportPeriod}</h3>
-            <div className="h-[220px]">
+          <div className="bg-[#001c36] border border-gold/10 p-5">
+            <h3 className="text-base font-serif text-white mb-3 flex items-center gap-2"><TrendingUp size={16} className="text-gold" /> Revenue — {reportPeriod}</h3>
+            <div className="h-[200px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={revenueData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#C5A05920" vertical={false} />
-                  <XAxis dataKey="name" stroke="#FFF" fontSize={10} tickLine={false} axisLine={false} tick={{ fill: '#FFF', fontWeight: 'bold' }} />
-                  <YAxis stroke="#FFF" fontSize={10} tickLine={false} axisLine={false} tick={{ fill: '#FFF', fontWeight: 'bold' }} />
+                  <XAxis dataKey="name" stroke="#FFF" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: '#FFF', fontWeight: 'bold' }} />
+                  <YAxis stroke="#FFF" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: '#FFF', fontWeight: 'bold' }} />
                   <Tooltip contentStyle={{ backgroundColor: '#002349', border: '1px solid #C5A059' }} itemStyle={{ color: '#FFF', fontWeight: 'bold' }} />
                   <Bar dataKey="fb" name="F&B" stackId="a" fill="#C5A059" />
                   <Bar dataKey="car" name="Luxury Car" stackId="a" fill="#FFD700" />
@@ -1248,42 +1157,40 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
               </ResponsiveContainer>
             </div>
           </div>
-          <div className="bg-[#001c36] border border-gold/10 p-6">
-            <h3 className="text-lg font-serif text-white mb-4 flex items-center gap-2"><Star size={18} className="text-gold" /> Guest Feedback</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="bg-[#001c36] border border-gold/10 p-5">
+            <h3 className="text-base font-serif text-white mb-3 flex items-center gap-2"><Star size={16} className="text-gold" /> Guest Feedback</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {requests.filter(r => r.rating).map(req => (
-                <div key={req.id} className="bg-navy/30 p-4 border border-gold/10">
-                  <div className="flex gap-1 mb-2">{[...Array(5)].map((_, i) => <Star key={i} size={12} className={cn(i < (req.rating || 0) ? 'text-gold fill-gold' : 'text-white/10')} />)}</div>
-                  <p className="text-xs italic text-white/80 mb-2">"{req.feedback || 'No comment'}"</p>
-                  <p className="text-[9px] text-gold font-bold uppercase">Room #{req.guest_room} · {req.service}</p>
+                <div key={req.id} className="bg-navy/30 p-3 border border-gold/10">
+                  <div className="flex gap-1 mb-1">{[...Array(5)].map((_, i) => <Star key={i} size={10} className={cn(i < (req.rating || 0) ? 'text-gold fill-gold' : 'text-white/10')} />)}</div>
+                  <p className="text-xs italic text-white/80">"{req.feedback || 'No comment'}"</p>
+                  <p className="text-[8px] text-gold font-bold uppercase mt-1">Room #{req.guest_room} · {req.service}</p>
                 </div>
               ))}
-              {requests.filter(r => r.rating).length === 0 && <p className="col-span-full text-white/20 italic font-serif py-8 text-center">No feedback yet.</p>}
+              {requests.filter(r => r.rating).length === 0 && <p className="text-white/20 italic font-serif py-6 text-center text-sm">No feedback yet.</p>}
             </div>
           </div>
         </div>
       )}
 
-      {/* LEADERBOARD */}
       {activeTab === 'leaderboard' && (
-        <div className="bg-[#001c36] border border-gold/10 p-6 space-y-4">
-          <h2 className="text-2xl font-serif text-gold">Staff Performance Leaderboard</h2>
-          <p className="text-white/40 text-xs uppercase">Ranked by on-time completion rate · All Departments</p>
+        <div className="bg-[#001c36] border border-gold/10 p-5 space-y-4">
+          <h2 className="text-xl font-serif text-gold">Staff Performance Leaderboard</h2>
           {leaderboard.length === 0 ? <p className="text-white/20 italic font-serif py-12 text-center">No completed tasks yet.</p> : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {leaderboard.map((staff, idx) => {
                 const rate = Math.round(((staff.tasks_on_time || 0) / (staff.tasks_completed || 1)) * 100);
                 return (
-                  <div key={staff.id} className={cn('flex items-center gap-4 p-4 border', idx === 0 ? 'border-gold bg-gold/5' : 'border-gold/10 bg-navy/20')}>
-                    <div className="text-2xl w-8 text-center">{['🥇', '🥈', '🥉'][idx] || `#${idx + 1}`}</div>
-                    <div className="w-10 h-10 rounded-full bg-gold/10 flex items-center justify-center text-gold font-bold border border-gold/20 flex-shrink-0">{staff.name?.[0]}</div>
-                    <div className="flex-1">
-                      <p className="font-bold text-white">{staff.name}</p>
-                      <p className="text-[9px] text-gold uppercase">{staff.occupation} · {staff.department}</p>
+                  <div key={staff.id} className={cn('flex items-center gap-3 p-3 border', idx === 0 ? 'border-gold bg-gold/5' : 'border-gold/10 bg-navy/20')}>
+                    <div className="text-xl w-7 text-center">{['🥇', '🥈', '🥉'][idx] || `#${idx + 1}`}</div>
+                    <div className="w-8 h-8 rounded-full bg-gold/10 flex items-center justify-center text-gold font-bold border border-gold/20 text-xs flex-shrink-0">{staff.name?.[0]}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-white text-sm truncate">{staff.name}</p>
+                      <p className="text-[8px] text-gold uppercase">{staff.occupation} · {staff.department}</p>
                     </div>
-                    <div className="text-center px-3"><p className="text-lg font-serif text-green-400">{rate}%</p><p className="text-[8px] text-white/40 uppercase">On Time</p></div>
-                    <div className="text-center px-3"><p className="text-lg font-serif text-gold">{staff.tasks_completed || 0}</p><p className="text-[8px] text-white/40 uppercase">Tasks</p></div>
-                    <div className="text-center px-3"><p className={cn('text-lg font-serif', (staff.violations || 0) > 0 ? 'text-red-400' : 'text-green-400')}>{staff.violations || 0}</p><p className="text-[8px] text-white/40 uppercase">Violations</p></div>
+                    <div className="text-center px-2"><p className="text-base font-serif text-green-400">{rate}%</p><p className="text-[7px] text-white/40 uppercase">On Time</p></div>
+                    <div className="text-center px-2"><p className="text-base font-serif text-gold">{staff.tasks_completed || 0}</p><p className="text-[7px] text-white/40 uppercase">Tasks</p></div>
+                    <div className="text-center px-2"><p className={cn('text-base font-serif', (staff.violations || 0) > 0 ? 'text-red-400' : 'text-green-400')}>{staff.violations || 0}</p><p className="text-[7px] text-white/40 uppercase">Violations</p></div>
                   </div>
                 );
               })}
@@ -1292,49 +1199,40 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
         </div>
       )}
 
-      {/* SLA */}
       {activeTab === 'sla' && (
-        <div className="space-y-6">
-          <h2 className="text-xl font-serif text-gold">SLA Monitoring — All Departments</h2>
-          <div className="bg-[#001c36] border border-gold/10 p-6">
-            <h3 className="text-lg font-serif text-white mb-4">Currently Delayed Tasks</h3>
-            {violations.length === 0 ? <p className="text-green-400 font-bold">✓ All tasks within SLA</p> : (
-              <div className="space-y-3">
+        <div className="space-y-4">
+          <h2 className="text-xl font-serif text-gold">SLA Monitoring</h2>
+          <div className="bg-[#001c36] border border-gold/10 p-5">
+            <h3 className="text-base font-serif text-white mb-3">Currently Delayed</h3>
+            {violations.length === 0 ? <p className="text-green-400 font-bold text-sm">✓ All tasks within SLA</p> : (
+              <div className="space-y-2">
                 {violations.map(req => (
-                  <div key={req.id} className="flex items-center justify-between p-4 bg-red-900/20 border border-red-500 ">
-                    <div>
-                      <p className="text-white font-bold">{req.assigned_to || 'Unassigned'}</p>
-                      <p className="text-[10px] text-red-400 uppercase">{req.department} · Room {req.guest_room}</p>
-                      <p className="text-[10px] text-white/60">{req.service}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-red-400 font-bold text-lg">{getElapsedMin(req.created_at)}m</p>
-                      <p className="text-[9px] text-red-400 font-bold">+{getElapsedMin(req.created_at) - (slaLimits[req.department as keyof typeof slaLimits] || 5)}m OVER</p>
-                    </div>
+                  <div key={req.id} className="flex items-center justify-between p-3 bg-red-900/20 border border-red-500">
+                    <div><p className="text-white font-bold text-sm">{req.assigned_to || 'Unassigned'}</p><p className="text-[9px] text-red-400 uppercase">{req.department} · Room {req.guest_room} · {req.service}</p></div>
+                    <div className="text-right"><p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m</p><p className="text-[8px] text-red-400">+{getElapsedMin(req.created_at) - (slaLimits[req.department as keyof typeof slaLimits] || 5)}m OVER</p></div>
                   </div>
                 ))}
               </div>
             )}
           </div>
-          <div className="bg-[#001c36] border border-gold/10 p-6">
-            <h3 className="text-lg font-serif text-white mb-4">Staff Violation History</h3>
-            {slaViolators.length === 0 ? <p className="text-green-400 font-bold">✓ No violations recorded</p> : (
+          <div className="bg-[#001c36] border border-gold/10 p-5">
+            <h3 className="text-base font-serif text-white mb-3">Violation History</h3>
+            {slaViolators.length === 0 ? <p className="text-green-400 font-bold text-sm">✓ No violations recorded</p> : (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
-                  <thead><tr className="bg-navy/50 text-gold text-[10px] uppercase tracking-widest border-b border-gold/20">
-                    <th className="p-4 text-left">Staff</th><th className="p-4 text-left">Dept</th><th className="p-4 text-left">Occupation</th><th className="p-4 text-center">Tasks</th><th className="p-4 text-center">Violations</th><th className="p-4 text-center">Rate</th>
+                  <thead><tr className="bg-navy/50 text-gold text-[9px] uppercase tracking-widest border-b border-gold/20">
+                    <th className="p-3 text-left">Staff</th><th className="p-3 text-left">Dept</th><th className="p-3 text-center">Tasks</th><th className="p-3 text-center">Violations</th><th className="p-3 text-center">Rate</th>
                   </tr></thead>
                   <tbody>
                     {slaViolators.map(staff => {
                       const rate = (staff.tasks_completed || 0) > 0 ? Math.round(((staff.violations || 0) / staff.tasks_completed) * 100) : 0;
                       return (
                         <tr key={staff.id} className="border-b border-gold/10 hover:bg-red-900/10">
-                          <td className="p-4"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-red-900/30 flex items-center justify-center text-red-400 font-bold border border-red-500/30 text-xs">{staff.name?.[0]}</div><div><p className="text-sm text-white">{staff.name}</p><p className="text-[9px] text-white/40">{staff.email}</p></div></div></td>
-                          <td className="p-4 text-xs text-white/60 uppercase">{staff.department}</td>
-                          <td className="p-4 text-xs text-white/60">{staff.occupation}</td>
-                          <td className="p-4 text-center text-sm font-bold text-white">{staff.tasks_completed || 0}</td>
-                          <td className="p-4 text-center"><span className="bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-full">{staff.violations || 0}</span></td>
-                          <td className="p-4 text-center"><span className={cn('text-sm font-bold', rate > 30 ? 'text-red-400' : rate > 15 ? 'text-orange-400' : 'text-yellow-400')}>{rate}%</span></td>
+                          <td className="p-3 text-sm text-white">{staff.name}</td>
+                          <td className="p-3 text-xs text-white/60">{staff.department}</td>
+                          <td className="p-3 text-center text-sm font-bold text-white">{staff.tasks_completed || 0}</td>
+                          <td className="p-3 text-center"><span className="bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">{staff.violations || 0}</span></td>
+                          <td className="p-3 text-center"><span className={cn('text-sm font-bold', rate > 30 ? 'text-red-400' : 'text-orange-400')}>{rate}%</span></td>
                         </tr>
                       );
                     })}
@@ -1346,28 +1244,27 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
         </div>
       )}
 
-      {/* REQUESTS */}
       {activeTab === 'requests' && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-serif text-gold">All Department Requests</h2>
+        <div className="space-y-3">
+          <h2 className="text-xl font-serif text-gold">All Requests</h2>
           {requests.length === 0 && <p className="text-white/20 italic font-serif py-12 text-center">No requests yet.</p>}
           {requests.map(req => {
             const over = getSLAExceeded(req);
             return (
-              <div key={req.id} className={cn('border p-5', over ? 'border-red-500 bg-red-900/10 ' : 'border-gold/10 bg-[#001c36]')}>
+              <div key={req.id} className={cn('border p-4', over ? 'border-red-500 bg-red-900/10' : 'border-gold/10 bg-[#001c36]')}>
                 <div className="flex justify-between items-start">
                   <div>
-                    <div className="flex gap-2 mb-2 flex-wrap">
-                      <span className={cn('text-[10px] font-bold px-2 py-1 border', req.status === 'Completed' ? 'border-green-500 text-green-400' : over ? 'border-red-500 text-red-400' : 'border-gold text-gold')}>{req.status}</span>
-                      <span className="text-[10px] font-bold px-2 py-1 border border-gold/30 text-white/60">{req.department}</span>
-                      {over && <span className="text-[10px] font-bold px-2 py-1 bg-red-600 text-white">⚠ SLA EXCEEDED</span>}
+                    <div className="flex gap-2 mb-1 flex-wrap">
+                      <span className={cn('text-[9px] font-bold px-2 py-0.5 border', req.status === 'Completed' ? 'border-green-500 text-green-400' : over ? 'border-red-500 text-red-400' : 'border-gold text-gold')}>{req.status}</span>
+                      <span className="text-[9px] font-bold px-2 py-0.5 border border-gold/30 text-white/60">{req.department}</span>
+                      {over && <span className="text-[9px] font-bold px-2 py-0.5 bg-red-600 text-white">⚠ SLA EXCEEDED</span>}
                     </div>
-                    <p className="text-base font-serif text-white">{req.service}</p>
-                    <p className="text-[10px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to ? `Staff: ${req.assigned_to}` : 'Unassigned'}</p>
-                    {req.late_reason && <p className="text-[10px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
+                    <p className="text-sm font-serif text-white">{req.service}</p>
+                    <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to || 'Unassigned'}</p>
+                    {req.late_reason && <p className="text-[9px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
                   </div>
-                  <div className="text-right ml-4">
-                    <p className="text-[10px] text-white/40">{new Date(req.created_at).toLocaleTimeString()}</p>
+                  <div className="text-right ml-4 flex-shrink-0">
+                    <p className="text-[9px] text-white/40">{new Date(req.created_at).toLocaleTimeString()}</p>
                     {req.total_price && <p className="text-gold font-bold text-sm">{req.total_price} AED</p>}
                   </div>
                 </div>
@@ -1377,61 +1274,50 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
         </div>
       )}
 
-      {/* STAFF */}
       {activeTab === 'staff' && (
-        <div className="bg-[#001c36] border border-gold/10 p-6 space-y-8">
-          <h2 className="text-xl font-serif text-gold">Executive Staff Approval Center</h2>
-
-          {/* Manager approvals - Executive only sees these */}
+        <div className="bg-[#001c36] border border-gold/10 p-5 space-y-6">
+          <h2 className="text-xl font-serif text-gold">Staff Approval Center</h2>
           {pendingManagers.length > 0 && (
             <div>
-              <h3 className="text-[11px] font-bold uppercase tracking-widest text-gold mb-4 flex items-center gap-2"><ShieldCheck size={14} /> Manager Profiles Awaiting Your Approval ({pendingManagers.length})</h3>
-              <div className="space-y-3">
+              <h3 className="text-[10px] font-bold uppercase tracking-widest text-gold mb-3 flex items-center gap-2"><ShieldCheck size={12} /> Manager Profiles Awaiting Approval ({pendingManagers.length})</h3>
+              <div className="space-y-2">
                 {pendingManagers.map(staff => (
-                  <div key={staff.id} className="flex items-center justify-between p-4 bg-gold/5 border border-gold/30">
-                    <div>
-                      <p className="text-white font-bold">{staff.name}</p>
-                      <p className="text-[9px] text-gold uppercase font-bold">{staff.occupation} · {staff.department} · ID: {staff.staff_id}</p>
-                      <p className="text-[9px] text-white/40">{staff.email}</p>
-                    </div>
+                  <div key={staff.id} className="flex items-center justify-between p-3 bg-gold/5 border border-gold/30">
+                    <div><p className="text-white font-bold text-sm">{staff.name}</p><p className="text-[9px] text-gold uppercase font-bold">{staff.occupation} · {staff.department}</p><p className="text-[8px] text-white/40">{staff.email}</p></div>
                     <div className="flex gap-2">
-                      <button onClick={() => approveStaff(staff.id)} className="px-4 py-2 bg-gold text-navy text-[9px] font-bold uppercase">Approve ✓</button>
-                      <button onClick={() => deleteStaff(staff.id)} className="px-4 py-2 bg-red-600 text-white text-[9px] font-bold uppercase">Reject</button>
+                      <button onClick={() => approveStaff(staff.id)} className="px-3 py-1.5 bg-gold text-navy text-[9px] font-bold uppercase">Approve ✓</button>
+                      <button onClick={() => deleteStaff(staff.id)} className="px-3 py-1.5 bg-red-600 text-white text-[9px] font-bold uppercase">Reject</button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-
-          {/* All approved staff overview */}
           <div>
-            <h3 className="text-[11px] font-bold uppercase tracking-widest text-gold mb-4">All Approved Staff ({approvedStaff.length})</h3>
-            {approvedStaff.length === 0 ? <p className="text-white/20 italic">No approved staff yet.</p> : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead><tr className="bg-navy/50 text-gold text-[10px] uppercase tracking-widest border-b border-gold/20">
-                    <th className="p-4 text-left">Name</th><th className="p-4 text-left">ID</th><th className="p-4 text-left">Occupation</th><th className="p-4 text-left">Dept</th><th className="p-4 text-center">Tasks</th><th className="p-4 text-center">Violations</th><th className="p-4 text-right">Action</th>
-                  </tr></thead>
-                  <tbody>
-                    {approvedStaff.map(staff => (
-                      <tr key={staff.id} className="border-b border-gold/10 hover:bg-gold/5">
-                        <td className="p-4"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-gold/10 flex items-center justify-center text-gold font-bold border border-gold/20 text-xs">{staff.name?.[0]}</div><div><p className="text-sm text-white">{staff.name}</p><p className="text-[8px] text-white/40">{staff.email}</p></div></div></td>
-                        <td className="p-4 text-xs font-bold text-gold/80">{staff.staff_id || 'N/A'}</td>
-                        <td className="p-4 text-xs text-white/60">{staff.occupation}</td>
-                        <td className="p-4 text-xs uppercase text-white/60">{staff.department}</td>
-                        <td className="p-4 text-center text-sm font-bold text-white">{staff.tasks_completed || 0}</td>
-                        <td className="p-4 text-center"><span className={cn('text-sm font-bold', (staff.violations || 0) > 0 ? 'text-red-400' : 'text-green-400')}>{staff.violations || 0}</span></td>
-                        <td className="p-4 text-right"><div className="flex justify-end gap-2">
-                          <button onClick={() => terminateStaff(staff.id)} className="px-3 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Terminate</button>
-                          <button onClick={() => deleteStaff(staff.id)} className="px-3 py-1 bg-red-600 text-white text-[8px] font-bold uppercase">Delete</button>
-                        </div></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-gold mb-3">All Approved Staff ({approvedStaff.length})</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead><tr className="bg-navy/50 text-gold text-[9px] uppercase tracking-widest border-b border-gold/20">
+                  <th className="p-3 text-left">Name</th><th className="p-3 text-left">Occupation</th><th className="p-3 text-left">Dept</th><th className="p-3 text-center">Tasks</th><th className="p-3 text-center">Violations</th><th className="p-3 text-right">Action</th>
+                </tr></thead>
+                <tbody>
+                  {approvedStaff.map(staff => (
+                    <tr key={staff.id} className="border-b border-gold/10 hover:bg-gold/5">
+                      <td className="p-3 text-sm text-white">{staff.name}</td>
+                      <td className="p-3 text-xs text-white/60">{staff.occupation}</td>
+                      <td className="p-3 text-xs text-white/60 uppercase">{staff.department}</td>
+                      <td className="p-3 text-center text-sm font-bold text-white">{staff.tasks_completed || 0}</td>
+                      <td className="p-3 text-center"><span className={cn('text-sm font-bold', (staff.violations || 0) > 0 ? 'text-red-400' : 'text-green-400')}>{staff.violations || 0}</span></td>
+                      <td className="p-3 text-right"><div className="flex justify-end gap-1">
+                        <button onClick={() => terminateStaff(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Terminate</button>
+                        <button onClick={() => deleteStaff(staff.id)} className="px-2 py-1 bg-red-600 text-white text-[8px] font-bold uppercase">Delete</button>
+                      </div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {approvedStaff.length === 0 && <p className="text-white/20 italic py-8 text-center text-sm">No approved staff yet.</p>}
+            </div>
           </div>
         </div>
       )}
@@ -1467,31 +1353,16 @@ export default function App() {
     setLoading(false);
   }, []);
 
-  // Fetch guest requests
   useEffect(() => {
     if (!profile || profile.role !== 'guest') return;
     const fetchRequests = async () => {
-      const { data, error } = await supabase
-        .from('requests')
-        .select('*')
-        .eq('guest_id', profile.uid)
-        .order('created_at', { ascending: false });
-
-      if (error) { console.error('Guest requests error:', error); return; }
+      const { data } = await supabase.from('requests').select('*').eq('guest_id', profile.uid).order('created_at', { ascending: false });
       if (data) {
         const mapped = data.map((row: any) => ({
-          id: row.id,
-          roomNumber: row.guest_room || '',
-          type: row.service || '',
-          message: row.notes,
-          department: row.department,
-          status: row.status,
-          guestId: row.guest_id,
-          timestamp: row.created_at,
-          totalPrice: row.total_price,
-          rating: row.rating,
-          feedbackComment: row.feedback,
-          feedbackDismissed: row.feedback_dismissed,
+          id: row.id, roomNumber: row.guest_room || '', type: row.service || '',
+          message: row.notes, department: row.department, status: row.status,
+          guestId: row.guest_id, timestamp: row.created_at, totalPrice: row.total_price,
+          rating: row.rating, feedbackComment: row.feedback, feedbackDismissed: row.feedback_dismissed,
           assignedStaffName: row.assigned_to,
         }));
         setRequests(mapped);
@@ -1516,25 +1387,16 @@ export default function App() {
     const totalPrice = Object.entries(cart).reduce((acc, [id, qty]) => acc + (menuPrices[id] || 0) * qty, 0) || customData?.totalPrice || 0;
     try {
       const { error } = await supabase.from('requests').insert({
-        guest_room: roomNumber,
-        guest_id: profile.uid,
-        guest_name: profile.displayName,
-        service: service.type || service.name,
-        service_key: service.serviceKey,
+        guest_room: roomNumber, guest_id: profile.uid, guest_name: profile.displayName,
+        service: service.type || service.name, service_key: service.serviceKey,
         notes: customData?.notes || message || dietaryRequirements,
         department: service.dept || customData?.dept || 'Front Office',
-        status: 'Pending',
-        total_price: totalPrice > 0 ? totalPrice : null,
-        language,
-        created_at: new Date().toISOString(),
+        status: 'Pending', total_price: totalPrice > 0 ? totalPrice : null,
+        language, created_at: new Date().toISOString(),
       });
       if (error) throw error;
-      setShowRequestModal(false);
-      setMessage('');
-      setSelectedService(null);
-      setCart({});
-      setDietaryRequirements('');
-      setGuestTab('services');
+      setShowRequestModal(false); setMessage(''); setSelectedService(null);
+      setCart({}); setDietaryRequirements(''); setGuestTab('services');
       alert(t('registration_submitted_successfully'));
     } catch (e: any) { alert(e.message); }
   };
@@ -1547,13 +1409,12 @@ export default function App() {
 
   const navigateToStaff = () => { window.history.pushState({}, '', '/staff-portal'); setPathname('/staff-portal'); };
 
-  // Determine which dashboard to show for manager role
   const isExecutive = profile?.role === 'manager' && profile?.department === 'None';
   const isDeptManager = profile?.role === 'manager' && profile?.department !== 'None';
 
   if (loading) return (
     <div className="min-h-screen bg-navy flex items-center justify-center">
-      <div className="text-gold font-serif text-2xl ">Loading...</div>
+      <div className="text-gold font-serif text-2xl animate-pulse">Loading...</div>
     </div>
   );
 
@@ -1574,34 +1435,23 @@ export default function App() {
                   <Auth onLoginSuccess={p => setProfile(p)} initialRoom={roomNumber} isLocked={isRoomLocked} onNavigateToStaff={navigateToStaff} />
                 )}
               </motion.div>
-
             ) : isExecutive ? (
-              <motion.div key="executive" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <ExecutiveDashboard profile={profile} />
-              </motion.div>
-
+              <motion.div key="executive" initial={{ opacity: 0 }} animate={{ opacity: 1 }}><ExecutiveDashboard profile={profile} /></motion.div>
             ) : isDeptManager ? (
-              <motion.div key="deptmgr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <DeptManagerDashboard profile={profile} />
-              </motion.div>
-
+              <motion.div key="deptmgr" initial={{ opacity: 0 }} animate={{ opacity: 1 }}><DeptManagerDashboard profile={profile} /></motion.div>
             ) : profile.role === 'staff' ? (
-              <motion.div key="staff" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <StaffPortal userProfile={profile} />
-              </motion.div>
-
+              <motion.div key="staff" initial={{ opacity: 0 }} animate={{ opacity: 1 }}><StaffPortal userProfile={profile} /></motion.div>
             ) : (
-              // GUEST
-              <motion.div key="guest" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <motion.div key="guest" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 {guestTab === 'services' && (
                   <>
-                    <div className="bg-navy p-6 sm:p-12 shadow-2xl mb-8 sm:mb-16">
-                      <h2 className="text-3xl sm:text-5xl font-serif tracking-tight text-white mb-4 sm:mb-6 leading-tight">
+                    <div className="bg-navy p-5 sm:p-10 shadow-2xl mb-6">
+                      <h2 className="text-2xl sm:text-4xl font-serif text-white mb-3 leading-tight">
                         {new Date().getHours() < 12 ? t('greeting_morning') : new Date().getHours() < 17 ? t('greeting_afternoon') : t('greeting_evening')}, <span className="text-gold italic">{profile.displayName}</span>
                       </h2>
-                      <p className="text-white/70 max-w-2xl font-serif text-base sm:text-lg italic">{t('welcome_sanctuary')}</p>
+                      <p className="text-white/70 max-w-2xl font-serif text-sm sm:text-base italic">{t('welcome_sanctuary')}</p>
                     </div>
-                    <div className="dashboard-grid">
+                    <div className="dashboard-grid px-4">
                       {[
                         { name: t('housekeeping'), icon: Sparkles, dept: 'Housekeeping', serviceKey: 'housekeeping', options: [t('room_cleaning'), t('laundry'), t('extra_blanket')] },
                         { name: t('room_service'), icon: Coffee, dept: 'F&B', serviceKey: 'room_service' },
@@ -1616,48 +1466,46 @@ export default function App() {
                           else if (service.serviceKey === 'concierge_services') setGuestTab('concierge');
                           else { setSelectedService(service); if (service.options) setMessage(service.options[0]); setShowRequestModal(true); }
                         }} className="premium-card">
-                          <div className="icon-wrapper"><service.icon size={28} className="text-gold" strokeWidth={1} /></div>
-                          <h3>{service.name}</h3>
+                          <div className="icon-wrapper"><service.icon size={24} className="text-gold" strokeWidth={1} /></div>
+                          <h3 className="text-xs sm:text-sm">{service.name}</h3>
                         </button>
                       ))}
                     </div>
 
-                    {/* Guest request tracker */}
+                    {/* REQUEST STATUS TRACKER */}
                     {requests.length > 0 && (
-                      <section className="mt-12 space-y-4 px-4">
-                        <h2 className="text-sm font-bold text-gold uppercase tracking-[0.2em] border-b border-gold/20 pb-2">Your Requests</h2>
-                        <div className="divide-y divide-navy/10">
+                      <section className="mt-8 px-4">
+                        <div className="flex items-center gap-2 mb-4 border-b border-gold/20 pb-2">
+                          <ClipboardList size={14} className="text-gold" />
+                          <h2 className="text-[10px] font-bold text-gold uppercase tracking-[0.25em]">Your Active Requests</h2>
+                        </div>
+                        <div className="space-y-2">
                           {requests.map(req => (
-                            <div key={req.id} className="flex items-center justify-between py-4">
+                            <div key={req.id} className="flex items-center justify-between p-3 border border-navy/10 bg-white shadow-sm">
                               <div className="flex items-center gap-3">
-                                <div className={cn('w-8 h-8 flex items-center justify-center rounded-full', req.status === 'Completed' ? 'bg-green-50 text-green-600' : 'bg-gold/5 text-gold')}>
-                                  {req.status === 'Completed' ? <CheckCircle2 size={16} /> : <Clock size={16} />}
+                                <div className={cn('w-7 h-7 flex items-center justify-center rounded-full border', statusColor(req.status))}>
+                                  {statusIcon(req.status)}
                                 </div>
                                 <div>
                                   <span className="text-navy font-bold text-sm font-serif block">{req.type}</span>
                                   {req.status === 'In Progress' && req.assignedStaffName && (
-                                    <span className="text-[8px] text-blue-600 font-bold uppercase ">{req.assignedStaffName} is on the way!</span>
+                                    <span className="text-[8px] text-blue-600 font-bold uppercase">✓ {req.assignedStaffName} is handling this</span>
                                   )}
-                                  {req.totalPrice && <span className="text-[9px] text-gold font-bold block">AED {req.totalPrice.toLocaleString()}</span>}
+                                  {req.totalPrice && <span className="text-[8px] text-gold font-bold block">AED {req.totalPrice.toLocaleString()}</span>}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className={cn('text-[10px] uppercase tracking-widest font-bold', req.status === 'Completed' ? 'text-green-600' : req.status === 'In Progress' ? 'text-blue-600' : 'text-navy/40')}>{req.status}</span>
-                                <ChevronRight size={14} className="text-gold/30" />
-                              </div>
+                              <span className={cn('text-[9px] font-bold px-2 py-1 border rounded-full', statusColor(req.status))}>{req.status}</span>
                             </div>
                           ))}
                         </div>
                       </section>
                     )}
+
+                    <GuestFooter />
                   </>
                 )}
                 {guestTab === 'room-service' && (
-                  <RoomService
-                    cart={cart}
-                    updateCart={(id, delta) => setCart(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }))}
-                    onSubmit={notes => submitRequest({ type: t('room_service'), serviceKey: 'room_service', dept: 'F&B', notes })}
-                  />
+                  <RoomService cart={cart} updateCart={(id, delta) => setCart(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }))} onSubmit={notes => submitRequest({ type: t('room_service'), serviceKey: 'room_service', dept: 'F&B', notes })} />
                 )}
                 {guestTab === 'restaurant-bookings' && (
                   <RestaurantBooking onSubmit={data => submitRequest({ ...data, serviceKey: 'restaurant_bookings', dept: 'F&B' })} />
@@ -1673,37 +1521,28 @@ export default function App() {
 
       <AnimatePresence>
         {feedbackRequest && (
-          <FeedbackModal
-            request={feedbackRequest}
-            onClose={async () => {
-              await supabase.from('requests').update({ feedback_dismissed: true }).eq('id', feedbackRequest.id);
-              setFeedbackRequest(null);
-            }}
-            onSubmit={submitFeedback}
-          />
+          <FeedbackModal request={feedbackRequest} onClose={async () => { await supabase.from('requests').update({ feedback_dismissed: true }).eq('id', feedbackRequest.id); setFeedbackRequest(null); }} onSubmit={submitFeedback} />
         )}
       </AnimatePresence>
 
       <AnimatePresence>
         {showRequestModal && selectedService && (
           <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/80 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-[#FCF9F2] border border-[#C5A059] w-full max-w-md p-10 relative shadow-2xl">
-              <button onClick={() => setShowRequestModal(false)} className="absolute top-6 right-6 text-navy/40 hover:text-navy"><X size={24} /></button>
-              <h2 className="text-3xl font-serif text-navy mb-8">{selectedService.name}</h2>
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-[#FCF9F2] border border-[#C5A059] w-full max-w-md p-8 relative shadow-2xl">
+              <button onClick={() => setShowRequestModal(false)} className="absolute top-5 right-5 text-navy/40 hover:text-navy"><X size={20} /></button>
+              <h2 className="text-2xl font-serif text-navy mb-6">{selectedService.name}</h2>
               {selectedService.options ? (
-                <div className="space-y-6 mb-8">
-                  <div className="space-y-4">
-                    <p className="text-[10px] uppercase tracking-widest text-navy/50 font-bold">{t('select_option')}</p>
-                    <div className="grid grid-cols-1 gap-2">
-                      {selectedService.options.map((opt: string) => (
-                        <button key={opt} onClick={() => setMessage(opt)} className={cn('w-full p-4 text-left border transition-all text-sm', message === opt ? 'border-gold bg-gold/5 text-navy' : 'border-navy/10 text-navy/60')}>{opt}</button>
-                      ))}
-                    </div>
+                <div className="space-y-4 mb-6">
+                  <p className="text-[9px] uppercase tracking-widest text-navy/50 font-bold">{t('select_option')}</p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {selectedService.options.map((opt: string) => (
+                      <button key={opt} onClick={() => setMessage(opt)} className={cn('w-full p-3 text-left border transition-all text-sm', message === opt ? 'border-gold bg-gold/5 text-navy' : 'border-navy/10 text-navy/60')}>{opt}</button>
+                    ))}
                   </div>
-                  <textarea value={dietaryRequirements} onChange={e => setDietaryRequirements(e.target.value)} placeholder={t('message_placeholder')} className="h-24 resize-none w-full bg-white text-navy border border-gold p-4" />
+                  <textarea value={dietaryRequirements} onChange={e => setDietaryRequirements(e.target.value)} placeholder={t('message_placeholder')} className="h-20 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
                 </div>
               ) : (
-                <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder={t('message_placeholder')} className="h-32 resize-none w-full bg-white text-navy border border-gold p-4 mb-8" />
+                <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder={t('message_placeholder')} className="h-28 resize-none w-full bg-white text-navy border border-gold p-3 text-sm mb-6" />
               )}
               <button onClick={() => submitRequest()} className="gold-button w-full m-0">{t('submit')}</button>
             </motion.div>
