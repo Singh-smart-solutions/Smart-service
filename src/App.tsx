@@ -4,12 +4,12 @@ import { UserProfile, ServiceRequest, Department } from './types';
 import { cn } from './lib/utils';
 import {
   LogOut, Clock, CheckCircle2, AlertCircle, ChevronRight,
-  Shield, Coffee, Key, Sparkles, UtensilsCrossed, Send, X,
+  Shield, Coffee, Key, Sparkles, UtensilsCrossed, X,
   Globe, Home, Plus, Minus, Check, ChevronDown,
   User, ClipboardList, TrendingUp, Star, ShieldCheck,
   Car, MapPin, Briefcase, Zap, FileText, Mail, Download,
   Phone, ArrowRight, QrCode, Settings, Wrench, BedDouble,
-  AlertTriangle, Bell, RefreshCw
+  Bell, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage, Language } from './contexts/TranslationContext';
@@ -19,10 +19,6 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 const MANAGER_OCCUPATIONS = [
   'Housekeeping Manager', 'F&B Manager', 'Concierge Manager',
   'Security Manager', 'Front Office Manager', 'Executive',
-];
-
-const MAINTENANCE_OCCUPATIONS = [
-  'Maintenance Technician', 'Maintenance Supervisor', 'Front Office Manager',
 ];
 
 const DEPT_FROM_OCCUPATION: Record<string, Department> = {
@@ -45,17 +41,19 @@ const DELAY_REASONS = [
 ];
 
 const ROOM_STATUSES = [
+  { key: 'Clean', color: 'bg-green-500', label: '🟢 Clean' },
   { key: 'Dirty', color: 'bg-red-500', label: '🔴 Dirty' },
   { key: 'Cleaning', color: 'bg-yellow-500', label: '🟡 Cleaning' },
   { key: 'Inspected', color: 'bg-orange-500', label: '🟠 Inspected' },
-  { key: 'Clean', color: 'bg-green-500', label: '🟢 Clean' },
   { key: 'Do Not Disturb', color: 'bg-purple-500', label: '🟣 Do Not Disturb' },
   { key: 'Out of Order', color: 'bg-gray-500', label: '⚫ Out of Order' },
+  { key: 'Checked Out', color: 'bg-blue-500', label: '🔵 Checked Out' },
 ];
 
 const MAINTENANCE_CATEGORIES = [
-  'Plumbing', 'Electrical', 'HVAC / Air Conditioning', 'Furniture',
-  'TV / Electronics', 'Door / Lock', 'Bathroom Fixtures', 'Lighting', 'Other',
+  'AC / Heating Issue', 'Plumbing Issue', 'Electrical Issue', 'TV / Electronics',
+  'Door / Lock Issue', 'Furniture Damage', 'Lighting Issue', 'Bathroom Fixtures',
+  'Safe Box Issue', 'Internet / WiFi', 'Minibar', 'Other',
 ];
 
 const MENU_ITEMS = [
@@ -123,13 +121,15 @@ const GlobalLanguageSelector: React.FC = () => {
   );
 };
 
-// ─── HEADER ───────────────────────────────────────────────────────────────────
-const Header: React.FC<{ roomNumber: string; user: any; logout: () => void; navigateToGuest: () => void }> = ({ roomNumber, user, logout, navigateToGuest }) => {
+// ─── HEADER — shown for ALL roles including guests ─────────────────────────────
+const Header: React.FC<{ roomNumber: string; user: any; logout: () => void; navigateToGuest: () => void; role?: string }> = ({ roomNumber, user, logout, navigateToGuest, role }) => {
   const { t, isRTL } = useLanguage();
   return (
     <nav className="sticky-header">
       <div className={cn('flex items-center px-3', isRTL && 'flex-row-reverse')}>
-        {user && <button onClick={navigateToGuest} className="p-1.5 text-gold hover:text-white"><Home size={16} strokeWidth={1.5} /></button>}
+        {user && role === 'guest' && (
+          <button onClick={navigateToGuest} className="p-1.5 text-gold hover:text-white"><Home size={16} strokeWidth={1.5} /></button>
+        )}
       </div>
       <div className="logo-container cursor-pointer flex-1 flex justify-center" onClick={navigateToGuest}>
         <div className="flex flex-col items-center">
@@ -137,9 +137,19 @@ const Header: React.FC<{ roomNumber: string; user: any; logout: () => void; navi
           <span className="text-[6px] sm:text-[7px] font-bold text-gold/60 uppercase tracking-[0.25em]">Luxury Hotel & Residences</span>
         </div>
       </div>
-      <div className={cn('flex items-center px-3', isRTL && 'flex-row-reverse')}>
-        {user && roomNumber && <div className="flex flex-col items-end mr-2 hidden sm:flex"><span className="text-[9px] font-bold text-white tracking-widest uppercase">{t('room')} {roomNumber}</span></div>}
-        {user && <button onClick={logout} className="p-1.5 text-gold hover:text-white"><LogOut size={16} strokeWidth={1} /></button>}
+      <div className={cn('flex items-center gap-2 px-3', isRTL && 'flex-row-reverse')}>
+        {user && role === 'guest' && roomNumber && (
+          <div className="flex flex-col items-end hidden sm:flex">
+            <span className="text-[9px] font-bold text-white tracking-widest uppercase">{t('room')} {roomNumber}</span>
+          </div>
+        )}
+        {/* Logout button shows for ALL roles */}
+        {user && (
+          <button onClick={logout} className="flex items-center gap-1.5 text-gold hover:text-white border border-gold/30 px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest transition-all hover:border-gold">
+            <LogOut size={13} strokeWidth={1.5} />
+            <span className="hidden sm:block">Logout</span>
+          </button>
+        )}
       </div>
     </nav>
   );
@@ -270,20 +280,21 @@ const RestaurantBooking: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubm
   const { t } = useLanguage();
   const [data, setData] = useState({ restaurant: 'turquoise', pax: '2', date: '', time: '', notes: '' });
   const restaurants = [
-    { id: 'turquoise', name: t('turquoise'), desc: t('international_cuisine') },
-    { id: 'mermaid', name: t('mermaid'), desc: t('mediterranean_cuisine') },
-    { id: 'lolivo', name: t('lolivo'), desc: t('italian_cuisine') },
+    { id: 'turquoise', name: 'Turquoise', desc: 'International Cuisine' },
+    { id: 'mermaid', name: 'The Mermaid', desc: 'Mediterranean Cuisine' },
+    { id: 'lolivo', name: "L'Olivo", desc: 'Italian Fine Dining' },
   ];
   return (
     <div className="w-full py-6 space-y-5 px-4 sm:px-8">
       <div className="text-center space-y-1">
         <h2 className="text-2xl font-serif text-navy">{t('restaurant_bookings')}</h2>
-        <p className="text-gold text-[9px] uppercase tracking-widest font-bold">{t('reserve_table')}</p>
+        <p className="text-gold text-[9px] uppercase tracking-widest font-bold">Reserve Your Table</p>
       </div>
       <div className="grid grid-cols-1 gap-2">
         {restaurants.map(r => (
           <button key={r.id} onClick={() => setData({ ...data, restaurant: r.id })} className={cn('p-3 border text-left', data.restaurant === r.id ? 'border-gold bg-gold/5' : 'border-navy/10')}>
-            <p className="text-navy font-bold text-sm">{r.name}</p><p className="text-[9px] text-navy/60 italic">{r.desc}</p>
+            <p className="text-navy font-bold text-sm">{r.name}</p>
+            <p className="text-[9px] text-navy/60 italic">{r.desc}</p>
           </button>
         ))}
       </div>
@@ -464,7 +475,7 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
             <div className="space-y-1">
               <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Room Number</label>
               <input type="text" required disabled={isLocked} value={roomNumber} onChange={e => setRoomNumber(e.target.value)} className={cn('login-input', isLocked && 'opacity-60 cursor-not-allowed bg-gold/10')} placeholder="Room number" />
-              {isLocked && <p className="text-[8px] text-gold/60 italic">Room pre-filled from QR code</p>}
+              {isLocked && <p className="text-[8px] text-gold/60 italic">✓ Room pre-filled from QR code</p>}
             </div>
             <button type="submit" disabled={loading} className="gold-button w-full">{loading ? '...' : t('sign_in')}</button>
           </form>
@@ -500,8 +511,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
           name: fullName, staff_id: staffIdNumber, email, password,
           department: derivedDept, occupation, approved: false,
           needs_executive_approval: isManagerOccupation,
-          logged_in: false, tasks_completed: 0, tasks_on_time: 0, violations: 0,
-          failed_attempts: 0,
+          logged_in: false, tasks_completed: 0, tasks_on_time: 0, violations: 0, failed_attempts: 0,
         });
         if (error) throw error;
         setPendingMessage(isManagerOccupation
@@ -511,27 +521,21 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
       } else {
         const { data: staffData, error } = await supabase.from('staff').select('*').eq('email', email).single();
         if (error || !staffData) { alert('Invalid credentials.'); setLoading(false); return; }
-
-        // Check account lockout
         if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) {
           alert(`Account locked until ${new Date(staffData.locked_until).toLocaleTimeString()}. Too many failed attempts.`);
           setLoading(false); return;
         }
-
-        // Check password
         if (staffData.password !== password) {
           const attempts = (staffData.failed_attempts || 0) + 1;
           const lockUntil = attempts >= 5 ? new Date(Date.now() + 30 * 60000).toISOString() : null;
           await supabase.from('staff').update({ failed_attempts: attempts, ...(lockUntil ? { locked_until: lockUntil } : {}) }).eq('id', staffData.id);
-          alert(attempts >= 5 ? 'Account locked for 30 minutes due to too many failed attempts.' : `Invalid password. ${5 - attempts} attempts remaining.`);
+          alert(attempts >= 5 ? 'Account locked for 30 minutes.' : `Invalid password. ${5 - attempts} attempts remaining.`);
           setLoading(false); return;
         }
-
         if (!staffData.approved) { alert('ACCESS DENIED: Your account is pending approval.'); setLoading(false); return; }
         const deviceId = getDeviceId();
-        if (staffData.device_id && staffData.device_id !== deviceId) { alert('ACCESS DENIED: This account is active on another device. Contact your manager to reset.'); setLoading(false); return; }
+        if (staffData.device_id && staffData.device_id !== deviceId) { alert('ACCESS DENIED: Account active on another device. Contact your manager to reset.'); setLoading(false); return; }
         await supabase.from('staff').update({ device_id: deviceId, logged_in: true, failed_attempts: 0, locked_until: null }).eq('id', staffData.id);
-
         const isManager = MANAGER_OCCUPATIONS.includes(staffData.occupation || '');
         const profile: UserProfile = {
           uid: staffData.id, email: staffData.email, displayName: staffData.name,
@@ -550,8 +554,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
       <AnimatePresence>
         {showPending && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[5000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
-            <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="bg-[#001c36] p-10 text-center border-2 border-gold max-w-lg shadow-xl relative">
-              <div className="absolute top-0 left-0 w-full h-1 bg-gold" />
+            <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="bg-[#001c36] p-10 text-center border-2 border-gold max-w-lg shadow-xl">
               <ShieldCheck className="w-16 h-16 text-gold mx-auto mb-6" strokeWidth={1} />
               <h2 className="text-3xl font-serif text-white mb-4">Profile Submitted</h2>
               <p className="text-white/70 text-sm font-serif italic mb-8">{pendingMessage}</p>
@@ -629,29 +632,23 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const [delayReason, setDelayReason] = useState('');
   const [forwardModalTask, setForwardModalTask] = useState<any | null>(null);
   const [forwardDept, setForwardDept] = useState<Department>('Housekeeping');
-  const [maintenanceForm, setMaintenanceForm] = useState({ room: '', category: 'Plumbing', description: '', priority: 'Normal' });
+  const [maintenanceForm, setMaintenanceForm] = useState({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
 
   const isHousekeeping = userProfile.department === 'Housekeeping';
-  const isMaintenance = MAINTENANCE_OCCUPATIONS.includes(userProfile.occupation || '') ||
-    userProfile.department === 'Front Office';
+  const isMaintenance = ['Maintenance Technician', 'Maintenance Supervisor', 'Front Office Manager', 'Front Office Agent', 'Front Office Supervisor'].includes(userProfile.occupation || '') || userProfile.department === 'Front Office';
 
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
 
   const fetchSLA = async () => {
     const { data } = await supabase.from('sla_settings').select('*');
-    if (data) {
-      const map: any = {};
-      data.forEach((s: any) => { map[s.department] = s.sla_minutes; });
-      setSlaSettings(map);
-    }
+    if (data) { const map: any = {}; data.forEach((s: any) => { map[s.department] = s.sla_minutes; }); setSlaSettings(map); }
   };
 
   const mapRow = (row: any) => ({
     id: row.id, roomNumber: row.guest_room || '', type: row.service || '',
     message: row.notes, department: row.department, status: row.status,
     guestId: row.guest_id || '', guestName: row.guest_name, timestamp: row.created_at,
-    assignedStaffName: row.assigned_to, delayReason: row.late_reason,
-    lineItems: row.line_items,
+    assignedStaffName: row.assigned_to, delayReason: row.late_reason, lineItems: row.line_items,
   });
 
   const fetchTasks = useCallback(async () => {
@@ -729,20 +726,27 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   };
 
   const submitMaintenanceRequest = async () => {
-    if (!maintenanceForm.room || !maintenanceForm.description) { alert('Please fill in room number and description.'); return; }
+    if (!maintenanceForm.room || !maintenanceForm.description) { alert('Please fill in room/location and description.'); return; }
     await supabase.from('requests').insert({
       guest_room: maintenanceForm.room, guest_id: 'maintenance', guest_name: userProfile.displayName,
-      service: `Maintenance: ${maintenanceForm.category}`, notes: `${maintenanceForm.description} [Priority: ${maintenanceForm.priority}]`,
+      service: `Maintenance: ${maintenanceForm.category}`,
+      notes: `${maintenanceForm.description} [Priority: ${maintenanceForm.priority}]`,
       department: 'Front Office', status: 'Pending', created_at: new Date().toISOString(),
     });
     alert('✅ Maintenance request submitted.');
-    setMaintenanceForm({ room: '', category: 'Plumbing', description: '', priority: 'Normal' });
+    setMaintenanceForm({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
+  };
+
+  const staffLogout = async () => {
+    await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid);
+    localStorage.clear();
+    window.location.replace('/');
   };
 
   const tabs = [
     { key: 'active', label: `Active (${tasks.length})` },
     { key: 'history', label: 'History' },
-    ...(isHousekeeping ? [{ key: 'rooms', label: 'Room Status' }] : []),
+    ...(isHousekeeping ? [{ key: 'rooms', label: '🛏 Rooms' }] : []),
     ...(isMaintenance ? [{ key: 'maintenance', label: '🔧 Maintenance' }] : []),
   ];
 
@@ -787,12 +791,12 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         )}
       </AnimatePresence>
 
-      {/* New Order Alert */}
+      {/* New Order Alert Banner */}
       <AnimatePresence>
         {newOrderAlert && (
           <motion.div initial={{ y: -80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -80, opacity: 0 }} className="fixed top-0 left-0 right-0 z-[10002] bg-gold text-navy px-6 py-4 shadow-2xl flex items-center justify-between">
             <div className="flex items-center gap-3"><Bell size={20} /><span className="font-bold uppercase tracking-widest text-sm">{newOrderAlert}</span></div>
-            <button onClick={() => setNewOrderAlert(null)} className="text-navy/60 hover:text-navy"><X size={16} /></button>
+            <button onClick={() => setNewOrderAlert(null)} className="text-navy/60"><X size={16} /></button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -808,7 +812,9 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2.5 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
-          <button onClick={async () => { await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid); localStorage.clear(); window.location.replace('/'); }} className="p-2 text-gold hover:text-white"><LogOut size={18} /></button>
+          <button onClick={staffLogout} className="flex items-center gap-1 border border-gold/30 text-gold hover:text-white px-3 py-1.5 text-[9px] font-bold uppercase">
+            <LogOut size={12} /> Logout
+          </button>
         </div>
       </header>
 
@@ -816,7 +822,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       {activeTab === 'active' && (
         <div className="staff-grid p-4">
           {tasks.length === 0 ? (
-            <div className="col-span-full py-20 text-center"><CheckCircle2 className="w-10 h-10 text-gold/20 mx-auto" strokeWidth={1} /><p className="text-white/40 font-serif italic mt-3">No active requests.</p></div>
+            <div className="col-span-full py-20 text-center"><CheckCircle2 className="w-10 h-10 text-gold/20 mx-auto" strokeWidth={1} /><p className="text-white/40 font-serif italic mt-3">No active requests. Standing by.</p></div>
           ) : tasks.map(task => {
             const elapsed = getElapsed(task.timestamp);
             const limit = getSLALimit(task.department);
@@ -838,7 +844,6 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                   <p className={cn('text-[9px] uppercase tracking-widest font-bold', task.status === 'Pending' ? 'text-gold' : 'text-blue-400')}>{task.status}</p>
                   {task.guestName && <p className="text-[8px] text-white/40">Guest: {task.guestName}</p>}
                 </div>
-                {/* Line items preview */}
                 {task.lineItems && task.lineItems.length > 0 && (
                   <div className="mt-2 bg-navy/30 p-2 border-l-2 border-gold/30">
                     {task.lineItems.map((li: any, i: number) => (
@@ -909,11 +914,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                     <span className={cn('text-[8px] font-bold px-2 py-0.5 text-white rounded-full', statusObj.color)}>{room.status}</span>
                   </div>
                   {room.assigned_to && <p className="text-[8px] text-white/40">By: {room.assigned_to}</p>}
-                  <select
-                    value={room.status}
-                    onChange={e => updateRoomStatus(room.id, e.target.value)}
-                    className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none"
-                  >
+                  <select value={room.status} onChange={e => updateRoomStatus(room.id, e.target.value)} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none">
                     {ROOM_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
                 </div>
@@ -952,19 +953,13 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
             </div>
             <button onClick={submitMaintenanceRequest} className="gold-button w-full m-0">Submit Maintenance Request</button>
           </div>
-
-          {/* Active maintenance requests */}
           <h3 className="text-base font-serif text-gold">Active Maintenance Requests</h3>
           {tasks.filter(t => t.type?.includes('Maintenance')).length === 0 ? (
             <p className="text-white/20 italic text-sm">No active maintenance requests.</p>
           ) : tasks.filter(t => t.type?.includes('Maintenance')).map(task => (
             <div key={task.id} className="bg-[#001c36] border border-gold/10 p-4">
               <div className="flex justify-between">
-                <div>
-                  <p className="text-white font-bold text-sm">{task.type}</p>
-                  <p className="text-[9px] text-white/40">Location: {task.roomNumber}</p>
-                  {task.message && <p className="text-[9px] text-white/60 mt-1">{task.message}</p>}
-                </div>
+                <div><p className="text-white font-bold text-sm">{task.type}</p><p className="text-[9px] text-white/40">Location: {task.roomNumber}</p>{task.message && <p className="text-[9px] text-white/60 mt-1">{task.message}</p>}</div>
                 <span className={cn('text-[9px] font-bold px-2 py-1 border h-fit', task.status === 'Completed' ? 'border-green-500 text-green-400' : 'border-gold text-gold')}>{task.status}</span>
               </div>
             </div>
@@ -1021,15 +1016,14 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const approveStaff = async (id: string) => { await supabase.from('staff').update({ approved: true }).eq('id', id); };
   const rejectStaff = async (id: string) => { if (window.confirm('Reject and delete?')) await supabase.from('staff').delete().eq('id', id); };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
-  const forceLogout = async (id: string) => {
-    await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id);
-    alert('Staff account has been logged out and device reset.');
-  };
+  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); alert('Staff account logged out and device reset.'); };
   const saveSLA = async () => {
     await supabase.from('sla_settings').update({ sla_minutes: editSLA, updated_by: profile.displayName, updated_at: new Date().toISOString() }).eq('department', profile.department);
     alert(`✅ SLA updated to ${editSLA} minutes for ${profile.department}`);
     fetchData();
   };
+
+  const mgrLogout = () => { localStorage.clear(); window.location.replace('/'); };
 
   return (
     <div className="min-h-screen bg-[#001529] text-white p-4 sm:p-6 space-y-5">
@@ -1049,7 +1043,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
-          <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
+          <button onClick={mgrLogout} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
         </div>
       </header>
 
@@ -1076,7 +1070,6 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     </div>
                     <p className="text-sm font-serif text-white">{req.service}</p>
                     <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to || 'Unassigned'}</p>
-                    {/* Line items */}
                     {req.line_items && req.line_items.map((li: any, i: number) => (
                       <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>
                     ))}
@@ -1099,7 +1092,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
           <h2 className="text-lg font-serif text-gold">SLA — {profile.department}</h2>
           <div className="bg-[#001c36] border border-gold/10 p-5">
             <h3 className="text-base font-serif text-white mb-3">Currently Delayed</h3>
-            {violations.length === 0 ? <p className="text-green-400 font-bold text-sm">✓ All within SLA ({slaConfig.sla_minutes || 5} min limit)</p> : (
+            {violations.length === 0 ? <p className="text-green-400 font-bold text-sm">✓ All within SLA ({slaConfig.sla_minutes || 5} min)</p> : (
               <div className="space-y-2">
                 {violations.map(req => (
                   <div key={req.id} className="flex items-center justify-between p-3 bg-red-900/20 border border-red-500">
@@ -1159,7 +1152,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">SLA Response Time (minutes)</label>
-              <p className="text-[9px] text-white/40">This is the maximum time staff have to complete a request before it's flagged as a violation.</p>
+              <p className="text-[9px] text-white/40">Maximum time staff have to complete a request before it's flagged as a violation.</p>
               <div className="flex items-center gap-4">
                 <input type="number" min="1" max="120" value={editSLA} onChange={e => setEditSLA(Number(e.target.value))} className="w-32 bg-white border border-gold p-3 text-xl font-serif text-navy text-center outline-none" />
                 <span className="text-white/60 text-sm">minutes</span>
@@ -1220,7 +1213,6 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
     const s = slaSettings.find((x: any) => x.department === dept);
     return (s?.sla_minutes || 5) * 60;
   };
-
   const getSLAExceeded = (req: any) => {
     if (!req.created_at || req.status === 'Completed') return false;
     return (now - new Date(req.created_at).getTime()) / 1000 > getSLALimit(req.department);
@@ -1230,17 +1222,13 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const violations = requests.filter(r => getSLAExceeded(r));
   const completed = requests.filter(r => r.status === 'Completed').length;
   const pending = requests.filter(r => r.status !== 'Completed').length;
-
-  // REAL revenue from actual orders only
   const revenue = requests.filter(r => r.total_price && r.status === 'Completed').reduce((s, r) => s + (r.total_price || 0), 0);
 
-  // Revenue breakdown by department (real data)
   const deptRevenue = ['F&B', 'Concierge', 'Housekeeping', 'Front Office', 'Security & Safety'].map(dept => ({
     name: dept.split(' ')[0],
     revenue: requests.filter(r => r.department === dept && r.status === 'Completed' && r.total_price).reduce((s, r) => s + (r.total_price || 0), 0),
   }));
 
-  // Top selling items
   const allLineItems: any[] = [];
   requests.forEach(r => { if (r.line_items) allLineItems.push(...r.line_items); });
   const itemSales: Record<string, { qty: number; revenue: number }> = {};
@@ -1262,51 +1250,35 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
   const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); alert('Account logged out and device reset.'); };
 
-  // QR Code generator
+  const execLogout = () => { localStorage.clear(); window.location.replace('/'); };
+
   const generateQRCodes = () => {
     const baseUrl = window.location.origin;
     const roomNumbers = rooms.length > 0 ? rooms.map(r => r.room_number) : ['101', '102', '201', '202', '301', '302', '401', '402', '501', '502'];
-    const html = `<!DOCTYPE html>
-<html><head><title>Sentinel Pro — Room QR Codes</title>
+    const html = `<!DOCTYPE html><html><head><title>Sentinel Pro QR Codes</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<style>
-  body { font-family: Georgia, serif; background: #f8f6f0; padding: 20px; }
-  h1 { text-align: center; color: #C5A059; letter-spacing: 4px; font-size: 24px; margin-bottom: 4px; }
-  p { text-align: center; color: #666; font-size: 12px; margin-bottom: 30px; }
-  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
-  .card { background: white; border: 1px solid #C5A059; padding: 20px; text-align: center; page-break-inside: avoid; }
-  .room { font-size: 20px; font-weight: bold; color: #001529; margin-bottom: 12px; letter-spacing: 2px; text-transform: uppercase; }
-  .qr { display: flex; justify-content: center; margin: 10px 0; }
-  .url { font-size: 8px; color: #999; word-break: break-all; margin-top: 8px; }
-  .instruction { font-size: 9px; color: #C5A059; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px; }
-  @media print { .no-print { display: none; } body { padding: 10px; } }
-</style></head>
-<body>
-<h1>Sentinel Pro</h1>
-<p>Luxury Hotel & Residences — Room QR Codes · Print and place in each room</p>
+<style>body{font-family:Georgia,serif;background:#f8f6f0;padding:20px}h1{text-align:center;color:#C5A059;letter-spacing:4px;font-size:22px;margin-bottom:4px}p{text-align:center;color:#666;font-size:11px;margin-bottom:28px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.card{background:white;border:1px solid #C5A059;padding:18px;text-align:center;page-break-inside:avoid}.room{font-size:18px;font-weight:bold;color:#001529;margin-bottom:10px;letter-spacing:2px;text-transform:uppercase}.qr{display:flex;justify-content:center;margin:8px 0}.url{font-size:7px;color:#999;word-break:break-all;margin-top:6px}.instruction{font-size:8px;color:#C5A059;margin-top:5px;text-transform:uppercase;letter-spacing:1px}@media print{body{padding:8px}.no-print{display:none}}</style>
+</head><body>
+<h1>Sentinel Pro</h1><p>Luxury Hotel & Residences — Scan QR to request services</p>
 <div class="grid" id="grid"></div>
 <script>
-const rooms = ${JSON.stringify(roomNumbers)};
-const base = '${baseUrl}';
-const grid = document.getElementById('grid');
-rooms.forEach(room => {
-  const div = document.createElement('div');
-  div.className = 'card';
-  div.innerHTML = '<div class="room">Room ' + room + '</div><div class="qr" id="qr_' + room + '"></div><div class="instruction">Scan to request services</div><div class="url">' + base + '?room=' + room + '</div>';
+const rooms=${JSON.stringify(roomNumbers)};
+const base='${baseUrl}';
+const grid=document.getElementById('grid');
+rooms.forEach(room=>{
+  const div=document.createElement('div');div.className='card';
+  div.innerHTML='<div class="room">Room '+room+'</div><div class="qr" id="qr_'+room+'"></div><div class="instruction">Scan to request services</div><div class="url">'+base+'?room='+room+'</div>';
   grid.appendChild(div);
-  setTimeout(() => {
-    new QRCode(document.getElementById('qr_' + room), { text: base + '?room=' + room, width: 120, height: 120, colorDark: '#001529', colorLight: '#ffffff' });
-  }, 100);
+  setTimeout(()=>{new QRCode(document.getElementById('qr_'+room),{text:base+'?room='+room,width:110,height:110,colorDark:'#001529',colorLight:'#ffffff'});},100);
 });
-setTimeout(() => window.print(), 2000);
+setTimeout(()=>window.print(),2000);
 </script>
-<button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:12px;font-weight:bold;letter-spacing:2px;cursor:pointer;text-transform:uppercase;">🖨 Print QR Codes</button>
+<button onclick="window.print()" class="no-print" style="position:fixed;bottom:20px;right:20px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:11px;font-weight:bold;letter-spacing:2px;cursor:pointer;text-transform:uppercase;">🖨 Print QR Codes</button>
 </body></html>`;
     const win = window.open('', '_blank');
     if (win) { win.document.write(html); win.document.close(); }
   };
 
-  // Report generator
   const generateReport = (type: 'pdf' | 'email' | 'csv') => {
     setReportMenuOpen(false);
     if (type === 'csv') {
@@ -1337,16 +1309,14 @@ setTimeout(() => window.print(), 2000);
     const completionRate = requests.length > 0 ? Math.round((completed / requests.length) * 100) : 0;
     const barMax = Math.max(...deptBreakdown.map(d => d.total), 1);
 
-    const html = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8">
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <title>Sentinel Pro — ${reportPeriod} Report</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600;700&display=swap');
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',sans-serif;background:#f8f6f0;color:#1a2744}
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Inter',sans-serif;background:#f8f6f0;color:#1a2744}
 .page{max-width:960px;margin:0 auto;padding:40px 30px}
 .header{background:#001529;color:white;padding:40px;margin-bottom:28px}
-.gold{color:#C5A059}.gold-line{width:60px;height:3px;background:#C5A059;margin-bottom:16px}
+.gold-line{width:60px;height:3px;background:#C5A059;margin-bottom:16px}
 .hotel-name{font-family:'Playfair Display',serif;font-size:28px;color:#C5A059;letter-spacing:3px;text-transform:uppercase}
 .report-title{font-size:12px;color:rgba(255,255,255,0.5);letter-spacing:4px;text-transform:uppercase;margin-top:6px}
 .meta{margin-top:20px;display:flex;gap:40px;flex-wrap:wrap}
@@ -1355,49 +1325,39 @@ body{font-family:'Inter',sans-serif;background:#f8f6f0;color:#1a2744}
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
 .kpi{background:white;border:1px solid #e8e0d0;padding:20px;text-align:center;border-top:3px solid #C5A059}
 .kpi.green{border-top-color:#22c55e}.kpi.red{border-top-color:#ef4444}.kpi.blue{border-top-color:#3b82f6}
-.kpi-val{font-family:'Playfair Display',serif;font-size:32px;color:#1a2744}
+.kpi-val{font-family:'Playfair Display',serif;font-size:30px;color:#1a2744}
 .kpi-val.red{color:#ef4444}.kpi-val.green{color:#22c55e}
 .kpi-lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:#999;margin-top:4px}
 .section{margin-bottom:24px}
 .section-title{font-family:'Playfair Display',serif;font-size:17px;color:#1a2744;border-bottom:2px solid #C5A059;padding-bottom:8px;margin-bottom:14px}
-.dept-table{width:100%;border-collapse:collapse;background:white}
-.dept-table th{background:#001529;color:#C5A059;font-size:9px;text-transform:uppercase;letter-spacing:2px;padding:11px 14px;text-align:left}
-.dept-table td{padding:11px 14px;border-bottom:1px solid #f0ebe0;font-size:12px}
+.dept-table,.violation-table,.item-table{width:100%;border-collapse:collapse;background:white}
+.dept-table th,.violation-table th,.item-table th{background:#001529;color:#C5A059;font-size:9px;text-transform:uppercase;letter-spacing:2px;padding:11px 14px;text-align:left}
+.dept-table td,.violation-table td,.item-table td{padding:11px 14px;border-bottom:1px solid #f0ebe0;font-size:12px}
 .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
 .badge.green{background:#dcfce7;color:#16a34a}.badge.red{background:#fee2e2;color:#dc2626}.badge.gold{background:#fef3c7;color:#d97706}
 .bar-bg{background:#f0ebe0;height:7px;border-radius:4px;overflow:hidden;margin-top:4px}
-.bar-fill{height:7px;background:#C5A059;border-radius:4px}
-.bar-fill.red{background:#ef4444}
+.bar-fill{height:7px;background:#C5A059;border-radius:4px}.bar-fill.red{background:#ef4444}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px}
 .card{background:white;border:1px solid #e8e0d0;padding:18px}
-.card-title{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:#C5A059;font-weight:700;margin-bottom:12px}
 .performer{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f0ebe0}
 .performer:last-child{border:none}
 .avatar{width:36px;height:36px;background:#001529;color:#C5A059;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:16px;border-radius:50%;flex-shrink:0}
 .perf-info{flex:1}.perf-name{font-weight:700;font-size:13px}.perf-role{font-size:9px;color:#C5A059;text-transform:uppercase;letter-spacing:1px}
 .perf-stats{font-size:10px;color:#666;margin-top:2px}
-.perf-rate{font-size:18px;font-weight:700;color:#16a34a;text-align:right;flex-shrink:0}
-.violation-table{width:100%;border-collapse:collapse;background:white}
-.violation-table th{background:#7f1d1d;color:white;font-size:9px;text-transform:uppercase;letter-spacing:2px;padding:10px 13px;text-align:left}
-.violation-table td{padding:10px 13px;border-bottom:1px solid #fee2e2;font-size:12px}
-.item-table{width:100%;border-collapse:collapse;background:white}
-.item-table th{background:#001529;color:#C5A059;font-size:9px;text-transform:uppercase;letter-spacing:2px;padding:10px 13px;text-align:left}
-.item-table td{padding:10px 13px;border-bottom:1px solid #f0ebe0;font-size:12px}
-.feedback-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-.fb-card{background:white;border:1px solid #e8e0d0;padding:14px}
-.stars{color:#C5A059;font-size:13px;letter-spacing:2px;margin-bottom:6px}
-.fb-text{font-size:11px;color:#555;font-style:italic;line-height:1.5}
-.fb-meta{font-size:9px;color:#C5A059;font-weight:600;margin-top:6px;text-transform:uppercase}
 .summary{background:#001529;color:white;padding:24px;margin-bottom:24px}
 .summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
 .summary-item{text-align:center}
 .summary-val{font-family:'Playfair Display',serif;font-size:26px;color:#C5A059}
 .summary-lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.5);margin-top:3px}
+.feedback-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.fb-card{background:white;border:1px solid #e8e0d0;padding:14px}
+.stars{color:#C5A059;font-size:13px;letter-spacing:2px;margin-bottom:6px}
+.fb-text{font-size:11px;color:#555;font-style:italic;line-height:1.5}
+.fb-meta{font-size:9px;color:#C5A059;font-weight:600;margin-top:6px;text-transform:uppercase}
 .footer{margin-top:36px;padding-top:18px;border-top:1px solid #e8e0d0;display:flex;justify-content:space-between;align-items:center}
 .print-btn{position:fixed;bottom:24px;right:24px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer}
 @media print{.print-btn{display:none}body{background:white}.page{padding:15px}}
-</style></head>
-<body><div class="page">
+</style></head><body><div class="page">
 <div class="header">
   <div class="gold-line"></div>
   <div class="hotel-name">Sentinel Pro</div>
@@ -1409,127 +1369,85 @@ body{font-family:'Inter',sans-serif;background:#f8f6f0;color:#1a2744}
     <div class="meta-item"><div class="label">Period</div><div class="value">${reportPeriod.charAt(0).toUpperCase() + reportPeriod.slice(1)} Summary</div></div>
   </div>
 </div>
-
 <div class="kpi-grid">
   <div class="kpi"><div class="kpi-val">AED ${revenue.toLocaleString()}</div><div class="kpi-lbl">Confirmed Revenue</div></div>
   <div class="kpi blue"><div class="kpi-val">${requests.length}</div><div class="kpi-lbl">Total Requests</div></div>
   <div class="kpi green"><div class="kpi-val green">${completionRate}%</div><div class="kpi-lbl">Completion Rate</div></div>
   <div class="kpi ${violations.length > 0 ? 'red' : 'green'}"><div class="kpi-val ${violations.length > 0 ? 'red' : 'green'}">${violations.length}</div><div class="kpi-lbl">SLA Violations</div></div>
 </div>
-
 <div class="summary">
   <div style="font-family:'Playfair Display',serif;font-size:15px;color:#C5A059;margin-bottom:14px">Executive Summary</div>
   <div class="summary-grid">
     <div class="summary-item"><div class="summary-val">${approvedStaff.length}</div><div class="summary-lbl">Active Staff</div></div>
-    <div class="summary-item"><div class="summary-val">${completed}</div><div class="summary-lbl">Completed Requests</div></div>
-    <div class="summary-item"><div class="summary-val">${avgRating}</div><div class="summary-lbl">Avg Guest Rating</div></div>
-    <div class="summary-item"><div class="summary-val">${requests.filter(r => r.rating).length}</div><div class="summary-lbl">Feedback Received</div></div>
+    <div class="summary-item"><div class="summary-val">${completed}</div><div class="summary-lbl">Completed</div></div>
+    <div class="summary-item"><div class="summary-val">${avgRating}</div><div class="summary-lbl">Avg Rating</div></div>
+    <div class="summary-item"><div class="summary-val">${requests.filter(r => r.rating).length}</div><div class="summary-lbl">Feedback</div></div>
   </div>
 </div>
-
 <div class="section">
   <div class="section-title">Department Performance</div>
   <table class="dept-table">
     <thead><tr><th>Department</th><th>Total</th><th>Completed</th><th>SLA Limit</th><th>Violations</th><th>Revenue (AED)</th><th>Volume</th></tr></thead>
     <tbody>
       ${deptBreakdown.map(d => `<tr>
-        <td><strong>${d.dept}</strong></td>
-        <td>${d.total}</td>
-        <td><span class="badge ${d.completed === d.total && d.total > 0 ? 'green' : d.completed > 0 ? 'gold' : 'red'}">${d.completed}/${d.total}</span></td>
+        <td><strong>${d.dept}</strong></td><td>${d.total}</td>
+        <td><span class="badge ${d.completed===d.total&&d.total>0?'green':d.completed>0?'gold':'red'}">${d.completed}/${d.total}</span></td>
         <td>${d.slaMin} min</td>
-        <td><span class="badge ${d.violations > 0 ? 'red' : 'green'}">${d.violations}</span></td>
-        <td>${d.revenue > 0 ? 'AED ' + d.revenue.toLocaleString() : '—'}</td>
-        <td style="width:150px"><div class="bar-bg"><div class="bar-fill ${d.violations > 0 ? 'red' : ''}" style="width:${Math.round((d.total / barMax) * 100)}%"></div></div></td>
+        <td><span class="badge ${d.violations>0?'red':'green'}">${d.violations}</span></td>
+        <td>${d.revenue>0?'AED '+d.revenue.toLocaleString():'—'}</td>
+        <td style="width:130px"><div class="bar-bg"><div class="bar-fill ${d.violations>0?'red':''}" style="width:${Math.round((d.total/barMax)*100)}%"></div></div></td>
       </tr>`).join('')}
     </tbody>
   </table>
 </div>
-
 ${topItems.length > 0 ? `
 <div class="section">
   <div class="section-title">Top Selling Items & Services</div>
   <table class="item-table">
-    <thead><tr><th>Item / Service</th><th>Qty Sold</th><th>Revenue (AED)</th><th>Avg Price</th></tr></thead>
-    <tbody>
-      ${topItems.map(([name, data]) => `<tr>
-        <td><strong>${name}</strong></td>
-        <td>${data.qty}</td>
-        <td><strong>AED ${data.revenue.toLocaleString()}</strong></td>
-        <td>AED ${Math.round(data.revenue / data.qty)}</td>
-      </tr>`).join('')}
-    </tbody>
+    <thead><tr><th>Item / Service</th><th>Qty Sold</th><th>Revenue (AED)</th><th>Avg Price (AED)</th></tr></thead>
+    <tbody>${topItems.map(([name, data]) => `<tr><td><strong>${name}</strong></td><td>${data.qty}</td><td><strong>AED ${data.revenue.toLocaleString()}</strong></td><td>AED ${Math.round(data.revenue/data.qty)}</td></tr>`).join('')}</tbody>
   </table>
 </div>` : ''}
-
 <div class="two-col">
   <div>
     <div class="section-title">Top Performers</div>
     <div class="card">
-      ${leaderboard.slice(0, 5).length === 0 ? '<p style="color:#999;font-style:italic;font-size:13px">No completed tasks yet.</p>' :
-        leaderboard.slice(0, 5).map((s, i) => {
-          const rate = Math.round(((s.tasks_on_time || 0) / (s.tasks_completed || 1)) * 100);
-          return `<div class="performer">
-            <div style="font-size:20px;width:28px">${['🥇','🥈','🥉'][i] || `#${i+1}`}</div>
-            <div class="avatar">${s.name?.[0] || '?'}</div>
-            <div class="perf-info">
-              <div class="perf-name">${s.name}</div>
-              <div class="perf-role">${s.occupation || s.department}</div>
-              <div class="perf-stats">${s.tasks_completed} tasks · ${s.violations || 0} violations</div>
-            </div>
-            <div class="perf-rate" style="color:${rate>=80?'#16a34a':rate>=60?'#f59e0b':'#dc2626'}">${rate}%</div>
-          </div>`;
+      ${leaderboard.slice(0,5).length===0?'<p style="color:#999;font-style:italic;font-size:13px">No completed tasks yet.</p>':
+        leaderboard.slice(0,5).map((s,i)=>{
+          const rate=Math.round(((s.tasks_on_time||0)/(s.tasks_completed||1))*100);
+          return `<div class="performer"><div style="font-size:20px;width:28px">${['🥇','🥈','🥉'][i]||'#'+(i+1)}</div><div class="avatar">${s.name?.[0]||'?'}</div><div class="perf-info"><div class="perf-name">${s.name}</div><div class="perf-role">${s.occupation||s.department}</div><div class="perf-stats">${s.tasks_completed} tasks · ${s.violations||0} violations</div></div><div style="font-size:18px;font-weight:700;color:${rate>=80?'#16a34a':rate>=60?'#f59e0b':'#dc2626'}">${rate}%</div></div>`;
         }).join('')}
     </div>
   </div>
   <div>
-    <div class="section-title">Violations by Department</div>
+    <div class="section-title">SLA Violations by Dept</div>
     <div class="card">
-      ${deptBreakdown.map(d => `
+      ${deptBreakdown.map(d=>`
       <div style="margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-          <span style="font-size:12px;font-weight:600">${d.dept}</span>
-          <span style="font-size:12px;color:${d.violations>0?'#dc2626':'#16a34a'};font-weight:700">${d.violations} violation${d.violations !== 1 ? 's' : ''}</span>
-        </div>
-        <div class="bar-bg"><div class="bar-fill red" style="width:${d.violations > 0 ? Math.max(Math.round((d.violations / Math.max(...deptBreakdown.map(x=>x.violations), 1)) * 100), 8) : 0}%"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;font-weight:600">${d.dept}</span><span style="font-size:12px;color:${d.violations>0?'#dc2626':'#16a34a'};font-weight:700">${d.violations} violation${d.violations!==1?'s':''}</span></div>
+        <div class="bar-bg"><div class="bar-fill red" style="width:${d.violations>0?Math.max(Math.round((d.violations/Math.max(...deptBreakdown.map(x=>x.violations),1))*100),8):0}%"></div></div>
       </div>`).join('')}
     </div>
   </div>
 </div>
-
-${slaViolators.length > 0 ? `
+${slaViolators.length>0?`
 <div class="section">
   <div class="section-title">Staff Violation Audit</div>
   <table class="violation-table">
     <thead><tr><th>Staff Member</th><th>Occupation</th><th>Dept</th><th>Tasks</th><th>Violations</th><th>Rate</th><th>Status</th></tr></thead>
-    <tbody>
-      ${slaViolators.map(s => {
-        const rate = (s.tasks_completed || 0) > 0 ? Math.round(((s.violations || 0) / s.tasks_completed) * 100) : 0;
-        return `<tr>
-          <td><strong>${s.name}</strong><br><span style="font-size:10px;color:#999">${s.email}</span></td>
-          <td>${s.occupation || 'N/A'}</td><td>${s.department}</td>
-          <td>${s.tasks_completed || 0}</td>
-          <td><span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${s.violations || 0}</span></td>
-          <td style="font-weight:700;color:${rate>30?'#dc2626':'#f59e0b'}">${rate}%</td>
-          <td><span class="badge ${rate>50?'red':rate>25?'gold':'green'}">${rate>50?'Critical':rate>25?'Review':'Monitor'}</span></td>
-        </tr>`;
-      }).join('')}
-    </tbody>
+    <tbody>${slaViolators.map(s=>{
+      const rate=(s.tasks_completed||0)>0?Math.round(((s.violations||0)/s.tasks_completed)*100):0;
+      return `<tr><td><strong>${s.name}</strong><br><span style="font-size:10px;color:#999">${s.email}</span></td><td>${s.occupation||'N/A'}</td><td>${s.department}</td><td>${s.tasks_completed||0}</td><td><span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${s.violations||0}</span></td><td style="font-weight:700;color:${rate>30?'#dc2626':'#f59e0b'}">${rate}%</td><td><span class="badge ${rate>50?'red':rate>25?'gold':'green'}">${rate>50?'Critical':rate>25?'Review':'Monitor'}</span></td></tr>`;
+    }).join('')}</tbody>
   </table>
-</div>` : ''}
-
-${requests.filter(r => r.rating).length > 0 ? `
+</div>`:''}
+${requests.filter(r=>r.rating).length>0?`
 <div class="section">
   <div class="section-title">Guest Feedback (Avg: ${avgRating} ★)</div>
   <div class="feedback-grid">
-    ${requests.filter(r => r.rating).slice(0, 8).map(r => `
-    <div class="fb-card">
-      <div class="stars">${'★'.repeat(r.rating || 0)}${'☆'.repeat(5 - (r.rating || 0))}</div>
-      <div class="fb-text">"${r.feedback || 'No comment'}"</div>
-      <div class="fb-meta">Room ${r.guest_room} · ${r.service}</div>
-    </div>`).join('')}
+    ${requests.filter(r=>r.rating).slice(0,8).map(r=>`<div class="fb-card"><div class="stars">${'★'.repeat(r.rating||0)}${'☆'.repeat(5-(r.rating||0))}</div><div class="fb-text">"${r.feedback||'No comment'}"</div><div class="fb-meta">Room ${r.guest_room} · ${r.service}</div></div>`).join('')}
   </div>
-</div>` : ''}
-
+</div>`:''}
 <div class="footer">
   <div><div style="font-family:'Playfair Display',serif;font-size:14px;color:#C5A059">Sentinel Pro</div><div style="font-size:10px;color:#999;margin-top:3px">Luxury Hotel Management · Confidential</div></div>
   <div style="font-size:10px;color:#999;text-align:right">Generated: ${new Date().toLocaleString()}<br>By: ${profile.displayName}</div>
@@ -1578,14 +1496,16 @@ ${requests.filter(r => r.rating).length > 0 ? `
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>{tab.label}</button>
             ))}
           </div>
-          <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
+          <button onClick={execLogout} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
         </div>
       </header>
 
       {violations.length > 0 && (
         <div className="border border-red-600 p-3 flex items-center gap-3" style={{ background: 'rgba(220,38,38,0.1)' }}>
           <AlertCircle className="text-red-500 flex-shrink-0" size={20} />
-          <div><h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''}</h3><div className="flex gap-1 mt-1 flex-wrap">{violations.slice(0, 5).map(v => <span key={v.id} className="bg-red-600 text-white text-[8px] font-bold px-1.5 py-0.5">RM {v.guest_room}</span>)}</div></div>
+          <div><h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''}</h3>
+            <div className="flex gap-1 mt-1 flex-wrap">{violations.slice(0, 5).map(v => <span key={v.id} className="bg-red-600 text-white text-[8px] font-bold px-1.5 py-0.5">RM {v.guest_room}</span>)}</div>
+          </div>
         </div>
       )}
 
@@ -1594,10 +1514,10 @@ ${requests.filter(r => r.rating).length > 0 ? `
         <div className="space-y-5">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: 'Confirmed Revenue', value: `AED ${revenue.toLocaleString()}`, color: '#C5A059', sub: 'From completed orders' },
+              { label: 'Confirmed Revenue', value: `AED ${revenue.toLocaleString()}`, color: '#C5A059', sub: 'Completed orders only' },
               { label: 'Active Requests', value: pending, color: '#C5A059', sub: `${completed} completed` },
               { label: 'Completion Rate', value: `${requests.length > 0 ? Math.round((completed / requests.length) * 100) : 0}%`, color: '#4CAF50', sub: `${completed} of ${requests.length}` },
-              { label: 'SLA Violations', value: violations.length, color: violations.length > 0 ? '#EF4444' : '#4CAF50', sub: 'Active violations' },
+              { label: 'SLA Violations', value: violations.length, color: violations.length > 0 ? '#EF4444' : '#4CAF50', sub: 'Active now' },
             ].map(k => (
               <div key={k.label} className="bg-[#001c36] border border-gold/10 p-4 text-center">
                 <div className="text-2xl sm:text-3xl font-serif mb-1" style={{ color: k.color }}>{k.value}</div>
@@ -1606,12 +1526,10 @@ ${requests.filter(r => r.rating).length > 0 ? `
               </div>
             ))}
           </div>
-
-          {/* Real revenue chart */}
           <div className="bg-[#001c36] border border-gold/10 p-5">
-            <h3 className="text-base font-serif text-white mb-3 flex items-center gap-2"><TrendingUp size={16} className="text-gold" /> Revenue by Department (Actual Completed Orders)</h3>
+            <h3 className="text-base font-serif text-white mb-3 flex items-center gap-2"><TrendingUp size={16} className="text-gold" /> Revenue by Department (Real Data)</h3>
             {deptRevenue.every(d => d.revenue === 0) ? (
-              <p className="text-white/20 italic text-sm py-8 text-center">No completed paid orders yet. Revenue will appear here as orders are completed.</p>
+              <p className="text-white/20 italic text-sm py-8 text-center">No completed paid orders yet.</p>
             ) : (
               <div className="h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1619,36 +1537,26 @@ ${requests.filter(r => r.rating).length > 0 ? `
                     <CartesianGrid strokeDasharray="3 3" stroke="#C5A05920" vertical={false} />
                     <XAxis dataKey="name" stroke="#FFF" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: '#FFF', fontWeight: 'bold' }} />
                     <YAxis stroke="#FFF" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: '#FFF', fontWeight: 'bold' }} />
-                    <Tooltip contentStyle={{ backgroundColor: '#002349', border: '1px solid #C5A059' }} itemStyle={{ color: '#FFF', fontWeight: 'bold' }} formatter={(value: any) => [`AED ${value}`, 'Revenue']} />
+                    <Tooltip contentStyle={{ backgroundColor: '#002349', border: '1px solid #C5A059' }} itemStyle={{ color: '#FFF', fontWeight: 'bold' }} formatter={(v: any) => [`AED ${v}`, 'Revenue']} />
                     <Bar dataKey="revenue" name="Revenue (AED)" fill="#C5A059" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             )}
           </div>
-
-          {/* Top items */}
           {topItems.length > 0 && (
             <div className="bg-[#001c36] border border-gold/10 p-5">
               <h3 className="text-base font-serif text-white mb-3 flex items-center gap-2"><Star size={16} className="text-gold" /> Top Selling Items</h3>
               <div className="space-y-2">
                 {topItems.map(([name, data], i) => (
                   <div key={name} className="flex items-center justify-between p-2 border-b border-gold/10">
-                    <div className="flex items-center gap-3">
-                      <span className="text-gold font-bold text-sm w-5">#{i + 1}</span>
-                      <div>
-                        <p className="text-white text-sm font-bold">{name}</p>
-                        <p className="text-[8px] text-white/40">{data.qty} units sold</p>
-                      </div>
-                    </div>
+                    <div className="flex items-center gap-3"><span className="text-gold font-bold text-sm w-5">#{i + 1}</span><div><p className="text-white text-sm font-bold">{name}</p><p className="text-[8px] text-white/40">{data.qty} units sold</p></div></div>
                     <p className="text-gold font-bold">AED {data.revenue.toLocaleString()}</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
-
-          {/* Guest Feedback */}
           <div className="bg-[#001c36] border border-gold/10 p-5">
             <h3 className="text-base font-serif text-white mb-3 flex items-center gap-2"><Star size={16} className="text-gold" /> Guest Feedback</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1697,7 +1605,6 @@ ${requests.filter(r => r.rating).length > 0 ? `
       {activeTab === 'sla' && (
         <div className="space-y-4">
           <h2 className="text-xl font-serif text-gold">SLA Monitoring — All Departments</h2>
-          {/* SLA limits per dept */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {slaSettings.map((s: any) => (
               <div key={s.department} className="bg-[#001c36] border border-gold/10 p-3 text-center">
@@ -1713,8 +1620,8 @@ ${requests.filter(r => r.rating).length > 0 ? `
               <div className="space-y-2">
                 {violations.map(req => (
                   <div key={req.id} className="flex items-center justify-between p-3 bg-red-900/20 border border-red-500">
-                    <div><p className="text-white font-bold text-sm">{req.assigned_to || 'Unassigned'}</p><p className="text-[9px] text-red-400 uppercase">{req.department} · Room {req.guest_room} · {req.service}</p></div>
-                    <div className="text-right"><p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m elapsed</p><p className="text-[8px] text-white/40">SLA: {slaSettings.find((x: any) => x.department === req.department)?.sla_minutes || 5}m</p></div>
+                    <div><p className="text-white font-bold text-sm">{req.assigned_to || 'Unassigned'}</p><p className="text-[9px] text-red-400">{req.department} · Room {req.guest_room} · {req.service}</p></div>
+                    <div className="text-right"><p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m</p><p className="text-[8px] text-red-400">+{getElapsedMin(req.created_at) - (slaSettings.find((x: any) => x.department === req.department)?.sla_minutes || 5)}m OVER</p></div>
                   </div>
                 ))}
               </div>
@@ -1764,7 +1671,7 @@ ${requests.filter(r => r.rating).length > 0 ? `
                     <div className="flex gap-2 mb-1 flex-wrap">
                       <span className={cn('text-[9px] font-bold px-2 py-0.5 border', req.status === 'Completed' ? 'border-green-500 text-green-400' : over ? 'border-red-500 text-red-400' : 'border-gold text-gold')}>{req.status}</span>
                       <span className="text-[9px] font-bold px-2 py-0.5 border border-gold/30 text-white/60">{req.department}</span>
-                      {over && <span className="text-[9px] font-bold px-2 py-0.5 bg-red-600 text-white">⚠ SLA EXCEEDED</span>}
+                      {over && <span className="text-[9px] font-bold px-2 py-0.5 bg-red-600 text-white">⚠ SLA</span>}
                     </div>
                     <p className="text-sm font-serif text-white">{req.service}</p>
                     <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to || 'Unassigned'}</p>
@@ -1839,7 +1746,7 @@ ${requests.filter(r => r.rating).length > 0 ? `
       {activeTab === 'qr' && (
         <div className="bg-[#001c36] border border-gold/10 p-5 space-y-5">
           <h2 className="text-xl font-serif text-gold flex items-center gap-2"><QrCode size={20} /> Room QR Code Generator</h2>
-          <p className="text-white/60 text-sm">Generate printable QR codes for all rooms. Guests scan the code and the room number is automatically filled — they only need to enter their name.</p>
+          <p className="text-white/60 text-sm">Generate printable QR codes for all rooms. Print once, laminate, and place permanently in each room. Guests scan → room auto-fills → they only enter their name.</p>
           <div className="bg-navy/30 border border-gold/20 p-4 space-y-2">
             <p className="text-[9px] text-gold uppercase tracking-widest font-bold">Rooms in System ({rooms.length})</p>
             <div className="flex flex-wrap gap-2">
@@ -1851,10 +1758,10 @@ ${requests.filter(r => r.rating).length > 0 ? `
           </button>
           <div className="border border-gold/10 p-4 bg-navy/20 space-y-2">
             <p className="text-[9px] text-gold uppercase tracking-widest font-bold">How It Works</p>
-            <p className="text-[10px] text-white/50">1. Click "Generate" — a printable page opens with QR codes for every room</p>
-            <p className="text-[10px] text-white/50">2. Print and laminate each QR code</p>
-            <p className="text-[10px] text-white/50">3. Place in the corresponding room (bedside table, welcome card, etc.)</p>
-            <p className="text-[10px] text-white/50">4. Guest scans → room auto-fills → they only enter their name</p>
+            <p className="text-[10px] text-white/50">1. Click Generate — printable page opens with QR codes for every room</p>
+            <p className="text-[10px] text-white/50">2. Print and laminate each QR code card</p>
+            <p className="text-[10px] text-white/50">3. Place on bedside table, welcome folder, or door in each room</p>
+            <p className="text-[10px] text-white/50">4. Guest scans → room number auto-fills → they only enter their name to access services</p>
           </div>
         </div>
       )}
@@ -1899,8 +1806,9 @@ export default function App() {
           id: row.id, roomNumber: row.guest_room || '', type: row.service || '',
           message: row.notes, department: row.department, status: row.status,
           guestId: row.guest_id, timestamp: row.created_at, totalPrice: row.total_price,
-          rating: row.rating, feedbackComment: row.feedback, feedbackDismissed: row.feedback_dismissed,
-          assignedStaffName: row.assigned_to, lineItems: row.line_items,
+          rating: row.rating, feedbackComment: row.feedback,
+          feedbackDismissed: row.feedback_dismissed, assignedStaffName: row.assigned_to,
+          lineItems: row.line_items,
         }));
         setRequests(mapped);
         const unrated = mapped.find((r: any) => r.status === 'Completed' && !r.rating && !r.feedbackDismissed);
@@ -1914,7 +1822,12 @@ export default function App() {
     return () => { supabase.removeChannel(channel); };
   }, [profile]);
 
-  const logout = () => { localStorage.clear(); setProfile(null); window.location.replace('/'); };
+  // Guest logout
+  const logout = () => {
+    localStorage.clear();
+    setProfile(null);
+    window.location.replace('/');
+  };
 
   const submitRequest = async (customData?: any) => {
     if (!profile || !roomNumber) return;
@@ -1929,8 +1842,7 @@ export default function App() {
         notes: customData?.notes || message || dietaryRequirements,
         department: service.dept || customData?.dept || 'Front Office',
         status: 'Pending', total_price: totalPrice > 0 ? totalPrice : null,
-        line_items: lineItems, language,
-        created_at: new Date().toISOString(),
+        line_items: lineItems, language, created_at: new Date().toISOString(),
       });
       if (error) throw error;
       setShowRequestModal(false); setMessage(''); setSelectedService(null);
@@ -1952,12 +1864,44 @@ export default function App() {
 
   if (loading) return <div className="min-h-screen bg-navy flex items-center justify-center"><div className="text-gold font-serif text-2xl animate-pulse">Loading...</div></div>;
 
+  // ─── GUEST SERVICE TILES ────────────────────────────────────────────────────
+  const guestServices = [
+    {
+      name: t('housekeeping'), icon: Sparkles, dept: 'Housekeeping', serviceKey: 'housekeeping',
+      options: [t('room_cleaning'), t('laundry'), t('extra_blanket'), 'Extra Pillow', 'Extra Towels', 'Turn Down Service'],
+    },
+    { name: t('room_service'), icon: Coffee, dept: 'F&B', serviceKey: 'room_service' },
+    { name: t('restaurant_bookings'), icon: UtensilsCrossed, dept: 'F&B', serviceKey: 'restaurant_bookings' },
+    { name: t('concierge_services'), icon: Key, dept: 'Concierge', serviceKey: 'concierge_services' },
+    {
+      name: t('security'), icon: Shield, dept: 'Security & Safety', serviceKey: 'security',
+      options: [t('emergency'), t('safe_box'), t('medical'), t('escort'), 'Lost & Found', 'Other'],
+    },
+    {
+      // ✅ MAINTENANCE replaces "Any Other Request"
+      name: 'Maintenance', icon: Wrench, dept: 'Front Office', serviceKey: 'maintenance',
+      options: ['AC / Heating Issue', 'Plumbing Issue', 'Electrical Issue', 'TV / Electronics', 'Door / Lock Issue', 'Lighting Issue', 'Other'],
+    },
+  ];
+
   return (
     <div className={cn('main-content', isRTL && 'rtl', profile?.role === 'manager' && 'manager-dark-mode')}>
       <GlobalLanguageSelector />
-      {profile && profile.role === 'guest' && (
-        <Header roomNumber={profile.roomNumber || roomNumber} user={profile} logout={logout} navigateToGuest={() => { setGuestTab('services'); if (pathname !== '/') { window.history.pushState({}, '', '/'); setPathname('/'); } }} />
+
+      {/* ✅ Header shown for ALL roles — guest logout button always visible */}
+      {profile && (
+        <Header
+          roomNumber={profile.roomNumber || roomNumber}
+          user={profile}
+          logout={logout}
+          role={profile.role}
+          navigateToGuest={() => {
+            setGuestTab('services');
+            if (pathname !== '/') { window.history.pushState({}, '', '/'); setPathname('/'); }
+          }}
+        />
       )}
+
       <main className="w-full flex-1">
         <div className="luxury-container">
           <AnimatePresence mode="wait">
@@ -1976,24 +1920,19 @@ export default function App() {
             ) : profile.role === 'staff' ? (
               <motion.div key="staff" initial={{ opacity: 0 }} animate={{ opacity: 1 }}><StaffPortal userProfile={profile} /></motion.div>
             ) : (
+              // ─── GUEST PORTAL ───────────────────────────────────────────────
               <motion.div key="guest" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 {guestTab === 'services' && (
                   <>
                     <div className="bg-navy p-5 sm:p-10 shadow-2xl mb-6">
                       <h2 className="text-2xl sm:text-4xl font-serif text-white mb-3 leading-tight">
-                        {new Date().getHours() < 12 ? t('greeting_morning') : new Date().getHours() < 17 ? t('greeting_afternoon') : t('greeting_evening')}, <span className="text-gold italic">{profile.displayName}</span>
+                        {new Date().getHours() < 12 ? t('greeting_morning') : new Date().getHours() < 17 ? t('greeting_afternoon') : t('greeting_evening')},
+                        <span className="text-gold italic"> {profile.displayName}</span>
                       </h2>
-                      <p className="text-white/70 max-w-2xl font-serif text-sm sm:text-base italic">{t('welcome_sanctuary')}</p>
+                      <p className="text-white/70 max-w-2xl font-serif text-sm italic">{t('welcome_sanctuary')}</p>
                     </div>
                     <div className="dashboard-grid px-4">
-                      {[
-                        { name: t('housekeeping'), icon: Sparkles, dept: 'Housekeeping', serviceKey: 'housekeeping', options: [t('room_cleaning'), t('laundry'), t('extra_blanket')] },
-                        { name: t('room_service'), icon: Coffee, dept: 'F&B', serviceKey: 'room_service' },
-                        { name: t('restaurant_bookings'), icon: UtensilsCrossed, dept: 'F&B', serviceKey: 'restaurant_bookings' },
-                        { name: t('concierge_services'), icon: Key, dept: 'Concierge', serviceKey: 'concierge_services' },
-                        { name: t('security'), icon: Shield, dept: 'Security & Safety', serviceKey: 'security', options: [t('emergency'), t('safe_box'), t('medical'), t('escort')] },
-                        { name: t('any_other_request'), icon: Send, dept: 'Front Office', serviceKey: 'any_other_request' },
-                      ].map(service => (
+                      {guestServices.map(service => (
                         <button key={service.name} onClick={() => {
                           if (service.serviceKey === 'room_service') setGuestTab('room-service');
                           else if (service.serviceKey === 'restaurant_bookings') setGuestTab('restaurant-bookings');
@@ -2005,6 +1944,8 @@ export default function App() {
                         </button>
                       ))}
                     </div>
+
+                    {/* Guest Request Tracker */}
                     {requests.length > 0 && (
                       <section className="mt-8 px-4">
                         <div className="flex items-center gap-2 mb-3 border-b border-gold/20 pb-2">
@@ -2020,7 +1961,6 @@ export default function App() {
                                 </div>
                                 <div>
                                   <span className="text-navy font-bold text-sm font-serif block">{req.type}</span>
-                                  {/* Show line items */}
                                   {req.lineItems && <span className="text-[8px] text-gold/70">{req.lineItems.map((li: any) => `${li.qty}x ${li.name}`).join(', ')}</span>}
                                   {req.status === 'In Progress' && req.assignedStaffName && <span className="text-[8px] text-blue-600 font-bold uppercase block">✓ {req.assignedStaffName} is handling this</span>}
                                   {req.totalPrice && <span className="text-[8px] text-gold font-bold block">AED {req.totalPrice.toLocaleString()}</span>}
@@ -2063,10 +2003,10 @@ export default function App() {
                   <p className="text-[9px] uppercase tracking-widest text-navy/50 font-bold">{t('select_option')}</p>
                   <div className="grid grid-cols-1 gap-2">
                     {selectedService.options.map((opt: string) => (
-                      <button key={opt} onClick={() => setMessage(opt)} className={cn('w-full p-3 text-left border transition-all text-sm', message === opt ? 'border-gold bg-gold/5 text-navy' : 'border-navy/10 text-navy/60')}>{opt}</button>
+                      <button key={opt} onClick={() => setMessage(opt)} className={cn('w-full p-3 text-left border text-sm', message === opt ? 'border-gold bg-gold/5 text-navy' : 'border-navy/10 text-navy/60')}>{opt}</button>
                     ))}
                   </div>
-                  <textarea value={dietaryRequirements} onChange={e => setDietaryRequirements(e.target.value)} placeholder={t('message_placeholder')} className="h-20 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
+                  <textarea value={dietaryRequirements} onChange={e => setDietaryRequirements(e.target.value)} placeholder="Additional details..." className="h-20 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
                 </div>
               ) : (
                 <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder={t('message_placeholder')} className="h-28 resize-none w-full bg-white text-navy border border-gold p-3 text-sm mb-6" />
