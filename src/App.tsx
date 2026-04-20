@@ -548,7 +548,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         {showPending && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[5000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
             <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="bg-[#001c36] p-10 text-center border-2 border-gold max-w-lg shadow-xl relative">
-              <div className="absolute top-0 left-0 w-full h-1 bg-gold animate-pulse" />
+              <div className="absolute top-0 left-0 w-full h-1 bg-gold " />
               <ShieldCheck className="w-20 h-20 text-gold mx-auto mb-8" strokeWidth={1} />
               <h2 className="text-3xl font-serif text-white mb-6">Profile Submitted</h2>
               <p className="text-white/70 text-sm font-serif italic mb-10">{pendingMessage}</p>
@@ -791,7 +791,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
               return (
                 <motion.div key={task.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={cn('staff-task-card bg-[#001c36]', isViolated ? 'border-red-500 bg-red-900/10' : 'border-gold/10')}>
                   {isViolated && (
-                    <div className="w-full py-2 px-3 bg-red-600 text-white text-[10px] font-bold uppercase flex items-center gap-2 mb-2 animate-pulse">
+                    <div className="w-full py-2 px-3 bg-red-600 text-white text-[10px] font-bold uppercase flex items-center gap-2 mb-2 ">
                       <AlertCircle size={14} /> SLA EXCEEDED by {Math.floor((elapsed - limit) / 60)}m
                     </div>
                   )}
@@ -929,7 +929,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
 
       {/* SLA Alert Banner */}
       {violations.length > 0 && (
-        <div className="border border-red-600 p-4 flex items-center gap-4 animate-pulse" style={{ background: 'rgba(220,38,38,0.1)' }}>
+        <div className="border border-red-600 p-4 flex items-center gap-4 " style={{ background: 'rgba(220,38,38,0.1)' }}>
           <AlertCircle className="text-red-500" size={24} />
           <div>
             <h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''} IN {profile.department}</h3>
@@ -946,7 +946,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
           {requests.map(req => {
             const over = getSLAExceeded(req);
             return (
-              <div key={req.id} className={cn('border p-5', over ? 'border-red-500 bg-red-900/10 animate-pulse' : 'border-gold/10 bg-[#001c36]')}>
+              <div key={req.id} className={cn('border p-5', over ? 'border-red-500 bg-red-900/10 ' : 'border-gold/10 bg-[#001c36]')}>
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="flex gap-2 mb-2 flex-wrap">
@@ -979,7 +979,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
             ) : (
               <div className="space-y-3">
                 {violations.map(req => (
-                  <div key={req.id} className="flex items-center justify-between p-4 bg-red-900/20 border border-red-500 animate-pulse">
+                  <div key={req.id} className="flex items-center justify-between p-4 bg-red-900/20 border border-red-500 ">
                     <div>
                       <p className="text-white font-bold">{req.assigned_to || 'Unassigned'}</p>
                       <p className="text-[10px] text-red-400 uppercase">Room {req.guest_room} · {req.service}</p>
@@ -1207,7 +1207,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
       </header>
 
       {violations.length > 0 && (
-        <div className="border border-red-600 p-4 flex items-center gap-4 animate-pulse" style={{ background: 'rgba(220,38,38,0.1)' }}>
+        <div className="border border-red-600 p-4 flex items-center gap-4 " style={{ background: 'rgba(220,38,38,0.1)' }}>
           <AlertCircle className="text-red-500" size={24} />
           <div>
             <h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''} ACROSS ALL DEPARTMENTS</h3>
@@ -1301,7 +1301,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
             {violations.length === 0 ? <p className="text-green-400 font-bold">✓ All tasks within SLA</p> : (
               <div className="space-y-3">
                 {violations.map(req => (
-                  <div key={req.id} className="flex items-center justify-between p-4 bg-red-900/20 border border-red-500 animate-pulse">
+                  <div key={req.id} className="flex items-center justify-between p-4 bg-red-900/20 border border-red-500 ">
                     <div>
                       <p className="text-white font-bold">{req.assigned_to || 'Unassigned'}</p>
                       <p className="text-[10px] text-red-400 uppercase">{req.department} · Room {req.guest_room}</p>
@@ -1354,7 +1354,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
           {requests.map(req => {
             const over = getSLAExceeded(req);
             return (
-              <div key={req.id} className={cn('border p-5', over ? 'border-red-500 bg-red-900/10 animate-pulse' : 'border-gold/10 bg-[#001c36]')}>
+              <div key={req.id} className={cn('border p-5', over ? 'border-red-500 bg-red-900/10 ' : 'border-gold/10 bg-[#001c36]')}>
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="flex gap-2 mb-2 flex-wrap">
@@ -1553,7 +1553,7 @@ export default function App() {
 
   if (loading) return (
     <div className="min-h-screen bg-navy flex items-center justify-center">
-      <div className="text-gold font-serif text-2xl animate-pulse">Loading...</div>
+      <div className="text-gold font-serif text-2xl ">Loading...</div>
     </div>
   );
 
@@ -1636,7 +1636,7 @@ export default function App() {
                                 <div>
                                   <span className="text-navy font-bold text-sm font-serif block">{req.type}</span>
                                   {req.status === 'In Progress' && req.assignedStaffName && (
-                                    <span className="text-[8px] text-blue-600 font-bold uppercase animate-pulse">{req.assignedStaffName} is on the way!</span>
+                                    <span className="text-[8px] text-blue-600 font-bold uppercase ">{req.assignedStaffName} is on the way!</span>
                                   )}
                                   {req.totalPrice && <span className="text-[9px] text-gold font-bold block">AED {req.totalPrice.toLocaleString()}</span>}
                                 </div>
