@@ -1052,23 +1052,354 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
 
   const generateReport = (type: 'pdf' | 'email' | 'csv') => {
     setReportMenuOpen(false);
+
     if (type === 'csv') {
       const headers = `Date,Room,Department,Service,Status,Revenue (AED),Delay Reason,Staff\n`;
-      const rows = requests.map(r => `${new Date(r.created_at).toLocaleDateString()},${r.guest_room},${r.department},${r.service},${r.status},${r.total_price || 0},${r.late_reason || 'N/A'},${r.assigned_to || 'Unassigned'}`).join('\n');
+      const rows = requests.map(r =>
+        `${new Date(r.created_at).toLocaleDateString()},${r.guest_room},${r.department},${r.service},${r.status},${r.total_price || 0},${r.late_reason || 'N/A'},${r.assigned_to || 'Unassigned'}`
+      ).join('\n');
       const link = document.createElement('a');
       link.setAttribute('href', encodeURI('data:text/csv;charset=utf-8,' + headers + rows));
       link.setAttribute('download', `SentinelPro_${reportPeriod}_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    } else if (type === 'pdf') {
-      const content = `SENTINEL PRO — ${reportPeriod.toUpperCase()} REPORT\nGenerated: ${new Date().toLocaleString()}\n\nKEY METRICS\nTotal Requests: ${requests.length}\nCompleted: ${completed}\nPending: ${pending}\nSLA Violations: ${violations.length}\nRevenue: AED ${revenue.toLocaleString()}\n\nSLA VIOLATIONS\n${violations.map(v => `${v.service} | Room ${v.guest_room} | ${v.department}`).join('\n') || 'None'}\n\nTOP PERFORMERS\n${leaderboard.slice(0, 5).map((s, i) => `${i + 1}. ${s.name} — ${s.tasks_completed} tasks, ${s.violations || 0} violations`).join('\n') || 'No data'}`;
-      const blob = new Blob([content], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url; link.download = `SentinelPro_${reportPeriod}_${new Date().toISOString().split('T')[0]}.txt`;
-      link.click(); URL.revokeObjectURL(url);
-    } else {
-      alert(`✅ ${reportPeriod} report sent to all department managers.`);
+      return;
     }
+
+    if (type === 'email') {
+      alert(`✅ ${reportPeriod} report sent to all department managers.\n\nRecipients: Housekeeping, F&B, Concierge, Security, Front Office`);
+      return;
+    }
+
+    // PDF — open professional HTML report in new window
+    const deptBreakdown = DEPARTMENTS.map(dept => {
+      const deptReqs = requests.filter(r => r.department === dept);
+      const deptViolations = deptReqs.filter(r => getSLAExceeded(r)).length;
+      const deptCompleted = deptReqs.filter(r => r.status === 'Completed').length;
+      const deptRevenue = deptReqs.reduce((s, r) => s + (r.total_price || 0), 0);
+      return { dept, total: deptReqs.length, completed: deptCompleted, violations: deptViolations, revenue: deptRevenue };
+    });
+
+    const topPerformers = leaderboard.slice(0, 5);
+    const violatorsList = slaViolators.slice(0, 10);
+    const feedbackList = requests.filter(r => r.rating).slice(0, 10);
+
+    const avgRating = feedbackList.length > 0
+      ? (feedbackList.reduce((s, r) => s + (r.rating || 0), 0) / feedbackList.length).toFixed(1)
+      : 'N/A';
+
+    const completionRate = requests.length > 0 ? Math.round((completed / requests.length) * 100) : 0;
+
+    const barMax = Math.max(...deptBreakdown.map(d => d.total), 1);
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sentinel Pro — ${reportPeriod.charAt(0).toUpperCase() + reportPeriod.slice(1)} Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: #f8f6f0; color: #1a2744; }
+  .page { max-width: 900px; margin: 0 auto; padding: 40px 30px; }
+
+  /* HEADER */
+  .report-header { background: #001529; color: white; padding: 40px; margin-bottom: 30px; position: relative; overflow: hidden; }
+  .report-header::after { content: ''; position: absolute; top: 0; right: 0; width: 200px; height: 100%; background: linear-gradient(135deg, transparent 50%, rgba(197,160,89,0.1) 50%); }
+  .gold-line { width: 60px; height: 3px; background: #C5A059; margin-bottom: 16px; }
+  .hotel-name { font-family: 'Playfair Display', serif; font-size: 28px; color: #C5A059; letter-spacing: 3px; text-transform: uppercase; }
+  .report-title { font-size: 13px; color: rgba(255,255,255,0.5); letter-spacing: 4px; text-transform: uppercase; margin-top: 6px; }
+  .report-meta { margin-top: 20px; display: flex; gap: 40px; flex-wrap: wrap; }
+  .meta-item { }
+  .meta-label { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: rgba(255,255,255,0.4); }
+  .meta-value { font-size: 13px; color: #C5A059; font-weight: 600; margin-top: 2px; }
+
+  /* SECTIONS */
+  .section { margin-bottom: 28px; }
+  .section-title { font-family: 'Playfair Display', serif; font-size: 18px; color: #1a2744; border-bottom: 2px solid #C5A059; padding-bottom: 8px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .section-title .dot { width: 8px; height: 8px; background: #C5A059; display: inline-block; }
+
+  /* KPI GRID */
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+  .kpi-card { background: white; border: 1px solid #e8e0d0; padding: 20px; text-align: center; position: relative; }
+  .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+  .kpi-card.gold::before { background: #C5A059; }
+  .kpi-card.green::before { background: #22c55e; }
+  .kpi-card.blue::before { background: #3b82f6; }
+  .kpi-card.red::before { background: #ef4444; }
+  .kpi-value { font-family: 'Playfair Display', serif; font-size: 36px; color: #1a2744; }
+  .kpi-value.red { color: #ef4444; }
+  .kpi-value.green { color: #22c55e; }
+  .kpi-label { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: #999; margin-top: 4px; }
+  .kpi-sub { font-size: 11px; color: #666; margin-top: 4px; }
+
+  /* DEPARTMENT BREAKDOWN */
+  .dept-table { width: 100%; border-collapse: collapse; background: white; }
+  .dept-table th { background: #001529; color: #C5A059; font-size: 9px; text-transform: uppercase; letter-spacing: 2px; padding: 12px 16px; text-align: left; }
+  .dept-table td { padding: 12px 16px; border-bottom: 1px solid #f0ebe0; font-size: 13px; }
+  .dept-table tr:last-child td { border-bottom: none; }
+  .dept-table tr:hover td { background: #faf7f0; }
+  .bar-cell { padding: 12px 16px; }
+  .bar-bg { background: #f0ebe0; height: 8px; border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 8px; border-radius: 4px; background: #C5A059; }
+  .bar-fill.red { background: #ef4444; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 600; }
+  .badge.green { background: #dcfce7; color: #16a34a; }
+  .badge.red { background: #fee2e2; color: #dc2626; }
+  .badge.gold { background: #fef3c7; color: #d97706; }
+
+  /* LEADERBOARD */
+  .leaderboard-grid { display: grid; gap: 10px; }
+  .performer-card { background: white; border: 1px solid #e8e0d0; padding: 16px; display: flex; align-items: center; gap: 16px; }
+  .performer-card.first { border-color: #C5A059; background: linear-gradient(135deg, #fffbf0, white); }
+  .rank-badge { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
+  .performer-avatar { width: 44px; height: 44px; background: #001529; color: #C5A059; display: flex; align-items: center; justify-content: center; font-family: 'Playfair Display', serif; font-size: 18px; border-radius: 50%; flex-shrink: 0; }
+  .performer-info { flex: 1; }
+  .performer-name { font-weight: 700; font-size: 15px; }
+  .performer-role { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #C5A059; margin-top: 2px; }
+  .performer-stats { display: flex; gap: 20px; margin-top: 4px; }
+  .stat { font-size: 11px; color: #666; }
+  .stat strong { color: #1a2744; }
+  .rate-circle { width: 54px; height: 54px; border-radius: 50%; background: conic-gradient(#22c55e calc(var(--rate) * 1%), #e8e0d0 0); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #1a2744; flex-shrink: 0; position: relative; }
+  .rate-inner { width: 40px; height: 40px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
+
+  /* VIOLATIONS TABLE */
+  .violation-table { width: 100%; border-collapse: collapse; background: white; }
+  .violation-table th { background: #7f1d1d; color: white; font-size: 9px; text-transform: uppercase; letter-spacing: 2px; padding: 10px 14px; text-align: left; }
+  .violation-table td { padding: 10px 14px; border-bottom: 1px solid #fee2e2; font-size: 12px; }
+  .violation-table tr:last-child td { border-bottom: none; }
+  .violation-rate { font-weight: 700; }
+  .violation-rate.high { color: #dc2626; }
+  .violation-rate.med { color: #f59e0b; }
+
+  /* FEEDBACK */
+  .feedback-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .feedback-card { background: white; border: 1px solid #e8e0d0; padding: 16px; }
+  .stars { color: #C5A059; font-size: 14px; letter-spacing: 2px; margin-bottom: 8px; }
+  .feedback-text { font-size: 12px; color: #555; font-style: italic; line-height: 1.5; }
+  .feedback-meta { font-size: 10px; color: #C5A059; font-weight: 600; margin-top: 8px; text-transform: uppercase; letter-spacing: 1px; }
+
+  /* SUMMARY BOX */
+  .summary-box { background: #001529; color: white; padding: 28px; margin-bottom: 28px; }
+  .summary-title { font-family: 'Playfair Display', serif; font-size: 16px; color: #C5A059; margin-bottom: 16px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .summary-item { text-align: center; }
+  .summary-value { font-family: 'Playfair Display', serif; font-size: 28px; color: #C5A059; }
+  .summary-label { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: rgba(255,255,255,0.5); margin-top: 4px; }
+
+  /* FOOTER */
+  .report-footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e8e0d0; display: flex; justify-content: space-between; align-items: center; }
+  .footer-brand { font-family: 'Playfair Display', serif; font-size: 14px; color: #C5A059; }
+  .footer-meta { font-size: 10px; color: #999; }
+
+  .print-btn { position: fixed; bottom: 30px; right: 30px; background: #001529; color: #C5A059; border: 2px solid #C5A059; padding: 14px 28px; font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; }
+  .print-btn:hover { background: #C5A059; color: #001529; }
+  @media print {
+    .print-btn { display: none; }
+    body { background: white; }
+    .page { padding: 20px; }
+  }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .card-box { background: white; border: 1px solid #e8e0d0; padding: 20px; }
+  .card-box-title { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #C5A059; font-weight: 700; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="report-header">
+    <div class="gold-line"></div>
+    <div class="hotel-name">Sentinel Pro</div>
+    <div class="report-title">${reportPeriod.toUpperCase()} OPERATIONS AUDIT REPORT</div>
+    <div class="report-meta">
+      <div class="meta-item"><div class="meta-label">Generated</div><div class="meta-value">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</div></div>
+      <div class="meta-item"><div class="meta-label">Time</div><div class="meta-value">${new Date().toLocaleTimeString()}</div></div>
+      <div class="meta-item"><div class="meta-label">Prepared by</div><div class="meta-value">${profile.displayName}</div></div>
+      <div class="meta-item"><div class="meta-label">Period</div><div class="meta-value">${reportPeriod.charAt(0).toUpperCase() + reportPeriod.slice(1)} Summary</div></div>
+    </div>
+  </div>
+
+  <!-- KPI CARDS -->
+  <div class="kpi-grid">
+    <div class="kpi-card gold">
+      <div class="kpi-value">AED ${revenue.toLocaleString()}</div>
+      <div class="kpi-label">Total Revenue</div>
+      <div class="kpi-sub">All departments</div>
+    </div>
+    <div class="kpi-card blue">
+      <div class="kpi-value">${requests.length}</div>
+      <div class="kpi-label">Total Requests</div>
+      <div class="kpi-sub">${pending} active · ${completed} completed</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-value green">${completionRate}%</div>
+      <div class="kpi-label">Completion Rate</div>
+      <div class="kpi-sub">${completed} of ${requests.length} resolved</div>
+    </div>
+    <div class="kpi-card ${violations.length > 0 ? 'red' : 'green'}">
+      <div class="kpi-value ${violations.length > 0 ? 'red' : 'green'}">${violations.length}</div>
+      <div class="kpi-label">SLA Violations</div>
+      <div class="kpi-sub">Avg guest rating: ${avgRating}/5</div>
+    </div>
+  </div>
+
+  <!-- SUMMARY -->
+  <div class="summary-box">
+    <div class="summary-title">Executive Summary</div>
+    <div class="summary-grid">
+      <div class="summary-item"><div class="summary-value">${staffList.filter(s => s.approved).length}</div><div class="summary-label">Active Staff</div></div>
+      <div class="summary-item"><div class="summary-value">${leaderboard.length}</div><div class="summary-label">Staff with completed tasks</div></div>
+      <div class="summary-item"><div class="summary-value">${feedbackList.length}</div><div class="summary-label">Guest Feedback Received</div></div>
+    </div>
+  </div>
+
+  <!-- DEPARTMENT BREAKDOWN -->
+  <div class="section">
+    <div class="section-title"><span class="dot"></span> Department Performance Breakdown</div>
+    <table class="dept-table">
+      <thead>
+        <tr>
+          <th>Department</th>
+          <th>Total Requests</th>
+          <th>Completed</th>
+          <th>SLA Violations</th>
+          <th>Revenue (AED)</th>
+          <th>Volume</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${deptBreakdown.map(d => `
+        <tr>
+          <td><strong>${d.dept}</strong></td>
+          <td>${d.total}</td>
+          <td><span class="badge ${d.completed === d.total && d.total > 0 ? 'green' : d.completed > 0 ? 'gold' : 'red'}">${d.completed} / ${d.total}</span></td>
+          <td><span class="badge ${d.violations > 0 ? 'red' : 'green'}">${d.violations} violation${d.violations !== 1 ? 's' : ''}</span></td>
+          <td>${d.revenue > 0 ? d.revenue.toLocaleString() : '—'}</td>
+          <td class="bar-cell" style="width:180px">
+            <div class="bar-bg"><div class="bar-fill ${d.violations > 0 ? 'red' : ''}" style="width:${Math.round((d.total / barMax) * 100)}%"></div></div>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- TWO COLUMNS -->
+  <div class="two-col">
+    <!-- TOP PERFORMERS -->
+    <div>
+      <div class="section-title"><span class="dot"></span> Top Performers</div>
+      ${topPerformers.length === 0 ? '<p style="color:#999;font-style:italic;font-size:13px">No completed tasks recorded yet.</p>' :
+        topPerformers.map((s, i) => {
+          const rate = Math.round(((s.tasks_on_time || 0) / (s.tasks_completed || 1)) * 100);
+          return `
+          <div class="performer-card ${i === 0 ? 'first' : ''}" style="margin-bottom:10px">
+            <div class="rank-badge">${['🥇','🥈','🥉'][i] || `#${i+1}`}</div>
+            <div class="performer-avatar">${s.name?.[0] || '?'}</div>
+            <div class="performer-info">
+              <div class="performer-name">${s.name}</div>
+              <div class="performer-role">${s.occupation || s.department}</div>
+              <div class="performer-stats">
+                <div class="stat">Tasks: <strong>${s.tasks_completed || 0}</strong></div>
+                <div class="stat">On Time: <strong>${s.tasks_on_time || 0}</strong></div>
+                <div class="stat">Violations: <strong style="color:${(s.violations||0)>0?'#dc2626':'#16a34a'}">${s.violations || 0}</strong></div>
+              </div>
+            </div>
+            <div style="text-align:center;flex-shrink:0">
+              <div style="font-size:22px;font-weight:700;color:${rate >= 80 ? '#16a34a' : rate >= 60 ? '#f59e0b' : '#dc2626'}">${rate}%</div>
+              <div style="font-size:9px;color:#999;text-transform:uppercase;letter-spacing:1px">On Time</div>
+            </div>
+          </div>`;
+        }).join('')
+      }
+    </div>
+
+    <!-- SLA VIOLATIONS DEPT CHART -->
+    <div>
+      <div class="section-title"><span class="dot"></span> SLA Violations by Dept</div>
+      <div class="card-box">
+        ${deptBreakdown.map(d => `
+        <div style="margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:12px;font-weight:600">${d.dept}</span>
+            <span style="font-size:12px;color:${d.violations > 0 ? '#dc2626' : '#16a34a'};font-weight:700">${d.violations} violation${d.violations !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="bar-bg">
+            <div class="bar-fill red" style="width:${d.violations > 0 ? Math.max(Math.round((d.violations / Math.max(...deptBreakdown.map(x=>x.violations),1)) * 100), 8) : 0}%"></div>
+          </div>
+        </div>`).join('')}
+      </div>
+    </div>
+  </div>
+
+  <!-- SLA VIOLATORS TABLE -->
+  ${violatorsList.length > 0 ? `
+  <div class="section" style="margin-top:24px">
+    <div class="section-title"><span class="dot"></span> Staff SLA Violation Audit</div>
+    <table class="violation-table">
+      <thead>
+        <tr>
+          <th>Staff Member</th>
+          <th>Occupation</th>
+          <th>Department</th>
+          <th>Total Tasks</th>
+          <th>Violations</th>
+          <th>Violation Rate</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${violatorsList.map(s => {
+          const rate = (s.tasks_completed || 0) > 0 ? Math.round(((s.violations || 0) / s.tasks_completed) * 100) : 0;
+          return `<tr>
+            <td><strong>${s.name}</strong><br><span style="font-size:10px;color:#999">${s.email}</span></td>
+            <td>${s.occupation || 'N/A'}</td>
+            <td>${s.department}</td>
+            <td>${s.tasks_completed || 0}</td>
+            <td><span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${s.violations || 0}</span></td>
+            <td><span class="violation-rate ${rate > 30 ? 'high' : 'med'}">${rate}%</span></td>
+            <td><span class="badge ${rate > 50 ? 'red' : rate > 25 ? 'gold' : 'green'}">${rate > 50 ? 'Critical' : rate > 25 ? 'Review' : 'Monitor'}</span></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>` : ''}
+
+  <!-- GUEST FEEDBACK -->
+  ${feedbackList.length > 0 ? `
+  <div class="section">
+    <div class="section-title"><span class="dot"></span> Guest Feedback Summary (Avg: ${avgRating} ★)</div>
+    <div class="feedback-grid">
+      ${feedbackList.map(r => `
+      <div class="feedback-card">
+        <div class="stars">${'★'.repeat(r.rating || 0)}${'☆'.repeat(5 - (r.rating || 0))}</div>
+        <div class="feedback-text">"${r.feedback || 'No comment provided'}"</div>
+        <div class="feedback-meta">Room ${r.guest_room} · ${r.service} · ${r.department}</div>
+      </div>`).join('')}
+    </div>
+  </div>` : ''}
+
+  <!-- FOOTER -->
+  <div class="report-footer">
+    <div>
+      <div class="footer-brand">Sentinel Pro</div>
+      <div class="footer-meta" style="margin-top:4px">Luxury Hotel Management System · Confidential</div>
+    </div>
+    <div class="footer-meta" style="text-align:right">
+      Report generated: ${new Date().toLocaleString()}<br>
+      Prepared by: ${profile.displayName}
+    </div>
+  </div>
+
+</div>
+
+<button class="print-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+
+</body>
+</html>`;
+
+    const win = window.open('', '_blank');
+    if (win) { win.document.write(html); win.document.close(); }
   };
 
   return (
@@ -1092,7 +1423,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
             <AnimatePresence>
               {reportMenuOpen && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="absolute right-0 mt-2 w-48 bg-navy border border-gold/30 shadow-2xl z-50">
-                  <button onClick={() => generateReport('pdf')} className="w-full px-4 py-3 text-left text-[9px] uppercase hover:bg-gold/10 flex items-center gap-2 border-b border-gold/10"><Download size={12} className="text-gold" /> Download PDF</button>
+                  <button onClick={() => ('pdf')} className="w-full px-4 py-3 text-left text-[9px] uppercase hover:bg-gold/10 flex items-center gap-2 border-b border-gold/10"><Download size={12} className="text-gold" /> Download PDF</button>
                   <button onClick={() => generateReport('email')} className="w-full px-4 py-3 text-left text-[9px] uppercase hover:bg-gold/10 flex items-center gap-2 border-b border-gold/10"><Mail size={12} className="text-gold" /> Email to Departments</button>
                   <button onClick={() => generateReport('csv')} className="w-full px-4 py-3 text-left text-[9px] uppercase hover:bg-gold/10 flex items-center gap-2"><ClipboardList size={12} className="text-gold" /> Export CSV</button>
                 </motion.div>
