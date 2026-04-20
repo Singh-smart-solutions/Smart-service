@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabase';
 import { UserProfile, ServiceRequest, Department } from './types';
 import { cn } from './lib/utils';
@@ -8,27 +8,21 @@ import {
   Globe, Home, Plus, Minus, Check, ChevronDown,
   User, ClipboardList, TrendingUp, Star, ShieldCheck,
   Car, MapPin, Briefcase, Zap, FileText, Mail, Download,
-  Phone, ArrowRight
+  Phone, ArrowRight, QrCode, Settings, Wrench, BedDouble,
+  AlertTriangle, Bell, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage, Language } from './contexts/TranslationContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const OCCUPATIONS = [
-  'Housekeeping Attendant', 'Housekeeping Supervisor',
-  'F&B Waiter', 'F&B Supervisor', 'Chef',
-  'Concierge Agent', 'Concierge Supervisor',
-  'Security Officer', 'Security Supervisor',
-  'Front Office Agent', 'Front Office Supervisor',
-  'Maintenance Technician', 'Maintenance Supervisor',
+const MANAGER_OCCUPATIONS = [
   'Housekeeping Manager', 'F&B Manager', 'Concierge Manager',
   'Security Manager', 'Front Office Manager', 'Executive',
 ];
 
-const MANAGER_OCCUPATIONS = [
-  'Housekeeping Manager', 'F&B Manager', 'Concierge Manager',
-  'Security Manager', 'Front Office Manager', 'Executive',
+const MAINTENANCE_OCCUPATIONS = [
+  'Maintenance Technician', 'Maintenance Supervisor', 'Front Office Manager',
 ];
 
 const DEPT_FROM_OCCUPATION: Record<string, Department> = {
@@ -50,9 +44,30 @@ const DELAY_REASONS = [
   'Guest Not in Room', 'Waiting for Supplies', 'Too Many Simultaneous Requests', 'Other',
 ];
 
-const DEFAULT_SLA: Record<string, number> = {
-  'Security & Safety': 2, 'F&B': 5, 'Housekeeping': 5, 'Concierge': 5, 'Front Office': 5,
-};
+const ROOM_STATUSES = [
+  { key: 'Dirty', color: 'bg-red-500', label: '🔴 Dirty' },
+  { key: 'Cleaning', color: 'bg-yellow-500', label: '🟡 Cleaning' },
+  { key: 'Inspected', color: 'bg-orange-500', label: '🟠 Inspected' },
+  { key: 'Clean', color: 'bg-green-500', label: '🟢 Clean' },
+  { key: 'Do Not Disturb', color: 'bg-purple-500', label: '🟣 Do Not Disturb' },
+  { key: 'Out of Order', color: 'bg-gray-500', label: '⚫ Out of Order' },
+];
+
+const MAINTENANCE_CATEGORIES = [
+  'Plumbing', 'Electrical', 'HVAC / Air Conditioning', 'Furniture',
+  'TV / Electronics', 'Door / Lock', 'Bathroom Fixtures', 'Lighting', 'Other',
+];
+
+const MENU_ITEMS = [
+  { id: 'b1', name: 'Classic Wagyu Burger', price: 145, category: 'breakfast' },
+  { id: 'b2', name: 'Lobster Bisque', price: 95, category: 'breakfast' },
+  { id: 'a1', name: 'Caesar Salad', price: 125, category: 'all_day' },
+  { id: 'a2', name: 'Truffle Fries', price: 245, category: 'all_day' },
+  { id: 'a3', name: 'Wild Mushroom Risotto', price: 185, category: 'all_day' },
+  { id: 'd1', name: 'Fresh Orange Juice', price: 65, category: 'beverages' },
+  { id: 'd2', name: 'Signature Espresso', price: 28, category: 'beverages' },
+  { id: 'd3', name: 'Sparkling Mineral Water', price: 45, category: 'beverages' },
+];
 
 const getDeviceId = () => {
   let id = localStorage.getItem('sentinel_device_id');
@@ -90,13 +105,12 @@ const GlobalLanguageSelector: React.FC = () => {
   return (
     <div className={cn('fixed top-4 z-[10005]', isRTL ? 'left-4' : 'right-4')}>
       <div className="relative group">
-        <button className="flex items-center gap-2 bg-navy/80 backdrop-blur-md text-white/90 hover:text-gold px-3 py-2 border border-gold/30 shadow-2xl">
+        <button className="flex items-center gap-2 bg-navy/80 backdrop-blur-md text-white/90 px-3 py-2 border border-gold/30 shadow-2xl">
           <Globe size={14} className="text-gold" />
           <span className="text-[9px] font-bold uppercase tracking-[0.2em]">{flags[language]}</span>
           <ChevronDown size={10} className="group-hover:rotate-180 transition-transform" />
         </button>
-        <div className={cn('absolute top-full mt-2 w-48 bg-navy border border-gold/30 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[10006]', isRTL ? 'left-0' : 'right-0')}>
-          <div className="absolute top-0 left-0 w-full h-0.5 bg-gold" />
+        <div className={cn('absolute top-full mt-2 w-44 bg-navy border border-gold/30 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[10006]', isRTL ? 'left-0' : 'right-0')}>
           {(Object.keys(flags) as Language[]).map(lang => (
             <button key={lang} onClick={() => setLanguage(lang)} className={cn('w-full px-4 py-3 text-left text-[9px] font-bold uppercase tracking-widest hover:bg-gold/10 flex items-center justify-between border-b border-gold/5 last:border-0', language === lang ? 'text-gold bg-gold/5' : 'text-white/60')}>
               <span className="flex items-center gap-2"><span className="text-sm">{flags[lang]}</span>{labels[lang]}</span>
@@ -115,28 +129,23 @@ const Header: React.FC<{ roomNumber: string; user: any; logout: () => void; navi
   return (
     <nav className="sticky-header">
       <div className={cn('flex items-center px-3', isRTL && 'flex-row-reverse')}>
-        {user && <button onClick={navigateToGuest} className="p-1.5 text-gold hover:text-white transition-colors"><Home size={16} strokeWidth={1.5} /></button>}
+        {user && <button onClick={navigateToGuest} className="p-1.5 text-gold hover:text-white"><Home size={16} strokeWidth={1.5} /></button>}
       </div>
       <div className="logo-container cursor-pointer flex-1 flex justify-center" onClick={navigateToGuest}>
-        <div className="flex flex-col items-center min-w-0">
+        <div className="flex flex-col items-center">
           <h1 className="font-serif tracking-[0.15em] text-gold uppercase text-base sm:text-2xl whitespace-nowrap">Sentinel Pro</h1>
           <span className="text-[6px] sm:text-[7px] font-bold text-gold/60 uppercase tracking-[0.25em]">Luxury Hotel & Residences</span>
         </div>
       </div>
       <div className={cn('flex items-center px-3', isRTL && 'flex-row-reverse')}>
-        {user && roomNumber && (
-          <div className="flex flex-col items-end mr-2 hidden sm:flex">
-            <span className="text-[9px] font-bold text-white tracking-widest uppercase">{t('room')} {roomNumber}</span>
-            <span className="text-[6px] text-gold font-bold uppercase tracking-tighter">Executive Level</span>
-          </div>
-        )}
-        {user && <button onClick={logout} className="p-1.5 text-gold hover:text-white transition-colors"><LogOut size={16} strokeWidth={1} /></button>}
+        {user && roomNumber && <div className="flex flex-col items-end mr-2 hidden sm:flex"><span className="text-[9px] font-bold text-white tracking-widest uppercase">{t('room')} {roomNumber}</span></div>}
+        {user && <button onClick={logout} className="p-1.5 text-gold hover:text-white"><LogOut size={16} strokeWidth={1} /></button>}
       </div>
     </nav>
   );
 };
 
-// ─── LUXURY GUEST FOOTER ──────────────────────────────────────────────────────
+// ─── GUEST FOOTER ─────────────────────────────────────────────────────────────
 const GuestFooter: React.FC = () => (
   <div className="mt-12 border-t border-gold/20 pt-8 pb-16 space-y-6 px-4">
     <div className="text-center space-y-1">
@@ -144,18 +153,14 @@ const GuestFooter: React.FC = () => (
       <h3 className="text-xl font-serif text-navy">We Are Always Here For You</h3>
     </div>
     <div className="grid grid-cols-2 gap-4">
-      <div className="border border-gold/20 p-4 text-center space-y-2 bg-navy/2">
-        <div className="w-8 h-8 border border-gold/30 flex items-center justify-center mx-auto">
-          <Phone size={14} className="text-gold" />
-        </div>
+      <div className="border border-gold/20 p-4 text-center space-y-2">
+        <div className="w-8 h-8 border border-gold/30 flex items-center justify-center mx-auto"><Phone size={14} className="text-gold" /></div>
         <p className="text-[8px] uppercase tracking-widest text-navy/50 font-bold">Speak with Operator</p>
         <p className="text-2xl font-serif text-navy font-bold">0</p>
         <p className="text-[8px] text-navy/40 italic">Dial from your room landline</p>
       </div>
       <div className="border border-red-200 p-4 text-center space-y-2 bg-red-50/30">
-        <div className="w-8 h-8 border border-red-300 flex items-center justify-center mx-auto">
-          <Shield size={14} className="text-red-500" />
-        </div>
+        <div className="w-8 h-8 border border-red-300 flex items-center justify-center mx-auto"><Shield size={14} className="text-red-500" /></div>
         <p className="text-[8px] uppercase tracking-widest text-red-500/80 font-bold">Emergency</p>
         <p className="text-2xl font-serif text-red-600 font-bold">777</p>
         <p className="text-[8px] text-navy/40 italic">Dial from your room landline</p>
@@ -170,7 +175,7 @@ const GuestFooter: React.FC = () => (
         { label: 'Fitness Centre', value: '24 Hours' },
         { label: 'Valet Parking', value: '24 Hours' },
       ].map(item => (
-        <div key={item.label} className="flex justify-between items-center border-b border-navy/5 pb-2 last:border-0 last:pb-0">
+        <div key={item.label} className="flex justify-between items-center border-b border-navy/5 pb-2 last:border-0">
           <span className="text-[9px] text-navy/50 uppercase tracking-wider">{item.label}</span>
           <span className="text-[9px] font-bold text-navy">{item.value}</span>
         </div>
@@ -180,19 +185,6 @@ const GuestFooter: React.FC = () => (
   </div>
 );
 
-// ─── GUEST REQUEST STATUS CARD ────────────────────────────────────────────────
-const statusColor = (status: string) => {
-  if (status === 'Completed') return 'text-green-600 bg-green-50 border-green-200';
-  if (status === 'In Progress') return 'text-blue-600 bg-blue-50 border-blue-200';
-  return 'text-gold bg-gold/5 border-gold/30';
-};
-
-const statusIcon = (status: string) => {
-  if (status === 'Completed') return <CheckCircle2 size={14} className="text-green-600" />;
-  if (status === 'In Progress') return <Clock size={14} className="text-blue-600" />;
-  return <Clock size={14} className="text-gold" />;
-};
-
 // ─── FEEDBACK MODAL ───────────────────────────────────────────────────────────
 const FeedbackModal: React.FC<{ request: any; onClose: () => void; onSubmit: (rating: number, comment: string) => void }> = ({ request, onClose, onSubmit }) => {
   const { t } = useLanguage();
@@ -200,22 +192,20 @@ const FeedbackModal: React.FC<{ request: any; onClose: () => void; onSubmit: (ra
   const [comment, setComment] = useState('');
   return (
     <div className="fixed inset-0 z-[30000] flex items-center justify-center p-6 bg-navy/80 backdrop-blur-sm">
-      <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="bg-[#FCF9F2] w-full max-w-md p-8 relative shadow-2xl border border-gold/20">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#FCF9F2] w-full max-w-md p-8 relative shadow-2xl border border-gold/20">
         <button onClick={onClose} className="absolute top-4 right-4 text-navy/40 hover:text-navy"><X size={20} /></button>
-        <div className="text-center space-y-6">
-          <div className="inline-block p-3 bg-gold/10 rounded-full"><Star size={32} className="text-gold fill-gold" /></div>
-          <div className="space-y-2">
-            <h2 className="text-2xl font-serif text-navy">{t('rate_experience')}</h2>
-            <p className="text-[10px] uppercase tracking-widest text-gold font-bold">{request.type}</p>
-          </div>
+        <div className="text-center space-y-5">
+          <div className="inline-block p-3 bg-gold/10 rounded-full"><Star size={28} className="text-gold fill-gold" /></div>
+          <h2 className="text-2xl font-serif text-navy">{t('rate_experience')}</h2>
+          <p className="text-[10px] uppercase tracking-widest text-gold font-bold">{request.type}</p>
           <div className="flex justify-center gap-2">
             {[1, 2, 3, 4, 5].map(star => (
-              <button key={star} onClick={() => setRating(star)} className="transition-transform hover:scale-110">
-                <Star size={32} className={cn(star <= rating ? 'text-gold fill-gold' : 'text-gold/20')} />
+              <button key={star} onClick={() => setRating(star)}>
+                <Star size={28} className={cn(star <= rating ? 'text-gold fill-gold' : 'text-gold/20')} />
               </button>
             ))}
           </div>
-          <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder={t('feedback_placeholder')} className="h-32 resize-none w-full bg-white text-navy border border-gold p-4" />
+          <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder={t('feedback_placeholder')} className="h-28 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
           <button onClick={() => onSubmit(rating, comment)} className="w-full bg-navy text-white py-4 text-[10px] font-bold uppercase tracking-widest">{t('submit_feedback')}</button>
         </div>
       </motion.div>
@@ -224,21 +214,18 @@ const FeedbackModal: React.FC<{ request: any; onClose: () => void; onSubmit: (ra
 };
 
 // ─── ROOM SERVICE ─────────────────────────────────────────────────────────────
-const RoomService: React.FC<{ cart: { [id: string]: number }; updateCart: (id: string, delta: number) => void; onSubmit: (notes: string) => void }> = ({ cart, updateCart, onSubmit }) => {
+const RoomService: React.FC<{ cart: { [id: string]: number }; updateCart: (id: string, delta: number) => void; onSubmit: (notes: string, items: any[]) => void }> = ({ cart, updateCart, onSubmit }) => {
   const { t } = useLanguage();
   const [notes, setNotes] = useState('');
   const [activeCategory, setActiveCategory] = useState('breakfast');
-  const menuItems = [
-    { id: 'b1', name: t('item_classic_wagyu_burger_name'), price: 145, category: 'breakfast' },
-    { id: 'b2', name: t('item_lobster_bisque_name'), price: 95, category: 'breakfast' },
-    { id: 'a1', name: t('item_caesar_salad_name'), price: 125, category: 'all_day' },
-    { id: 'a2', name: t('item_truffle_fries_name'), price: 245, category: 'all_day' },
-    { id: 'a3', name: t('item_wild_mushroom_risotto_name'), price: 185, category: 'all_day' },
-    { id: 'd1', name: t('item_fresh_orange_juice_name'), price: 65, category: 'beverages' },
-    { id: 'd2', name: t('item_signature_espresso_name'), price: 28, category: 'beverages' },
-    { id: 'd3', name: t('item_sparkling_mineral_water_name'), price: 45, category: 'beverages' },
-  ];
-  const total = Object.entries(cart).reduce((acc, [id, qty]) => { const item = menuItems.find(m => m.id === id); return acc + (item?.price || 0) * qty; }, 0);
+  const total = Object.entries(cart).reduce((acc, [id, qty]) => {
+    const item = MENU_ITEMS.find(m => m.id === id);
+    return acc + (item?.price || 0) * qty;
+  }, 0);
+  const buildLineItems = () => Object.entries(cart).filter(([, qty]) => qty > 0).map(([id, qty]) => {
+    const item = MENU_ITEMS.find(m => m.id === id)!;
+    return { id, name: item.name, qty, price: item.price, total: item.price * qty };
+  });
   return (
     <div className="space-y-6 pb-32 w-full px-4 sm:px-8">
       <div className="flex gap-1 border-b border-gold/20 pb-2">
@@ -247,11 +234,14 @@ const RoomService: React.FC<{ cart: { [id: string]: number }; updateCart: (id: s
         ))}
       </div>
       <div className="space-y-1">
-        {menuItems.filter(i => i.category === activeCategory).map(item => (
+        {MENU_ITEMS.filter(i => i.category === activeCategory).map(item => (
           <div key={item.id} className="flex items-center justify-between p-3 border-b border-navy/5">
-            <div><span className="text-navy font-serif">{item.name}</span>{cart[item.id] > 0 && <span className="text-[9px] text-gold font-bold uppercase block">Qty: {cart[item.id]}</span>}</div>
+            <div>
+              <span className="text-navy font-serif text-sm">{item.name}</span>
+              {cart[item.id] > 0 && <span className="text-[9px] text-gold font-bold uppercase block">Qty: {cart[item.id]}</span>}
+            </div>
             <div className="flex items-center gap-2">
-              <span className="text-navy font-bold text-sm">{item.price} {t('currency_label')}</span>
+              <span className="text-navy font-bold text-sm">AED {item.price}</span>
               <button onClick={() => updateCart(item.id, -1)} className="w-7 h-7 bg-navy/10 flex items-center justify-center"><Minus size={11} /></button>
               <span className="w-4 text-center text-sm font-bold">{cart[item.id] || 0}</span>
               <button onClick={() => updateCart(item.id, 1)} className="w-7 h-7 bg-gold flex items-center justify-center text-white"><Plus size={11} /></button>
@@ -259,12 +249,15 @@ const RoomService: React.FC<{ cart: { [id: string]: number }; updateCart: (id: s
           </div>
         ))}
       </div>
-      <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-20 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
+      <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Special instructions, allergies..." className="h-20 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
       <AnimatePresence>
         {Object.values(cart).some(q => q > 0) && (
           <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="fixed bottom-4 left-4 right-4 bg-navy p-4 flex items-center justify-between shadow-2xl z-[9999]">
-            <div><span className="text-[8px] text-white/50 uppercase tracking-widest block">{t('your_tray')}</span><span className="text-gold font-bold">{total} {t('currency_label')}</span></div>
-            <button onClick={() => onSubmit(notes)} className="bg-gold text-white px-6 py-2 text-[10px] font-bold uppercase tracking-widest">{t('order_now')}</button>
+            <div>
+              <span className="text-[8px] text-white/50 uppercase tracking-widest block">{buildLineItems().map(i => `${i.qty}x ${i.name}`).join(', ')}</span>
+              <span className="text-gold font-bold">AED {total}</span>
+            </div>
+            <button onClick={() => onSubmit(notes, buildLineItems())} className="bg-gold text-white px-6 py-2 text-[10px] font-bold uppercase tracking-widest">{t('order_now')}</button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -282,26 +275,26 @@ const RestaurantBooking: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubm
     { id: 'lolivo', name: t('lolivo'), desc: t('italian_cuisine') },
   ];
   return (
-    <div className="w-full py-6 space-y-6 px-4 sm:px-8">
+    <div className="w-full py-6 space-y-5 px-4 sm:px-8">
       <div className="text-center space-y-1">
         <h2 className="text-2xl font-serif text-navy">{t('restaurant_bookings')}</h2>
         <p className="text-gold text-[9px] uppercase tracking-widest font-bold">{t('reserve_table')}</p>
       </div>
       <div className="grid grid-cols-1 gap-2">
         {restaurants.map(r => (
-          <button key={r.id} onClick={() => setData({ ...data, restaurant: r.id })} className={cn('p-3 border text-left transition-all', data.restaurant === r.id ? 'border-gold bg-gold/5' : 'border-navy/10')}>
+          <button key={r.id} onClick={() => setData({ ...data, restaurant: r.id })} className={cn('p-3 border text-left', data.restaurant === r.id ? 'border-gold bg-gold/5' : 'border-navy/10')}>
             <p className="text-navy font-bold text-sm">{r.name}</p><p className="text-[9px] text-navy/60 italic">{r.desc}</p>
           </button>
         ))}
       </div>
       <div className="space-y-3">
-        {[{ label: t('label_pax'), key: 'pax', type: 'number' }, { label: t('label_date'), key: 'date', type: 'date' }, { label: t('label_time'), key: 'time', type: 'time' }].map(f => (
+        {[{ label: 'Number of Guests', key: 'pax', type: 'number' }, { label: 'Date', key: 'date', type: 'date' }, { label: 'Time', key: 'time', type: 'time' }].map(f => (
           <div key={f.key} className="space-y-1">
             <label className="text-[9px] uppercase tracking-widest text-gold font-bold">{f.label}</label>
             <input type={f.type} value={(data as any)[f.key]} onChange={e => setData({ ...data, [f.key]: e.target.value })} className="w-full bg-white text-navy border border-gold p-3 text-sm" />
           </div>
         ))}
-        <textarea value={data.notes} onChange={e => setData({ ...data, notes: e.target.value })} placeholder={t('message_placeholder')} className="h-20 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
+        <textarea value={data.notes} onChange={e => setData({ ...data, notes: e.target.value })} placeholder="Special requests, dietary requirements..." className="h-20 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
         <button onClick={() => onSubmit({ type: `Restaurant: ${data.restaurant}`, pax: Number(data.pax), preferredTiming: `${data.date} ${data.time}`, notes: data.notes })} className="gold-button w-full m-0">{t('confirm')}</button>
       </div>
     </div>
@@ -318,9 +311,9 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubmit }) =>
   const [destination, setDestination] = useState('');
   const [numBags, setNumBags] = useState('1');
   const cars = [
-    { id: 'mercedes', name: t('car_mercedes_name'), price: 1200, img: 'https://images.unsplash.com/photo-1618843479313-40f8afb4b4d8?auto=format&fit=crop&q=80&w=400' },
-    { id: 'range', name: t('car_range_name'), price: 1800, img: 'https://images.unsplash.com/photo-1606611013016-969c19ba27bb?auto=format&fit=crop&q=80&w=400' },
-    { id: 'lambo', name: t('car_lambo_name'), price: 2500, img: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&q=80&w=400' },
+    { id: 'mercedes', name: 'Mercedes S-Class', price: 1200, img: 'https://images.unsplash.com/photo-1618843479313-40f8afb4b4d8?auto=format&fit=crop&q=80&w=400' },
+    { id: 'range', name: 'Range Rover Vogue', price: 1800, img: 'https://images.unsplash.com/photo-1606611013016-969c19ba27bb?auto=format&fit=crop&q=80&w=400' },
+    { id: 'lambo', name: 'Lamborghini Urus', price: 2500, img: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&q=80&w=400' },
   ];
   const options = [
     { id: 'rent_a_car', name: t('rent_a_car'), icon: Car },
@@ -329,7 +322,7 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubmit }) =>
     { id: 'local_tours', name: t('local_tours'), icon: Globe },
   ];
   return (
-    <div className="w-full py-6 space-y-6 px-4 sm:px-8">
+    <div className="w-full py-6 space-y-5 px-4 sm:px-8">
       <div className="text-center space-y-1">
         <h2 className="text-2xl font-serif text-navy">{t('concierge_services')}</h2>
         <p className="text-gold text-[9px] uppercase tracking-widest font-bold">Luxury Assistance</p>
@@ -347,45 +340,45 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubmit }) =>
           {cars.map(car => (
             <div key={car.id} className="flex items-center gap-3 bg-white border border-gold/10 p-3 shadow-sm">
               <img src={car.img} alt={car.name} className="w-20 h-14 object-cover" referrerPolicy="no-referrer" />
-              <div className="flex-1"><h4 className="font-serif text-navy text-sm">{car.name}</h4><p className="text-gold font-bold text-xs">{car.price} {t('currency_label')}</p></div>
-              <button onClick={() => onSubmit({ type: `Rent a Car: ${car.name}`, dept: 'Concierge', totalPrice: car.price, notes: `Car: ${car.name}. ${notes}` })} className="bg-gold text-white px-3 py-1.5 text-[9px] font-bold uppercase">{t('book_now')}</button>
+              <div className="flex-1"><h4 className="font-serif text-navy text-sm">{car.name}</h4><p className="text-gold font-bold text-xs">AED {car.price}/day</p></div>
+              <button onClick={() => onSubmit({ type: `Rent a Car: ${car.name}`, dept: 'Concierge', totalPrice: car.price, lineItems: [{ name: car.name, qty: 1, price: car.price, total: car.price }], notes })} className="bg-gold text-white px-3 py-1.5 text-[9px] font-bold uppercase">{t('book_now')}</button>
             </div>
           ))}
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Special requirements..." className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
         </div>
       )}
       {selected === 'taxi_limousine' && (
-        <div className="bg-white p-4 shadow-xl border border-gold/10 space-y-4">
+        <div className="bg-white p-4 border border-gold/10 space-y-4">
           <div className="pill-container">
             <button onClick={() => setSubTab('taxi')} className={cn('pill-btn', subTab === 'taxi' ? 'active' : 'inactive')}>{t('taxi')}</button>
             <button onClick={() => setSubTab('limousine')} className={cn('pill-btn', subTab === 'limousine' ? 'active' : 'inactive')}>{t('limousine')}</button>
           </div>
           <div className="space-y-3">
-            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">{t('label_pickup')}</label><input type="time" value={pickupTime} onChange={e => setPickupTime(e.target.value)} className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
-            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">{t('label_destination')}</label><input type="text" value={destination} onChange={e => setDestination(e.target.value)} placeholder={t('drop_off_destination')} className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
+            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">Pickup Time</label><input type="time" value={pickupTime} onChange={e => setPickupTime(e.target.value)} className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
+            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">Destination</label><input type="text" value={destination} onChange={e => setDestination(e.target.value)} placeholder="Drop-off location" className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Additional notes..." className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
           </div>
           <button onClick={() => onSubmit({ type: `Concierge: ${subTab}`, dept: 'Concierge', pickupTime, destination, notes })} className="gold-button w-full m-0">{t('submit')}</button>
         </div>
       )}
       {selected === 'luggage_service' && (
-        <div className="bg-white p-4 shadow-xl border border-gold/10 space-y-4">
+        <div className="bg-white p-4 border border-gold/10 space-y-4">
           <div className="pill-container">
-            <button onClick={() => setSubTab('pickup')} className={cn('pill-btn', subTab === 'pickup' ? 'active' : 'inactive')}>{t('pickup')}</button>
-            <button onClick={() => setSubTab('delivery')} className={cn('pill-btn', subTab === 'delivery' ? 'active' : 'inactive')}>{t('delivery')}</button>
+            <button onClick={() => setSubTab('pickup')} className={cn('pill-btn', subTab === 'pickup' ? 'active' : 'inactive')}>Pickup</button>
+            <button onClick={() => setSubTab('delivery')} className={cn('pill-btn', subTab === 'delivery' ? 'active' : 'inactive')}>Delivery</button>
           </div>
           <div className="space-y-3">
-            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">{t('luggage')}</label><input type="number" value={numBags} onChange={e => setNumBags(e.target.value)} min="1" className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
-            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">{t('label_pickup')}</label><input type="time" value={pickupTime} onChange={e => setPickupTime(e.target.value)} className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
+            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">Number of Bags</label><input type="number" value={numBags} onChange={e => setNumBags(e.target.value)} min="1" className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
+            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">Time</label><input type="time" value={pickupTime} onChange={e => setPickupTime(e.target.value)} className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
           </div>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Additional notes..." className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
           <button onClick={() => onSubmit({ type: `Luggage: ${subTab}`, dept: 'Concierge', numBags, pickupTime, notes })} className="gold-button w-full m-0">{t('submit')}</button>
         </div>
       )}
       {selected === 'local_tours' && (
-        <div className="bg-white p-4 shadow-xl border border-gold/10 space-y-4">
+        <div className="bg-white p-4 border border-gold/10 space-y-4">
           <p className="text-navy/60 font-serif italic text-center py-4 text-sm">Discover Abu Dhabi with our curated local tours.</p>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('message_placeholder')} className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Interests, preferences..." className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
           <button onClick={() => onSubmit({ type: 'Concierge: Local Tours', dept: 'Concierge', notes })} className="gold-button w-full m-0">{t('submit')}</button>
         </div>
       )}
@@ -429,9 +422,9 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
     }
     const { data: manager } = await supabase.from('managers').select('*').eq('password', managerPassword).single();
     if (manager) {
-      const managerProfile: UserProfile = { uid: manager.id, email: manager.email, displayName: manager.name, role: 'manager', department: manager.department as Department, status: 'Approved' };
-      localStorage.setItem('sentinel_local_session', JSON.stringify(managerProfile));
-      onLoginSuccess(managerProfile); return;
+      const mp: UserProfile = { uid: manager.id, email: manager.email, displayName: manager.name, role: 'manager', department: manager.department as Department, status: 'Approved' };
+      localStorage.setItem('sentinel_local_session', JSON.stringify(mp));
+      onLoginSuccess(mp); return;
     }
     const newCount = failCount + 1; setFailCount(newCount);
     if (newCount >= 3) { alert('Too many failed attempts.'); setShowManagerLock(false); setShowSecret(false); setFailCount(0); setManagerPassword(''); }
@@ -439,19 +432,19 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
   };
 
   return (
-    <div className="min-h-screen bg-navy flex flex-col items-center justify-center p-6 relative">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md space-y-8 sm:space-y-12 bg-[#001c36] p-6 sm:p-12 shadow-2xl border border-[#C5A059]">
+    <div className="min-h-screen bg-navy flex flex-col items-center justify-center p-6">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md space-y-8 bg-[#001c36] p-6 sm:p-12 shadow-2xl border border-[#C5A059]">
         <div className="text-center space-y-4">
           <div className="inline-block p-4 sm:p-6 border border-gold"><ShieldCheck className="w-10 h-10 sm:w-14 sm:h-14 text-gold" strokeWidth={1} /></div>
           <h1 className="text-2xl sm:text-4xl font-serif tracking-[0.1em] text-white uppercase">Sentinel Pro</h1>
           <p className="text-gold text-[8px] sm:text-[9px] tracking-[0.2em] uppercase font-bold">Luxury Management Systems</p>
         </div>
         {showManagerLock ? (
-          <form onSubmit={handleManagerAuth} className="space-y-6">
+          <form onSubmit={handleManagerAuth} className="space-y-5">
             <p className="text-gold text-[10px] text-center uppercase tracking-widest font-bold">Executive Vault Access</p>
             <input type="password" required autoFocus value={managerPassword} onChange={e => setManagerPassword(e.target.value)} className="login-input text-center" placeholder="Enter Executive Password" />
-            <div className="flex gap-4">
-              <button type="button" onClick={() => setShowManagerLock(false)} className="flex-1 py-3 border border-gold/20 text-gold text-[10px] font-bold uppercase tracking-widest">{t('back')}</button>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setShowManagerLock(false)} className="flex-1 py-3 border border-gold/20 text-gold text-[10px] font-bold uppercase">{t('back')}</button>
               <button type="submit" className="flex-1 gold-button">Unlock</button>
             </div>
           </form>
@@ -460,12 +453,19 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
             <p className="text-gold text-[10px] text-center uppercase tracking-widest font-bold">Security Override</p>
             <button onClick={() => setShowManagerLock(true)} className="gold-button w-full flex items-center justify-center gap-3"><ShieldCheck size={16} /> Executive Dashboard</button>
             <button onClick={onNavigateToStaff} className="navy-button w-full border border-gold/30 flex items-center justify-center gap-3"><User size={16} /> Staff Portal</button>
-            <button onClick={() => setShowSecret(false)} className="text-[10px] text-white/40 uppercase tracking-widest w-full text-center hover:text-white">{t('cancel')}</button>
+            <button onClick={() => setShowSecret(false)} className="text-[10px] text-white/40 uppercase tracking-widest w-full text-center">{t('cancel')}</button>
           </div>
         ) : (
           <form onSubmit={handleGuestLogin} className="space-y-4 w-full">
-            <input type="text" required value={fullName} onChange={e => setFullName(e.target.value)} className="login-input" placeholder={t('full_name') || 'Full Name'} />
-            <input type="text" required disabled={isLocked} value={roomNumber} onChange={e => setRoomNumber(e.target.value)} className={cn('login-input', isLocked && 'opacity-50 cursor-not-allowed')} placeholder={t('room_number')} />
+            <div className="space-y-1">
+              <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Full Name</label>
+              <input type="text" required value={fullName} onChange={e => setFullName(e.target.value)} className="login-input" placeholder="Enter your full name" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Room Number</label>
+              <input type="text" required disabled={isLocked} value={roomNumber} onChange={e => setRoomNumber(e.target.value)} className={cn('login-input', isLocked && 'opacity-60 cursor-not-allowed bg-gold/10')} placeholder="Room number" />
+              {isLocked && <p className="text-[8px] text-gold/60 italic">Room pre-filled from QR code</p>}
+            </div>
             <button type="submit" disabled={loading} className="gold-button w-full">{loading ? '...' : t('sign_in')}</button>
           </form>
         )}
@@ -501,17 +501,37 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
           department: derivedDept, occupation, approved: false,
           needs_executive_approval: isManagerOccupation,
           logged_in: false, tasks_completed: 0, tasks_on_time: 0, violations: 0,
+          failed_attempts: 0,
         });
         if (error) throw error;
-        setPendingMessage(isManagerOccupation ? `Your ${occupation} profile has been submitted for Executive approval.` : `Your profile has been submitted for Department Manager approval.`);
+        setPendingMessage(isManagerOccupation
+          ? `Your ${occupation} profile has been submitted for Executive approval.`
+          : `Your profile has been submitted for Department Manager approval.`);
         setShowPending(true);
       } else {
-        const { data: staffData, error } = await supabase.from('staff').select('*').eq('email', email).eq('password', password).single();
+        const { data: staffData, error } = await supabase.from('staff').select('*').eq('email', email).single();
         if (error || !staffData) { alert('Invalid credentials.'); setLoading(false); return; }
+
+        // Check account lockout
+        if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) {
+          alert(`Account locked until ${new Date(staffData.locked_until).toLocaleTimeString()}. Too many failed attempts.`);
+          setLoading(false); return;
+        }
+
+        // Check password
+        if (staffData.password !== password) {
+          const attempts = (staffData.failed_attempts || 0) + 1;
+          const lockUntil = attempts >= 5 ? new Date(Date.now() + 30 * 60000).toISOString() : null;
+          await supabase.from('staff').update({ failed_attempts: attempts, ...(lockUntil ? { locked_until: lockUntil } : {}) }).eq('id', staffData.id);
+          alert(attempts >= 5 ? 'Account locked for 30 minutes due to too many failed attempts.' : `Invalid password. ${5 - attempts} attempts remaining.`);
+          setLoading(false); return;
+        }
+
         if (!staffData.approved) { alert('ACCESS DENIED: Your account is pending approval.'); setLoading(false); return; }
         const deviceId = getDeviceId();
-        if (staffData.device_id && staffData.device_id !== deviceId) { alert('ACCESS DENIED: Account active on another device.'); setLoading(false); return; }
-        await supabase.from('staff').update({ device_id: deviceId, logged_in: true }).eq('id', staffData.id);
+        if (staffData.device_id && staffData.device_id !== deviceId) { alert('ACCESS DENIED: This account is active on another device. Contact your manager to reset.'); setLoading(false); return; }
+        await supabase.from('staff').update({ device_id: deviceId, logged_in: true, failed_attempts: 0, locked_until: null }).eq('id', staffData.id);
+
         const isManager = MANAGER_OCCUPATIONS.includes(staffData.occupation || '');
         const profile: UserProfile = {
           uid: staffData.id, email: staffData.email, displayName: staffData.name,
@@ -526,7 +546,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
   };
 
   return (
-    <div className="min-h-screen bg-navy flex flex-col items-center justify-center p-6 relative">
+    <div className="min-h-screen bg-navy flex flex-col items-center justify-center p-6">
       <AnimatePresence>
         {showPending && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[5000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
@@ -560,31 +580,18 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
               <div className="space-y-1">
                 <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Occupation / Role</label>
                 <select value={occupation} onChange={e => setOccupation(e.target.value)} className="login-input bg-white text-navy">
-                  <optgroup label="── Housekeeping">
-                    <option>Housekeeping Attendant</option>
-                    <option>Housekeeping Supervisor</option>
-                    <option>Housekeeping Manager</option>
-                  </optgroup>
-                  <optgroup label="── F&B">
-                    <option>F&B Waiter</option><option>F&B Supervisor</option><option>Chef</option><option>F&B Manager</option>
-                  </optgroup>
-                  <optgroup label="── Concierge">
-                    <option>Concierge Agent</option><option>Concierge Supervisor</option><option>Concierge Manager</option>
-                  </optgroup>
-                  <optgroup label="── Security">
-                    <option>Security Officer</option><option>Security Supervisor</option><option>Security Manager</option>
-                  </optgroup>
-                  <optgroup label="── Front Office">
-                    <option>Front Office Agent</option><option>Front Office Supervisor</option>
-                    <option>Maintenance Technician</option><option>Maintenance Supervisor</option><option>Front Office Manager</option>
-                  </optgroup>
+                  <optgroup label="── Housekeeping"><option>Housekeeping Attendant</option><option>Housekeeping Supervisor</option><option>Housekeeping Manager</option></optgroup>
+                  <optgroup label="── F&B"><option>F&B Waiter</option><option>F&B Supervisor</option><option>Chef</option><option>F&B Manager</option></optgroup>
+                  <optgroup label="── Concierge"><option>Concierge Agent</option><option>Concierge Supervisor</option><option>Concierge Manager</option></optgroup>
+                  <optgroup label="── Security"><option>Security Officer</option><option>Security Supervisor</option><option>Security Manager</option></optgroup>
+                  <optgroup label="── Front Office / Maintenance"><option>Front Office Agent</option><option>Front Office Supervisor</option><option>Maintenance Technician</option><option>Maintenance Supervisor</option><option>Front Office Manager</option></optgroup>
                   <optgroup label="── Executive"><option>Executive</option></optgroup>
                 </select>
                 <div className="mt-1 flex items-center gap-2">
-                  <span className="text-[9px] text-white/40">Department:</span>
-                  <span className="text-[9px] text-gold font-bold">{derivedDept === 'None' ? 'All Departments' : derivedDept}</span>
+                  <span className="text-[8px] text-white/40">Department:</span>
+                  <span className="text-[8px] text-gold font-bold">{derivedDept === 'None' ? 'All Departments' : derivedDept}</span>
                 </div>
-                {isManagerOccupation && <p className="text-[9px] text-gold mt-1 font-bold">⚡ Requires Executive approval</p>}
+                {isManagerOccupation && <p className="text-[8px] text-gold font-bold">⚡ Requires Executive approval</p>}
               </div>
             </>
           )}
@@ -613,25 +620,41 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
 const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) => {
   const [tasks, setTasks] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [slaSettings, setSlaSettings] = useState<any>({});
+  const [activeTab, setActiveTab] = useState<'active' | 'history' | 'rooms' | 'maintenance'>('active');
   const [now, setNow] = useState(Date.now());
   const [newOrderAlert, setNewOrderAlert] = useState<string | null>(null);
   const [delayModalTask, setDelayModalTask] = useState<any | null>(null);
   const [delayReason, setDelayReason] = useState('');
   const [forwardModalTask, setForwardModalTask] = useState<any | null>(null);
   const [forwardDept, setForwardDept] = useState<Department>('Housekeeping');
-  const slaLimits = DEFAULT_SLA;
+  const [maintenanceForm, setMaintenanceForm] = useState({ room: '', category: 'Plumbing', description: '', priority: 'Normal' });
+
+  const isHousekeeping = userProfile.department === 'Housekeeping';
+  const isMaintenance = MAINTENANCE_OCCUPATIONS.includes(userProfile.occupation || '') ||
+    userProfile.department === 'Front Office';
 
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
+
+  const fetchSLA = async () => {
+    const { data } = await supabase.from('sla_settings').select('*');
+    if (data) {
+      const map: any = {};
+      data.forEach((s: any) => { map[s.department] = s.sla_minutes; });
+      setSlaSettings(map);
+    }
+  };
 
   const mapRow = (row: any) => ({
     id: row.id, roomNumber: row.guest_room || '', type: row.service || '',
     message: row.notes, department: row.department, status: row.status,
     guestId: row.guest_id || '', guestName: row.guest_name, timestamp: row.created_at,
     assignedStaffName: row.assigned_to, delayReason: row.late_reason,
+    lineItems: row.line_items,
   });
 
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     const dept = userProfile.department;
     let query = supabase.from('requests').select('*').order('created_at', { ascending: false });
     if (dept === 'Security & Safety') query = query.in('department', ['Security & Safety', 'Security']);
@@ -642,25 +665,32 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       setTasks(mapped.filter((t: any) => t.status !== 'Completed'));
       setHistory(mapped.filter((t: any) => t.status === 'Completed').slice(0, 30));
     }
-  };
+  }, [userProfile]);
+
+  const fetchRooms = useCallback(async () => {
+    const { data } = await supabase.from('rooms').select('*').order('room_number');
+    if (data) setRooms(data);
+  }, []);
 
   useEffect(() => {
-    fetchTasks();
+    fetchTasks(); fetchSLA();
+    if (isHousekeeping) fetchRooms();
     const channel = supabase.channel(`staff-${userProfile.uid}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           const dept = (payload.new as any).department;
           if (dept === userProfile.department) {
-            setNewOrderAlert(`New Request: Room #${(payload.new as any).guest_room} - ${(payload.new as any).service}`);
-            setTimeout(() => setNewOrderAlert(null), 5000);
+            setNewOrderAlert(`🔔 New: Room #${(payload.new as any).guest_room} — ${(payload.new as any).service}`);
+            setTimeout(() => setNewOrderAlert(null), 8000);
           }
         }
         fetchTasks();
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [userProfile]);
+  }, [userProfile, fetchTasks, fetchRooms, isHousekeeping]);
 
   const getElapsed = (ts: any) => { if (!ts) return 0; return Math.floor((now - new Date(ts).getTime()) / 1000); };
+  const getSLALimit = (dept: string) => (slaSettings[dept] || 5) * 60;
 
   const handleAccept = async (id: string) => {
     await supabase.from('requests').update({ status: 'In Progress', accepted_at: new Date().toISOString(), assigned_to: userProfile.displayName, assigned_to_email: userProfile.email }).eq('id', id);
@@ -668,46 +698,64 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   const handleComplete = async (task: any) => {
     const elapsed = getElapsed(task.timestamp);
-    const limit = (slaLimits[task.department as keyof typeof slaLimits] || 5) * 60;
+    const limit = getSLALimit(task.department);
     if (elapsed > limit) { setDelayModalTask(task); return; }
     await supabase.from('requests').update({ status: 'Completed', closed_at: new Date().toISOString() }).eq('id', task.id);
-    const { data: staffRow } = await supabase.from('staff').select('tasks_completed,tasks_on_time').eq('id', userProfile.uid).single();
-    if (staffRow) await supabase.from('staff').update({ tasks_completed: (staffRow.tasks_completed || 0) + 1, tasks_on_time: (staffRow.tasks_on_time || 0) + 1 }).eq('id', userProfile.uid);
+    const { data: sr } = await supabase.from('staff').select('tasks_completed,tasks_on_time').eq('id', userProfile.uid).single();
+    if (sr) await supabase.from('staff').update({ tasks_completed: (sr.tasks_completed || 0) + 1, tasks_on_time: (sr.tasks_on_time || 0) + 1 }).eq('id', userProfile.uid);
   };
 
   const handleCompleteWithReason = async () => {
     if (!delayReason || !delayModalTask) return;
     await supabase.from('requests').update({ status: 'Completed', closed_at: new Date().toISOString(), late_reason: delayReason }).eq('id', delayModalTask.id);
-    const { data: staffRow } = await supabase.from('staff').select('tasks_completed,violations').eq('id', userProfile.uid).single();
-    if (staffRow) await supabase.from('staff').update({ tasks_completed: (staffRow.tasks_completed || 0) + 1, violations: (staffRow.violations || 0) + 1 }).eq('id', userProfile.uid);
+    const { data: sr } = await supabase.from('staff').select('tasks_completed,violations').eq('id', userProfile.uid).single();
+    if (sr) await supabase.from('staff').update({ tasks_completed: (sr.tasks_completed || 0) + 1, violations: (sr.violations || 0) + 1 }).eq('id', userProfile.uid);
     setDelayModalTask(null); setDelayReason('');
   };
 
   const handleForward = async () => {
     if (!forwardModalTask || !forwardDept) return;
     await supabase.from('requests').update({
-      department: forwardDept,
-      status: 'Pending',
-      assigned_to: null,
-      assigned_to_email: null,
-      accepted_at: null,
+      department: forwardDept, status: 'Pending', assigned_to: null, assigned_to_email: null, accepted_at: null,
       notes: (forwardModalTask.message || '') + ` [Forwarded from ${userProfile.department} by ${userProfile.displayName}]`
     }).eq('id', forwardModalTask.id);
-    alert(`✅ Request forwarded to ${forwardDept} department. Guest has been notified.`);
+    alert(`✅ Request forwarded to ${forwardDept} department.`);
     setForwardModalTask(null);
   };
 
+  const updateRoomStatus = async (roomId: string, status: string) => {
+    await supabase.from('rooms').update({ status, assigned_to: userProfile.displayName, last_updated: new Date().toISOString() }).eq('id', roomId);
+    fetchRooms();
+  };
+
+  const submitMaintenanceRequest = async () => {
+    if (!maintenanceForm.room || !maintenanceForm.description) { alert('Please fill in room number and description.'); return; }
+    await supabase.from('requests').insert({
+      guest_room: maintenanceForm.room, guest_id: 'maintenance', guest_name: userProfile.displayName,
+      service: `Maintenance: ${maintenanceForm.category}`, notes: `${maintenanceForm.description} [Priority: ${maintenanceForm.priority}]`,
+      department: 'Front Office', status: 'Pending', created_at: new Date().toISOString(),
+    });
+    alert('✅ Maintenance request submitted.');
+    setMaintenanceForm({ room: '', category: 'Plumbing', description: '', priority: 'Normal' });
+  };
+
+  const tabs = [
+    { key: 'active', label: `Active (${tasks.length})` },
+    { key: 'history', label: 'History' },
+    ...(isHousekeeping ? [{ key: 'rooms', label: 'Room Status' }] : []),
+    ...(isMaintenance ? [{ key: 'maintenance', label: '🔧 Maintenance' }] : []),
+  ];
+
   return (
-    <div className="w-full pb-24 relative bg-[#001529] min-h-screen text-white">
+    <div className="w-full pb-24 bg-[#001529] min-h-screen text-white">
       {/* Delay Modal */}
       <AnimatePresence>
         {delayModalTask && (
           <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#001c36] p-8 max-w-md w-full border-t-4 border-red-600 shadow-2xl">
               <div className="flex items-center gap-3 mb-4"><AlertCircle className="text-red-500" size={24} /><h2 className="text-xl font-serif text-white">SLA Violation — Reason Required</h2></div>
-              <p className="text-sm text-white/60 mb-2">Task: <span className="text-gold font-bold">{delayModalTask.type}</span></p>
-              <p className="text-sm text-white/60 mb-4">Select a delay reason to close this request.</p>
-              <select value={delayReason} onChange={e => setDelayReason(e.target.value)} className="w-full p-4 bg-white border border-red-500 mb-6 text-sm text-navy outline-none">
+              <p className="text-sm text-white/60 mb-4">Task: <span className="text-gold font-bold">{delayModalTask.type}</span></p>
+              <select value={delayReason} onChange={e => setDelayReason(e.target.value)} className="w-full p-4 bg-white border border-red-500 mb-5 text-sm text-navy outline-none">
                 <option value="">-- Select Reason (Required) --</option>
                 {DELAY_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
@@ -725,11 +773,9 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         {forwardModalTask && (
           <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#001c36] p-8 max-w-md w-full border-t-4 border-gold shadow-2xl">
-              <div className="flex items-center gap-3 mb-4"><ArrowRight className="text-gold" size={24} /><h2 className="text-xl font-serif text-white">Forward Request</h2></div>
-              <p className="text-sm text-white/60 mb-2">Task: <span className="text-gold font-bold">{forwardModalTask.type}</span></p>
-              <p className="text-sm text-white/60 mb-2">Current Department: <span className="text-white font-bold">{forwardModalTask.department}</span></p>
-              <p className="text-sm text-white/60 mb-4">Select the correct department to forward this request to:</p>
-              <select value={forwardDept} onChange={e => setForwardDept(e.target.value as Department)} className="w-full p-4 bg-white border border-gold mb-6 text-sm text-navy outline-none">
+              <div className="flex items-center gap-3 mb-4"><ArrowRight className="text-gold" size={22} /><h2 className="text-xl font-serif text-white">Forward Request</h2></div>
+              <p className="text-sm text-white/60 mb-4">Task: <span className="text-gold font-bold">{forwardModalTask.type}</span></p>
+              <select value={forwardDept} onChange={e => setForwardDept(e.target.value as Department)} className="w-full p-4 bg-white border border-gold mb-5 text-sm text-navy outline-none">
                 {DEPARTMENTS.filter(d => d !== forwardModalTask.department).map(d => <option key={d} value={d}>{d}</option>)}
               </select>
               <div className="flex gap-3">
@@ -741,41 +787,41 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         )}
       </AnimatePresence>
 
+      {/* New Order Alert */}
       <AnimatePresence>
         {newOrderAlert && (
-          <motion.div initial={{ y: -100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -100, opacity: 0 }} className="fixed top-20 left-1/2 -translate-x-1/2 z-[10002] bg-gold text-navy px-6 py-3 shadow-2xl flex items-center gap-3 border-2 border-white">
-            <AlertCircle size={18} /><span className="font-bold uppercase tracking-widest text-xs">{newOrderAlert}</span>
+          <motion.div initial={{ y: -80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -80, opacity: 0 }} className="fixed top-0 left-0 right-0 z-[10002] bg-gold text-navy px-6 py-4 shadow-2xl flex items-center justify-between">
+            <div className="flex items-center gap-3"><Bell size={20} /><span className="font-bold uppercase tracking-widest text-sm">{newOrderAlert}</span></div>
+            <button onClick={() => setNewOrderAlert(null)} className="text-navy/60 hover:text-navy"><X size={16} /></button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <header className="p-4 sm:p-6 bg-navy text-white flex justify-between items-center border-b border-gold/20">
+      <header className="p-4 bg-navy flex justify-between items-center border-b border-gold/20">
         <div>
           <h1 className="text-xl font-serif text-gold">{userProfile.displayName}</h1>
-          <p className="text-white/60 text-[9px] uppercase tracking-widest font-bold">{userProfile.department} · {userProfile.occupation || 'Staff'}</p>
+          <p className="text-white/60 text-[9px] uppercase tracking-widest">{userProfile.department} · {userProfile.occupation || 'Staff'}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex bg-navy/50 border border-gold/20 p-1">
-            <button onClick={() => setActiveTab('active')} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === 'active' ? 'bg-gold text-navy' : 'text-gold/60')}>Active ({tasks.length})</button>
-            <button onClick={() => setActiveTab('history')} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === 'history' ? 'bg-gold text-navy' : 'text-gold/60')}>History</button>
+        <div className="flex items-center gap-2">
+          <div className="flex bg-navy/50 border border-gold/20 p-0.5 flex-wrap gap-0.5">
+            {tabs.map(tab => (
+              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2.5 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
+            ))}
           </div>
-          <button onClick={async () => { await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid); localStorage.clear(); window.location.replace('/'); }} className="p-2 text-gold hover:text-white">
-            <LogOut size={18} />
-          </button>
+          <button onClick={async () => { await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid); localStorage.clear(); window.location.replace('/'); }} className="p-2 text-gold hover:text-white"><LogOut size={18} /></button>
         </div>
       </header>
 
-      <div className="staff-grid p-4 sm:p-6">
-        {activeTab === 'active' ? (
-          tasks.length === 0 ? (
-            <div className="col-span-full py-20 text-center">
-              <CheckCircle2 className="w-10 h-10 text-gold/20 mx-auto" strokeWidth={1} />
-              <p className="text-white/40 font-serif italic mt-3">No active requests. Standing by.</p>
-            </div>
+      {/* ACTIVE TASKS */}
+      {activeTab === 'active' && (
+        <div className="staff-grid p-4">
+          {tasks.length === 0 ? (
+            <div className="col-span-full py-20 text-center"><CheckCircle2 className="w-10 h-10 text-gold/20 mx-auto" strokeWidth={1} /><p className="text-white/40 font-serif italic mt-3">No active requests.</p></div>
           ) : tasks.map(task => {
             const elapsed = getElapsed(task.timestamp);
-            const limit = (slaLimits[task.department as keyof typeof slaLimits] || 5) * 60;
+            const limit = getSLALimit(task.department);
             const isViolated = elapsed > limit;
+            const pct = Math.min((elapsed / limit) * 100, 100);
             return (
               <motion.div key={task.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={cn('staff-task-card bg-[#001c36] relative', isViolated ? 'border-red-500 bg-red-900/10' : 'border-gold/10')}>
                 {isViolated && (
@@ -792,65 +838,165 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                   <p className={cn('text-[9px] uppercase tracking-widest font-bold', task.status === 'Pending' ? 'text-gold' : 'text-blue-400')}>{task.status}</p>
                   {task.guestName && <p className="text-[8px] text-white/40">Guest: {task.guestName}</p>}
                 </div>
-                {task.message && <div className="bg-navy/30 p-2 border-l-2 border-gold/20 italic text-xs text-white/60 mt-2">"{task.message}"</div>}
+                {/* Line items preview */}
+                {task.lineItems && task.lineItems.length > 0 && (
+                  <div className="mt-2 bg-navy/30 p-2 border-l-2 border-gold/30">
+                    {task.lineItems.map((li: any, i: number) => (
+                      <p key={i} className="text-[9px] text-white/70">{li.qty}x {li.name} — AED {li.total}</p>
+                    ))}
+                  </div>
+                )}
+                {task.message && !task.lineItems && <div className="bg-navy/30 p-2 border-l-2 border-gold/20 italic text-xs text-white/60 mt-2">"{task.message}"</div>}
                 <div className="mt-3 h-1 bg-navy/50 rounded-full overflow-hidden">
-                  <div className={cn('h-full rounded-full transition-all', isViolated ? 'bg-red-500' : elapsed / limit > 0.8 ? 'bg-orange-400' : 'bg-green-500')} style={{ width: `${Math.min((elapsed / limit) * 100, 100)}%` }} />
+                  <div className={cn('h-full rounded-full', isViolated ? 'bg-red-500' : pct > 80 ? 'bg-orange-400' : 'bg-green-500')} style={{ width: `${pct}%` }} />
                 </div>
                 <div className="pt-3 space-y-2">
                   {task.status === 'Pending' ? (
                     <button onClick={() => handleAccept(task.id)} className="gold-button w-full m-0 py-2.5 text-[10px]">Accept Task</button>
                   ) : (
-                    <button onClick={() => handleComplete(task)} className={cn('w-full py-2.5 font-bold uppercase tracking-widest text-[10px]', isViolated ? 'bg-red-600 text-white' : 'bg-green-600 text-white')}>
+                    <button onClick={() => handleComplete(task)} className={cn('w-full py-2.5 font-bold uppercase text-[10px]', isViolated ? 'bg-red-600 text-white' : 'bg-green-600 text-white')}>
                       {isViolated ? '⚠ Close (Reason Required)' : '✓ Mark Completed'}
                     </button>
                   )}
-                  {/* Forward to correct department button */}
-                  <button onClick={() => { setForwardDept(DEPARTMENTS.find(d => d !== task.department) || 'F&B'); setForwardModalTask(task); }} className="w-full py-2 border border-gold/30 text-gold text-[9px] font-bold uppercase tracking-widest flex items-center justify-center gap-2">
-                    <ArrowRight size={12} /> Forward to Correct Dept
+                  <button onClick={() => { setForwardDept(DEPARTMENTS.find(d => d !== task.department) || 'F&B'); setForwardModalTask(task); }} className="w-full py-2 border border-gold/30 text-gold text-[9px] font-bold uppercase flex items-center justify-center gap-1">
+                    <ArrowRight size={11} /> Forward to Correct Dept
                   </button>
                 </div>
               </motion.div>
             );
-          })
-        ) : (
-          history.length === 0 ? (
+          })}
+        </div>
+      )}
+
+      {/* HISTORY */}
+      {activeTab === 'history' && (
+        <div className="staff-grid p-4">
+          {history.length === 0 ? (
             <div className="col-span-full py-20 text-center text-white/20 italic font-serif">No history yet.</div>
           ) : history.map(task => (
-            <div key={task.id} className="bg-[#001c36] border border-gold/10 p-4 opacity-70">
+            <div key={task.id} className="bg-[#001c36] border border-gold/10 p-4 opacity-80">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-[9px] font-bold text-white/40 uppercase">ROOM #{task.roomNumber}</span>
                 <span className="text-[9px] font-bold text-green-500 uppercase">COMPLETED</span>
               </div>
               <h3 className="text-sm font-serif text-white">{task.type}</h3>
-              {task.guestName && <p className="text-[8px] text-white/40 mt-1">Guest: {task.guestName}</p>}
+              {task.lineItems && task.lineItems.map((li: any, i: number) => (
+                <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>
+              ))}
               {task.delayReason && <p className="text-[8px] text-red-400 mt-1 font-bold">Late: {task.delayReason}</p>}
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
+
+      {/* ROOM STATUS — Housekeeping only */}
+      {activeTab === 'rooms' && isHousekeeping && (
+        <div className="p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-serif text-gold flex items-center gap-2"><BedDouble size={18} /> Room Status Board</h2>
+            <button onClick={fetchRooms} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {rooms.map(room => {
+              const statusObj = ROOM_STATUSES.find(s => s.key === room.status) || ROOM_STATUSES[0];
+              return (
+                <div key={room.id} className="bg-[#001c36] border border-gold/10 p-3 space-y-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-gold font-bold text-sm">Room {room.room_number}</p>
+                      <p className="text-[8px] text-white/40">{room.room_type} · Floor {room.floor}</p>
+                    </div>
+                    <span className={cn('text-[8px] font-bold px-2 py-0.5 text-white rounded-full', statusObj.color)}>{room.status}</span>
+                  </div>
+                  {room.assigned_to && <p className="text-[8px] text-white/40">By: {room.assigned_to}</p>}
+                  <select
+                    value={room.status}
+                    onChange={e => updateRoomStatus(room.id, e.target.value)}
+                    className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none"
+                  >
+                    {ROOM_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* MAINTENANCE TAB */}
+      {activeTab === 'maintenance' && isMaintenance && (
+        <div className="p-4 space-y-5">
+          <h2 className="text-lg font-serif text-gold flex items-center gap-2"><Wrench size={18} /> Maintenance Request</h2>
+          <div className="bg-[#001c36] border border-gold/10 p-5 space-y-4">
+            <div className="space-y-1">
+              <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Room / Location</label>
+              <input type="text" value={maintenanceForm.room} onChange={e => setMaintenanceForm({ ...maintenanceForm, room: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none" placeholder="e.g. Room 402, Lobby, Pool Area" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Category</label>
+              <select value={maintenanceForm.category} onChange={e => setMaintenanceForm({ ...maintenanceForm, category: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none">
+                {MAINTENANCE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Priority</label>
+              <div className="flex gap-2">
+                {['Low', 'Normal', 'High', 'Urgent'].map(p => (
+                  <button key={p} onClick={() => setMaintenanceForm({ ...maintenanceForm, priority: p })} className={cn('flex-1 py-2 text-[9px] font-bold uppercase border', maintenanceForm.priority === p ? (p === 'Urgent' ? 'bg-red-600 text-white border-red-600' : 'bg-gold text-navy border-gold') : 'border-gold/30 text-gold/60')}>{p}</button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Description</label>
+              <textarea value={maintenanceForm.description} onChange={e => setMaintenanceForm({ ...maintenanceForm, description: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none h-24 resize-none" placeholder="Describe the issue in detail..." />
+            </div>
+            <button onClick={submitMaintenanceRequest} className="gold-button w-full m-0">Submit Maintenance Request</button>
+          </div>
+
+          {/* Active maintenance requests */}
+          <h3 className="text-base font-serif text-gold">Active Maintenance Requests</h3>
+          {tasks.filter(t => t.type?.includes('Maintenance')).length === 0 ? (
+            <p className="text-white/20 italic text-sm">No active maintenance requests.</p>
+          ) : tasks.filter(t => t.type?.includes('Maintenance')).map(task => (
+            <div key={task.id} className="bg-[#001c36] border border-gold/10 p-4">
+              <div className="flex justify-between">
+                <div>
+                  <p className="text-white font-bold text-sm">{task.type}</p>
+                  <p className="text-[9px] text-white/40">Location: {task.roomNumber}</p>
+                  {task.message && <p className="text-[9px] text-white/60 mt-1">{task.message}</p>}
+                </div>
+                <span className={cn('text-[9px] font-bold px-2 py-1 border h-fit', task.status === 'Completed' ? 'border-green-500 text-green-400' : 'border-gold text-gold')}>{task.status}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
 
-// ─── DEPARTMENT MANAGER DASHBOARD ─────────────────────────────────────────────
+// ─── DEPT MANAGER DASHBOARD ───────────────────────────────────────────────────
 const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [requests, setRequests] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff'>('requests');
+  const [slaConfig, setSlaConfig] = useState<any>({});
+  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings'>('requests');
   const [now, setNow] = useState(Date.now());
-  const slaLimits = DEFAULT_SLA;
+  const [editSLA, setEditSLA] = useState<number>(5);
 
-  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(timer); }, []);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
 
   const fetchData = async () => {
     const dept = profile.department;
-    let reqQuery = supabase.from('requests').select('*').order('created_at', { ascending: false });
-    if (dept === 'Security & Safety') reqQuery = reqQuery.in('department', ['Security & Safety', 'Security']);
-    else reqQuery = reqQuery.eq('department', dept);
-    const { data: reqData } = await reqQuery;
+    let reqQ = supabase.from('requests').select('*').order('created_at', { ascending: false });
+    if (dept === 'Security & Safety') reqQ = reqQ.in('department', ['Security & Safety', 'Security']);
+    else reqQ = reqQ.eq('department', dept);
+    const { data: reqData } = await reqQ;
     if (reqData) setRequests(reqData);
     const { data: staffData } = await supabase.from('staff').select('*').eq('department', dept).order('created_at', { ascending: false });
     if (staffData) setStaffList(staffData);
+    const { data: slaData } = await supabase.from('sla_settings').select('*').eq('department', dept).single();
+    if (slaData) { setSlaConfig(slaData); setEditSLA(slaData.sla_minutes); }
   };
 
   useEffect(() => {
@@ -864,7 +1010,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
 
   const getSLAExceeded = (req: any) => {
     if (!req.created_at || req.status === 'Completed') return false;
-    return (now - new Date(req.created_at).getTime()) / 1000 > (slaLimits[req.department as keyof typeof slaLimits] || 5) * 60;
+    return (now - new Date(req.created_at).getTime()) / 1000 > (slaConfig.sla_minutes || 5) * 60;
   };
   const getElapsedMin = (ts: any) => Math.floor((now - new Date(ts).getTime()) / 60000);
 
@@ -873,60 +1019,73 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const approvedStaff = staffList.filter(s => s.approved);
 
   const approveStaff = async (id: string) => { await supabase.from('staff').update({ approved: true }).eq('id', id); };
-  const rejectStaff = async (id: string) => { if (window.confirm('Reject and delete this profile?')) await supabase.from('staff').delete().eq('id', id); };
+  const rejectStaff = async (id: string) => { if (window.confirm('Reject and delete?')) await supabase.from('staff').delete().eq('id', id); };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
+  const forceLogout = async (id: string) => {
+    await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id);
+    alert('Staff account has been logged out and device reset.');
+  };
+  const saveSLA = async () => {
+    await supabase.from('sla_settings').update({ sla_minutes: editSLA, updated_by: profile.displayName, updated_at: new Date().toISOString() }).eq('department', profile.department);
+    alert(`✅ SLA updated to ${editSLA} minutes for ${profile.department}`);
+    fetchData();
+  };
 
   return (
-    <div className="min-h-screen bg-[#001529] text-white p-4 sm:p-6 space-y-6">
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gold/20 pb-4">
+    <div className="min-h-screen bg-[#001529] text-white p-4 sm:p-6 space-y-5">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-gold/20 pb-4">
         <div>
           <h1 className="text-2xl font-serif text-gold">{profile.department} Manager</h1>
           <p className="text-gold/60 text-[9px] uppercase tracking-widest mt-1">{profile.displayName}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex bg-navy border border-gold/20 p-1">
+          <div className="flex bg-navy border border-gold/20 p-1 flex-wrap gap-0.5">
             {[
               { key: 'requests', label: `Requests (${requests.filter(r => r.status !== 'Completed').length})` },
               { key: 'sla', label: `SLA${violations.length > 0 ? ` (${violations.length})` : ''}` },
               { key: 'staff', label: `Staff${pendingStaff.length > 0 ? ` (${pendingStaff.length})` : ''}` },
+              { key: 'settings', label: '⚙ Settings' },
             ].map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
-          <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase">
-            <LogOut size={12} /> Logout
-          </button>
+          <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
         </div>
       </header>
 
       {violations.length > 0 && (
         <div className="border border-red-600 p-3 flex items-center gap-3" style={{ background: 'rgba(220,38,38,0.1)' }}>
           <AlertCircle className="text-red-500 flex-shrink-0" size={20} />
-          <div><h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''}</h3><p className="text-red-400/80 text-xs">Immediate attention required</p></div>
+          <div><h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''}</h3><p className="text-red-400/80 text-xs">SLA: {slaConfig.sla_minutes || 5} minutes for {profile.department}</p></div>
         </div>
       )}
 
       {activeTab === 'requests' && (
         <div className="space-y-3">
-          <h2 className="text-lg font-serif text-gold">{profile.department} — All Requests</h2>
-          {requests.length === 0 && <p className="text-white/20 italic font-serif py-12 text-center">No requests yet.</p>}
+          <h2 className="text-lg font-serif text-gold">{profile.department} Requests</h2>
+          {requests.length === 0 && <p className="text-white/20 italic py-12 text-center">No requests yet.</p>}
           {requests.map(req => {
             const over = getSLAExceeded(req);
             return (
               <div key={req.id} className={cn('border p-4', over ? 'border-red-500 bg-red-900/10' : 'border-gold/10 bg-[#001c36]')}>
                 <div className="flex justify-between items-start">
                   <div>
-                    <div className="flex gap-2 mb-2 flex-wrap">
-                      <span className={cn('text-[9px] font-bold px-2 py-1 border', req.status === 'Completed' ? 'border-green-500 text-green-400' : over ? 'border-red-500 text-red-400' : 'border-gold text-gold')}>{req.status}</span>
-                      {over && <span className="text-[9px] font-bold px-2 py-1 bg-red-600 text-white">⚠ SLA EXCEEDED</span>}
+                    <div className="flex gap-2 mb-1 flex-wrap">
+                      <span className={cn('text-[9px] font-bold px-2 py-0.5 border', req.status === 'Completed' ? 'border-green-500 text-green-400' : over ? 'border-red-500 text-red-400' : 'border-gold text-gold')}>{req.status}</span>
+                      {over && <span className="text-[9px] font-bold px-2 py-0.5 bg-red-600 text-white">⚠ SLA EXCEEDED</span>}
                     </div>
                     <p className="text-sm font-serif text-white">{req.service}</p>
-                    <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to ? `Staff: ${req.assigned_to}` : 'Unassigned'}</p>
+                    <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to || 'Unassigned'}</p>
+                    {/* Line items */}
+                    {req.line_items && req.line_items.map((li: any, i: number) => (
+                      <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>
+                    ))}
                     {req.late_reason && <p className="text-[9px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
                   </div>
-                  <div className="text-right ml-4">
+                  <div className="text-right ml-4 flex-shrink-0">
                     <p className="text-[9px] text-white/40">{new Date(req.created_at).toLocaleTimeString()}</p>
-                    {over && <p className="text-red-400 font-bold text-xs mt-1">{getElapsedMin(req.created_at)}m elapsed</p>}
+                    {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
+                    {over && <p className="text-red-400 text-xs font-bold">{getElapsedMin(req.created_at)}m elapsed</p>}
                   </div>
                 </div>
               </div>
@@ -940,12 +1099,12 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
           <h2 className="text-lg font-serif text-gold">SLA — {profile.department}</h2>
           <div className="bg-[#001c36] border border-gold/10 p-5">
             <h3 className="text-base font-serif text-white mb-3">Currently Delayed</h3>
-            {violations.length === 0 ? <p className="text-green-400 font-bold text-sm">✓ All within SLA</p> : (
-              <div className="space-y-3">
+            {violations.length === 0 ? <p className="text-green-400 font-bold text-sm">✓ All within SLA ({slaConfig.sla_minutes || 5} min limit)</p> : (
+              <div className="space-y-2">
                 {violations.map(req => (
                   <div key={req.id} className="flex items-center justify-between p-3 bg-red-900/20 border border-red-500">
-                    <div><p className="text-white font-bold text-sm">{req.assigned_to || 'Unassigned'}</p><p className="text-[9px] text-red-400 uppercase">Room {req.guest_room} · {req.service}</p></div>
-                    <div className="text-right"><p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m</p><p className="text-[9px] text-white/40">SLA: {slaLimits[req.department as keyof typeof slaLimits] || 5}m</p></div>
+                    <div><p className="text-white font-bold text-sm">{req.assigned_to || 'Unassigned'}</p><p className="text-[9px] text-red-400">Room {req.guest_room} · {req.service}</p></div>
+                    <div className="text-right"><p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m</p><p className="text-[9px] text-white/40">SLA: {slaConfig.sla_minutes || 5}m</p></div>
                   </div>
                 ))}
               </div>
@@ -963,7 +1122,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               <div className="space-y-2">
                 {pendingStaff.map(staff => (
                   <div key={staff.id} className="flex items-center justify-between p-3 bg-navy/50 border border-gold/20">
-                    <div><p className="text-white font-bold text-sm">{staff.name}</p><p className="text-[9px] text-gold uppercase font-bold">{staff.occupation} · {staff.staff_id}</p></div>
+                    <div><p className="text-white font-bold text-sm">{staff.name}</p><p className="text-[9px] text-gold uppercase">{staff.occupation} · {staff.staff_id}</p></div>
                     <div className="flex gap-2">
                       <button onClick={() => approveStaff(staff.id)} className="px-3 py-1.5 bg-gold text-navy text-[9px] font-bold uppercase">Approve ✓</button>
                       <button onClick={() => rejectStaff(staff.id)} className="px-3 py-1.5 bg-red-600 text-white text-[9px] font-bold uppercase">Reject</button>
@@ -975,16 +1134,48 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
           )}
           <div>
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-gold mb-3">Approved Staff ({approvedStaff.length})</h3>
-            {approvedStaff.length === 0 ? <p className="text-white/20 italic text-sm">No approved staff yet.</p> : (
-              <div className="space-y-2">
-                {approvedStaff.map(staff => (
-                  <div key={staff.id} className="flex items-center justify-between p-3 border border-gold/10">
-                    <div><p className="text-sm text-white font-bold">{staff.name}</p><p className="text-[9px] text-gold uppercase">{staff.occupation} · {staff.tasks_completed || 0} tasks · {staff.violations || 0} violations</p></div>
-                    <button onClick={() => terminateStaff(staff.id)} className="px-3 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Terminate</button>
+            <div className="space-y-2">
+              {approvedStaff.map(staff => (
+                <div key={staff.id} className="flex items-center justify-between p-3 border border-gold/10">
+                  <div>
+                    <p className="text-sm text-white font-bold">{staff.name}</p>
+                    <p className="text-[8px] text-gold uppercase">{staff.occupation} · {staff.tasks_completed || 0} tasks · {staff.violations || 0} violations</p>
+                    {staff.logged_in && <span className="text-[8px] text-green-400 font-bold">● Online</span>}
                   </div>
+                  <div className="flex gap-2">
+                    {staff.logged_in && <button onClick={() => forceLogout(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Force Logout</button>}
+                    <button onClick={() => terminateStaff(staff.id)} className="px-2 py-1 bg-red-800 text-white text-[8px] font-bold uppercase">Terminate</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'settings' && (
+        <div className="bg-[#001c36] border border-gold/10 p-5 space-y-5">
+          <h2 className="text-lg font-serif text-gold flex items-center gap-2"><Settings size={18} /> {profile.department} SLA Settings</h2>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">SLA Response Time (minutes)</label>
+              <p className="text-[9px] text-white/40">This is the maximum time staff have to complete a request before it's flagged as a violation.</p>
+              <div className="flex items-center gap-4">
+                <input type="number" min="1" max="120" value={editSLA} onChange={e => setEditSLA(Number(e.target.value))} className="w-32 bg-white border border-gold p-3 text-xl font-serif text-navy text-center outline-none" />
+                <span className="text-white/60 text-sm">minutes</span>
+              </div>
+              <div className="flex gap-2 flex-wrap mt-2">
+                {[5, 10, 15, 20, 30, 45, 60].map(min => (
+                  <button key={min} onClick={() => setEditSLA(min)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase border', editSLA === min ? 'bg-gold text-navy border-gold' : 'border-gold/30 text-gold/60')}>{min}m</button>
                 ))}
               </div>
-            )}
+            </div>
+            <button onClick={saveSLA} className="gold-button m-0">Save SLA Setting</button>
+            <div className="border border-gold/10 p-4 bg-navy/20">
+              <p className="text-[9px] text-white/40 uppercase tracking-widest mb-2">Current Setting</p>
+              <p className="text-white"><span className="text-gold font-bold text-2xl font-serif">{slaConfig.sla_minutes || 5}</span> minutes SLA for {profile.department}</p>
+              {slaConfig.updated_by && <p className="text-[9px] text-white/30 mt-1">Last updated by: {slaConfig.updated_by}</p>}
+            </div>
           </div>
         </div>
       )}
@@ -996,19 +1187,24 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
 const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [requests, setRequests] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'analytics' | 'requests' | 'sla' | 'leaderboard' | 'staff'>('analytics');
+  const [slaSettings, setSlaSettings] = useState<any[]>([]);
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'analytics' | 'requests' | 'sla' | 'leaderboard' | 'staff' | 'qr'>('analytics');
   const [reportPeriod, setReportPeriod] = useState<'weekly' | 'monthly'>('weekly');
   const [reportMenuOpen, setReportMenuOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
-  const slaLimits = DEFAULT_SLA;
 
-  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(timer); }, []);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
 
   const fetchData = async () => {
     const { data: reqData } = await supabase.from('requests').select('*').order('created_at', { ascending: false });
     if (reqData) setRequests(reqData);
     const { data: staffData } = await supabase.from('staff').select('*').order('created_at', { ascending: false });
     if (staffData) setStaffList(staffData);
+    const { data: slaData } = await supabase.from('sla_settings').select('*');
+    if (slaData) setSlaSettings(slaData);
+    const { data: roomData } = await supabase.from('rooms').select('*').order('room_number');
+    if (roomData) setRooms(roomData);
   };
 
   useEffect(() => {
@@ -1020,16 +1216,41 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  const getSLALimit = (dept: string) => {
+    const s = slaSettings.find((x: any) => x.department === dept);
+    return (s?.sla_minutes || 5) * 60;
+  };
+
   const getSLAExceeded = (req: any) => {
     if (!req.created_at || req.status === 'Completed') return false;
-    return (now - new Date(req.created_at).getTime()) / 1000 > (slaLimits[req.department as keyof typeof slaLimits] || 5) * 60;
+    return (now - new Date(req.created_at).getTime()) / 1000 > getSLALimit(req.department);
   };
   const getElapsedMin = (ts: any) => Math.floor((now - new Date(ts).getTime()) / 60000);
 
   const violations = requests.filter(r => getSLAExceeded(r));
   const completed = requests.filter(r => r.status === 'Completed').length;
   const pending = requests.filter(r => r.status !== 'Completed').length;
-  const revenue = requests.reduce((s, r) => s + (r.total_price || 0), 0);
+
+  // REAL revenue from actual orders only
+  const revenue = requests.filter(r => r.total_price && r.status === 'Completed').reduce((s, r) => s + (r.total_price || 0), 0);
+
+  // Revenue breakdown by department (real data)
+  const deptRevenue = ['F&B', 'Concierge', 'Housekeeping', 'Front Office', 'Security & Safety'].map(dept => ({
+    name: dept.split(' ')[0],
+    revenue: requests.filter(r => r.department === dept && r.status === 'Completed' && r.total_price).reduce((s, r) => s + (r.total_price || 0), 0),
+  }));
+
+  // Top selling items
+  const allLineItems: any[] = [];
+  requests.forEach(r => { if (r.line_items) allLineItems.push(...r.line_items); });
+  const itemSales: Record<string, { qty: number; revenue: number }> = {};
+  allLineItems.forEach(li => {
+    if (!itemSales[li.name]) itemSales[li.name] = { qty: 0, revenue: 0 };
+    itemSales[li.name].qty += li.qty;
+    itemSales[li.name].revenue += li.total;
+  });
+  const topItems = Object.entries(itemSales).sort((a, b) => b[1].revenue - a[1].revenue).slice(0, 8);
+
   const pendingManagers = staffList.filter(s => !s.approved && MANAGER_OCCUPATIONS.includes(s.occupation || ''));
   const approvedStaff = staffList.filter(s => s.approved);
   const allPendingCount = staffList.filter(s => !s.approved).length;
@@ -1037,374 +1258,292 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const slaViolators = staffList.filter(s => (s.violations || 0) > 0).sort((a, b) => (b.violations || 0) - (a.violations || 0));
 
   const approveStaff = async (id: string) => { await supabase.from('staff').update({ approved: true }).eq('id', id); };
-  const deleteStaff = async (id: string) => { if (window.confirm('Delete this profile?')) await supabase.from('staff').delete().eq('id', id); };
+  const deleteStaff = async (id: string) => { if (window.confirm('Delete?')) await supabase.from('staff').delete().eq('id', id); };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
+  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); alert('Account logged out and device reset.'); };
 
-  const revenueData = [
-    { name: 'Mon', fb: 1200, car: 2500, other: 450 },
-    { name: 'Tue', fb: 1800, car: 5000, other: 600 },
-    { name: 'Wed', fb: 2200, car: 2500, other: 550 },
-    { name: 'Thu', fb: 1600, car: 7500, other: 700 },
-    { name: 'Fri', fb: 2800, car: 10000, other: 900 },
-    { name: 'Sat', fb: 3200, car: 12500, other: 1100 },
-    { name: 'Sun', fb: 2400, car: 5000, other: 800 },
-  ];
+  // QR Code generator
+  const generateQRCodes = () => {
+    const baseUrl = window.location.origin;
+    const roomNumbers = rooms.length > 0 ? rooms.map(r => r.room_number) : ['101', '102', '201', '202', '301', '302', '401', '402', '501', '502'];
+    const html = `<!DOCTYPE html>
+<html><head><title>Sentinel Pro — Room QR Codes</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  body { font-family: Georgia, serif; background: #f8f6f0; padding: 20px; }
+  h1 { text-align: center; color: #C5A059; letter-spacing: 4px; font-size: 24px; margin-bottom: 4px; }
+  p { text-align: center; color: #666; font-size: 12px; margin-bottom: 30px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .card { background: white; border: 1px solid #C5A059; padding: 20px; text-align: center; page-break-inside: avoid; }
+  .room { font-size: 20px; font-weight: bold; color: #001529; margin-bottom: 12px; letter-spacing: 2px; text-transform: uppercase; }
+  .qr { display: flex; justify-content: center; margin: 10px 0; }
+  .url { font-size: 8px; color: #999; word-break: break-all; margin-top: 8px; }
+  .instruction { font-size: 9px; color: #C5A059; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px; }
+  @media print { .no-print { display: none; } body { padding: 10px; } }
+</style></head>
+<body>
+<h1>Sentinel Pro</h1>
+<p>Luxury Hotel & Residences — Room QR Codes · Print and place in each room</p>
+<div class="grid" id="grid"></div>
+<script>
+const rooms = ${JSON.stringify(roomNumbers)};
+const base = '${baseUrl}';
+const grid = document.getElementById('grid');
+rooms.forEach(room => {
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.innerHTML = '<div class="room">Room ' + room + '</div><div class="qr" id="qr_' + room + '"></div><div class="instruction">Scan to request services</div><div class="url">' + base + '?room=' + room + '</div>';
+  grid.appendChild(div);
+  setTimeout(() => {
+    new QRCode(document.getElementById('qr_' + room), { text: base + '?room=' + room, width: 120, height: 120, colorDark: '#001529', colorLight: '#ffffff' });
+  }, 100);
+});
+setTimeout(() => window.print(), 2000);
+</script>
+<button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:12px;font-weight:bold;letter-spacing:2px;cursor:pointer;text-transform:uppercase;">🖨 Print QR Codes</button>
+</body></html>`;
+    const win = window.open('', '_blank');
+    if (win) { win.document.write(html); win.document.close(); }
+  };
 
+  // Report generator
   const generateReport = (type: 'pdf' | 'email' | 'csv') => {
     setReportMenuOpen(false);
-
     if (type === 'csv') {
-      const headers = `Date,Room,Department,Service,Status,Revenue (AED),Delay Reason,Staff\n`;
-      const rows = requests.map(r =>
-        `${new Date(r.created_at).toLocaleDateString()},${r.guest_room},${r.department},${r.service},${r.status},${r.total_price || 0},${r.late_reason || 'N/A'},${r.assigned_to || 'Unassigned'}`
-      ).join('\n');
+      const headers = `Date,Room,Department,Service,Items,Status,Revenue (AED),Delay Reason,Staff\n`;
+      const rows = requests.map(r => {
+        const items = r.line_items ? r.line_items.map((li: any) => `${li.qty}x ${li.name}`).join(' + ') : '';
+        return `${new Date(r.created_at).toLocaleDateString()},${r.guest_room},${r.department},${r.service},"${items}",${r.status},${r.total_price || 0},${r.late_reason || 'N/A'},${r.assigned_to || 'Unassigned'}`;
+      }).join('\n');
       const link = document.createElement('a');
       link.setAttribute('href', encodeURI('data:text/csv;charset=utf-8,' + headers + rows));
       link.setAttribute('download', `SentinelPro_${reportPeriod}_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link); link.click(); document.body.removeChild(link);
       return;
     }
+    if (type === 'email') { alert(`✅ ${reportPeriod} report sent to all department managers.`); return; }
 
-    if (type === 'email') {
-      alert(`✅ ${reportPeriod} report sent to all department managers.\n\nRecipients: Housekeeping, F&B, Concierge, Security, Front Office`);
-      return;
-    }
-
-    // PDF — open professional HTML report in new window
-    const deptBreakdown = DEPARTMENTS.map(dept => {
+    const deptBreakdown = ['Housekeeping', 'F&B', 'Concierge', 'Security & Safety', 'Front Office'].map(dept => {
       const deptReqs = requests.filter(r => r.department === dept);
       const deptViolations = deptReqs.filter(r => getSLAExceeded(r)).length;
       const deptCompleted = deptReqs.filter(r => r.status === 'Completed').length;
-      const deptRevenue = deptReqs.reduce((s, r) => s + (r.total_price || 0), 0);
-      return { dept, total: deptReqs.length, completed: deptCompleted, violations: deptViolations, revenue: deptRevenue };
+      const deptRevenue = deptReqs.filter(r => r.status === 'Completed').reduce((s, r) => s + (r.total_price || 0), 0);
+      const slaMin = slaSettings.find((x: any) => x.department === dept)?.sla_minutes || 5;
+      return { dept, total: deptReqs.length, completed: deptCompleted, violations: deptViolations, revenue: deptRevenue, slaMin };
     });
 
-    const topPerformers = leaderboard.slice(0, 5);
-    const violatorsList = slaViolators.slice(0, 10);
-    const feedbackList = requests.filter(r => r.rating).slice(0, 10);
-
-    const avgRating = feedbackList.length > 0
-      ? (feedbackList.reduce((s, r) => s + (r.rating || 0), 0) / feedbackList.length).toFixed(1)
-      : 'N/A';
-
+    const avgRating = requests.filter(r => r.rating).length > 0
+      ? (requests.filter(r => r.rating).reduce((s, r) => s + r.rating, 0) / requests.filter(r => r.rating).length).toFixed(1) : 'N/A';
     const completionRate = requests.length > 0 ? Math.round((completed / requests.length) * 100) : 0;
-
     const barMax = Math.max(...deptBreakdown.map(d => d.total), 1);
 
     const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sentinel Pro — ${reportPeriod.charAt(0).toUpperCase() + reportPeriod.slice(1)} Report</title>
+<html lang="en"><head><meta charset="UTF-8">
+<title>Sentinel Pro — ${reportPeriod} Report</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600;700&display=swap');
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Inter', sans-serif; background: #f8f6f0; color: #1a2744; }
-  .page { max-width: 900px; margin: 0 auto; padding: 40px 30px; }
-
-  /* HEADER */
-  .report-header { background: #001529; color: white; padding: 40px; margin-bottom: 30px; position: relative; overflow: hidden; }
-  .report-header::after { content: ''; position: absolute; top: 0; right: 0; width: 200px; height: 100%; background: linear-gradient(135deg, transparent 50%, rgba(197,160,89,0.1) 50%); }
-  .gold-line { width: 60px; height: 3px; background: #C5A059; margin-bottom: 16px; }
-  .hotel-name { font-family: 'Playfair Display', serif; font-size: 28px; color: #C5A059; letter-spacing: 3px; text-transform: uppercase; }
-  .report-title { font-size: 13px; color: rgba(255,255,255,0.5); letter-spacing: 4px; text-transform: uppercase; margin-top: 6px; }
-  .report-meta { margin-top: 20px; display: flex; gap: 40px; flex-wrap: wrap; }
-  .meta-item { }
-  .meta-label { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: rgba(255,255,255,0.4); }
-  .meta-value { font-size: 13px; color: #C5A059; font-weight: 600; margin-top: 2px; }
-
-  /* SECTIONS */
-  .section { margin-bottom: 28px; }
-  .section-title { font-family: 'Playfair Display', serif; font-size: 18px; color: #1a2744; border-bottom: 2px solid #C5A059; padding-bottom: 8px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-  .section-title .dot { width: 8px; height: 8px; background: #C5A059; display: inline-block; }
-
-  /* KPI GRID */
-  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
-  .kpi-card { background: white; border: 1px solid #e8e0d0; padding: 20px; text-align: center; position: relative; }
-  .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
-  .kpi-card.gold::before { background: #C5A059; }
-  .kpi-card.green::before { background: #22c55e; }
-  .kpi-card.blue::before { background: #3b82f6; }
-  .kpi-card.red::before { background: #ef4444; }
-  .kpi-value { font-family: 'Playfair Display', serif; font-size: 36px; color: #1a2744; }
-  .kpi-value.red { color: #ef4444; }
-  .kpi-value.green { color: #22c55e; }
-  .kpi-label { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: #999; margin-top: 4px; }
-  .kpi-sub { font-size: 11px; color: #666; margin-top: 4px; }
-
-  /* DEPARTMENT BREAKDOWN */
-  .dept-table { width: 100%; border-collapse: collapse; background: white; }
-  .dept-table th { background: #001529; color: #C5A059; font-size: 9px; text-transform: uppercase; letter-spacing: 2px; padding: 12px 16px; text-align: left; }
-  .dept-table td { padding: 12px 16px; border-bottom: 1px solid #f0ebe0; font-size: 13px; }
-  .dept-table tr:last-child td { border-bottom: none; }
-  .dept-table tr:hover td { background: #faf7f0; }
-  .bar-cell { padding: 12px 16px; }
-  .bar-bg { background: #f0ebe0; height: 8px; border-radius: 4px; overflow: hidden; }
-  .bar-fill { height: 8px; border-radius: 4px; background: #C5A059; }
-  .bar-fill.red { background: #ef4444; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 600; }
-  .badge.green { background: #dcfce7; color: #16a34a; }
-  .badge.red { background: #fee2e2; color: #dc2626; }
-  .badge.gold { background: #fef3c7; color: #d97706; }
-
-  /* LEADERBOARD */
-  .leaderboard-grid { display: grid; gap: 10px; }
-  .performer-card { background: white; border: 1px solid #e8e0d0; padding: 16px; display: flex; align-items: center; gap: 16px; }
-  .performer-card.first { border-color: #C5A059; background: linear-gradient(135deg, #fffbf0, white); }
-  .rank-badge { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
-  .performer-avatar { width: 44px; height: 44px; background: #001529; color: #C5A059; display: flex; align-items: center; justify-content: center; font-family: 'Playfair Display', serif; font-size: 18px; border-radius: 50%; flex-shrink: 0; }
-  .performer-info { flex: 1; }
-  .performer-name { font-weight: 700; font-size: 15px; }
-  .performer-role { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #C5A059; margin-top: 2px; }
-  .performer-stats { display: flex; gap: 20px; margin-top: 4px; }
-  .stat { font-size: 11px; color: #666; }
-  .stat strong { color: #1a2744; }
-  .rate-circle { width: 54px; height: 54px; border-radius: 50%; background: conic-gradient(#22c55e calc(var(--rate) * 1%), #e8e0d0 0); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #1a2744; flex-shrink: 0; position: relative; }
-  .rate-inner { width: 40px; height: 40px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
-
-  /* VIOLATIONS TABLE */
-  .violation-table { width: 100%; border-collapse: collapse; background: white; }
-  .violation-table th { background: #7f1d1d; color: white; font-size: 9px; text-transform: uppercase; letter-spacing: 2px; padding: 10px 14px; text-align: left; }
-  .violation-table td { padding: 10px 14px; border-bottom: 1px solid #fee2e2; font-size: 12px; }
-  .violation-table tr:last-child td { border-bottom: none; }
-  .violation-rate { font-weight: 700; }
-  .violation-rate.high { color: #dc2626; }
-  .violation-rate.med { color: #f59e0b; }
-
-  /* FEEDBACK */
-  .feedback-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-  .feedback-card { background: white; border: 1px solid #e8e0d0; padding: 16px; }
-  .stars { color: #C5A059; font-size: 14px; letter-spacing: 2px; margin-bottom: 8px; }
-  .feedback-text { font-size: 12px; color: #555; font-style: italic; line-height: 1.5; }
-  .feedback-meta { font-size: 10px; color: #C5A059; font-weight: 600; margin-top: 8px; text-transform: uppercase; letter-spacing: 1px; }
-
-  /* SUMMARY BOX */
-  .summary-box { background: #001529; color: white; padding: 28px; margin-bottom: 28px; }
-  .summary-title { font-family: 'Playfair Display', serif; font-size: 16px; color: #C5A059; margin-bottom: 16px; }
-  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .summary-item { text-align: center; }
-  .summary-value { font-family: 'Playfair Display', serif; font-size: 28px; color: #C5A059; }
-  .summary-label { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: rgba(255,255,255,0.5); margin-top: 4px; }
-
-  /* FOOTER */
-  .report-footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e8e0d0; display: flex; justify-content: space-between; align-items: center; }
-  .footer-brand { font-family: 'Playfair Display', serif; font-size: 14px; color: #C5A059; }
-  .footer-meta { font-size: 10px; color: #999; }
-
-  .print-btn { position: fixed; bottom: 30px; right: 30px; background: #001529; color: #C5A059; border: 2px solid #C5A059; padding: 14px 28px; font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; }
-  .print-btn:hover { background: #C5A059; color: #001529; }
-  @media print {
-    .print-btn { display: none; }
-    body { background: white; }
-    .page { padding: 20px; }
-  }
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  .card-box { background: white; border: 1px solid #e8e0d0; padding: 20px; }
-  .card-box-title { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #C5A059; font-weight: 700; margin-bottom: 12px; }
-</style>
-</head>
-<body>
-<div class="page">
-
-  <!-- HEADER -->
-  <div class="report-header">
-    <div class="gold-line"></div>
-    <div class="hotel-name">Sentinel Pro</div>
-    <div class="report-title">${reportPeriod.toUpperCase()} OPERATIONS AUDIT REPORT</div>
-    <div class="report-meta">
-      <div class="meta-item"><div class="meta-label">Generated</div><div class="meta-value">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</div></div>
-      <div class="meta-item"><div class="meta-label">Time</div><div class="meta-value">${new Date().toLocaleTimeString()}</div></div>
-      <div class="meta-item"><div class="meta-label">Prepared by</div><div class="meta-value">${profile.displayName}</div></div>
-      <div class="meta-item"><div class="meta-label">Period</div><div class="meta-value">${reportPeriod.charAt(0).toUpperCase() + reportPeriod.slice(1)} Summary</div></div>
-    </div>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:#f8f6f0;color:#1a2744}
+.page{max-width:960px;margin:0 auto;padding:40px 30px}
+.header{background:#001529;color:white;padding:40px;margin-bottom:28px}
+.gold{color:#C5A059}.gold-line{width:60px;height:3px;background:#C5A059;margin-bottom:16px}
+.hotel-name{font-family:'Playfair Display',serif;font-size:28px;color:#C5A059;letter-spacing:3px;text-transform:uppercase}
+.report-title{font-size:12px;color:rgba(255,255,255,0.5);letter-spacing:4px;text-transform:uppercase;margin-top:6px}
+.meta{margin-top:20px;display:flex;gap:40px;flex-wrap:wrap}
+.meta-item .label{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.4)}
+.meta-item .value{font-size:13px;color:#C5A059;font-weight:600;margin-top:2px}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.kpi{background:white;border:1px solid #e8e0d0;padding:20px;text-align:center;border-top:3px solid #C5A059}
+.kpi.green{border-top-color:#22c55e}.kpi.red{border-top-color:#ef4444}.kpi.blue{border-top-color:#3b82f6}
+.kpi-val{font-family:'Playfair Display',serif;font-size:32px;color:#1a2744}
+.kpi-val.red{color:#ef4444}.kpi-val.green{color:#22c55e}
+.kpi-lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:#999;margin-top:4px}
+.section{margin-bottom:24px}
+.section-title{font-family:'Playfair Display',serif;font-size:17px;color:#1a2744;border-bottom:2px solid #C5A059;padding-bottom:8px;margin-bottom:14px}
+.dept-table{width:100%;border-collapse:collapse;background:white}
+.dept-table th{background:#001529;color:#C5A059;font-size:9px;text-transform:uppercase;letter-spacing:2px;padding:11px 14px;text-align:left}
+.dept-table td{padding:11px 14px;border-bottom:1px solid #f0ebe0;font-size:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
+.badge.green{background:#dcfce7;color:#16a34a}.badge.red{background:#fee2e2;color:#dc2626}.badge.gold{background:#fef3c7;color:#d97706}
+.bar-bg{background:#f0ebe0;height:7px;border-radius:4px;overflow:hidden;margin-top:4px}
+.bar-fill{height:7px;background:#C5A059;border-radius:4px}
+.bar-fill.red{background:#ef4444}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px}
+.card{background:white;border:1px solid #e8e0d0;padding:18px}
+.card-title{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:#C5A059;font-weight:700;margin-bottom:12px}
+.performer{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f0ebe0}
+.performer:last-child{border:none}
+.avatar{width:36px;height:36px;background:#001529;color:#C5A059;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:16px;border-radius:50%;flex-shrink:0}
+.perf-info{flex:1}.perf-name{font-weight:700;font-size:13px}.perf-role{font-size:9px;color:#C5A059;text-transform:uppercase;letter-spacing:1px}
+.perf-stats{font-size:10px;color:#666;margin-top:2px}
+.perf-rate{font-size:18px;font-weight:700;color:#16a34a;text-align:right;flex-shrink:0}
+.violation-table{width:100%;border-collapse:collapse;background:white}
+.violation-table th{background:#7f1d1d;color:white;font-size:9px;text-transform:uppercase;letter-spacing:2px;padding:10px 13px;text-align:left}
+.violation-table td{padding:10px 13px;border-bottom:1px solid #fee2e2;font-size:12px}
+.item-table{width:100%;border-collapse:collapse;background:white}
+.item-table th{background:#001529;color:#C5A059;font-size:9px;text-transform:uppercase;letter-spacing:2px;padding:10px 13px;text-align:left}
+.item-table td{padding:10px 13px;border-bottom:1px solid #f0ebe0;font-size:12px}
+.feedback-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.fb-card{background:white;border:1px solid #e8e0d0;padding:14px}
+.stars{color:#C5A059;font-size:13px;letter-spacing:2px;margin-bottom:6px}
+.fb-text{font-size:11px;color:#555;font-style:italic;line-height:1.5}
+.fb-meta{font-size:9px;color:#C5A059;font-weight:600;margin-top:6px;text-transform:uppercase}
+.summary{background:#001529;color:white;padding:24px;margin-bottom:24px}
+.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.summary-item{text-align:center}
+.summary-val{font-family:'Playfair Display',serif;font-size:26px;color:#C5A059}
+.summary-lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.5);margin-top:3px}
+.footer{margin-top:36px;padding-top:18px;border-top:1px solid #e8e0d0;display:flex;justify-content:space-between;align-items:center}
+.print-btn{position:fixed;bottom:24px;right:24px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer}
+@media print{.print-btn{display:none}body{background:white}.page{padding:15px}}
+</style></head>
+<body><div class="page">
+<div class="header">
+  <div class="gold-line"></div>
+  <div class="hotel-name">Sentinel Pro</div>
+  <div class="report-title">${reportPeriod.toUpperCase()} OPERATIONS AUDIT REPORT</div>
+  <div class="meta">
+    <div class="meta-item"><div class="label">Generated</div><div class="value">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</div></div>
+    <div class="meta-item"><div class="label">Time</div><div class="value">${new Date().toLocaleTimeString()}</div></div>
+    <div class="meta-item"><div class="label">Prepared by</div><div class="value">${profile.displayName}</div></div>
+    <div class="meta-item"><div class="label">Period</div><div class="value">${reportPeriod.charAt(0).toUpperCase() + reportPeriod.slice(1)} Summary</div></div>
   </div>
-
-  <!-- KPI CARDS -->
-  <div class="kpi-grid">
-    <div class="kpi-card gold">
-      <div class="kpi-value">AED ${revenue.toLocaleString()}</div>
-      <div class="kpi-label">Total Revenue</div>
-      <div class="kpi-sub">All departments</div>
-    </div>
-    <div class="kpi-card blue">
-      <div class="kpi-value">${requests.length}</div>
-      <div class="kpi-label">Total Requests</div>
-      <div class="kpi-sub">${pending} active · ${completed} completed</div>
-    </div>
-    <div class="kpi-card green">
-      <div class="kpi-value green">${completionRate}%</div>
-      <div class="kpi-label">Completion Rate</div>
-      <div class="kpi-sub">${completed} of ${requests.length} resolved</div>
-    </div>
-    <div class="kpi-card ${violations.length > 0 ? 'red' : 'green'}">
-      <div class="kpi-value ${violations.length > 0 ? 'red' : 'green'}">${violations.length}</div>
-      <div class="kpi-label">SLA Violations</div>
-      <div class="kpi-sub">Avg guest rating: ${avgRating}/5</div>
-    </div>
-  </div>
-
-  <!-- SUMMARY -->
-  <div class="summary-box">
-    <div class="summary-title">Executive Summary</div>
-    <div class="summary-grid">
-      <div class="summary-item"><div class="summary-value">${staffList.filter(s => s.approved).length}</div><div class="summary-label">Active Staff</div></div>
-      <div class="summary-item"><div class="summary-value">${leaderboard.length}</div><div class="summary-label">Staff with completed tasks</div></div>
-      <div class="summary-item"><div class="summary-value">${feedbackList.length}</div><div class="summary-label">Guest Feedback Received</div></div>
-    </div>
-  </div>
-
-  <!-- DEPARTMENT BREAKDOWN -->
-  <div class="section">
-    <div class="section-title"><span class="dot"></span> Department Performance Breakdown</div>
-    <table class="dept-table">
-      <thead>
-        <tr>
-          <th>Department</th>
-          <th>Total Requests</th>
-          <th>Completed</th>
-          <th>SLA Violations</th>
-          <th>Revenue (AED)</th>
-          <th>Volume</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${deptBreakdown.map(d => `
-        <tr>
-          <td><strong>${d.dept}</strong></td>
-          <td>${d.total}</td>
-          <td><span class="badge ${d.completed === d.total && d.total > 0 ? 'green' : d.completed > 0 ? 'gold' : 'red'}">${d.completed} / ${d.total}</span></td>
-          <td><span class="badge ${d.violations > 0 ? 'red' : 'green'}">${d.violations} violation${d.violations !== 1 ? 's' : ''}</span></td>
-          <td>${d.revenue > 0 ? d.revenue.toLocaleString() : '—'}</td>
-          <td class="bar-cell" style="width:180px">
-            <div class="bar-bg"><div class="bar-fill ${d.violations > 0 ? 'red' : ''}" style="width:${Math.round((d.total / barMax) * 100)}%"></div></div>
-          </td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-  </div>
-
-  <!-- TWO COLUMNS -->
-  <div class="two-col">
-    <!-- TOP PERFORMERS -->
-    <div>
-      <div class="section-title"><span class="dot"></span> Top Performers</div>
-      ${topPerformers.length === 0 ? '<p style="color:#999;font-style:italic;font-size:13px">No completed tasks recorded yet.</p>' :
-        topPerformers.map((s, i) => {
-          const rate = Math.round(((s.tasks_on_time || 0) / (s.tasks_completed || 1)) * 100);
-          return `
-          <div class="performer-card ${i === 0 ? 'first' : ''}" style="margin-bottom:10px">
-            <div class="rank-badge">${['🥇','🥈','🥉'][i] || `#${i+1}`}</div>
-            <div class="performer-avatar">${s.name?.[0] || '?'}</div>
-            <div class="performer-info">
-              <div class="performer-name">${s.name}</div>
-              <div class="performer-role">${s.occupation || s.department}</div>
-              <div class="performer-stats">
-                <div class="stat">Tasks: <strong>${s.tasks_completed || 0}</strong></div>
-                <div class="stat">On Time: <strong>${s.tasks_on_time || 0}</strong></div>
-                <div class="stat">Violations: <strong style="color:${(s.violations||0)>0?'#dc2626':'#16a34a'}">${s.violations || 0}</strong></div>
-              </div>
-            </div>
-            <div style="text-align:center;flex-shrink:0">
-              <div style="font-size:22px;font-weight:700;color:${rate >= 80 ? '#16a34a' : rate >= 60 ? '#f59e0b' : '#dc2626'}">${rate}%</div>
-              <div style="font-size:9px;color:#999;text-transform:uppercase;letter-spacing:1px">On Time</div>
-            </div>
-          </div>`;
-        }).join('')
-      }
-    </div>
-
-    <!-- SLA VIOLATIONS DEPT CHART -->
-    <div>
-      <div class="section-title"><span class="dot"></span> SLA Violations by Dept</div>
-      <div class="card-box">
-        ${deptBreakdown.map(d => `
-        <div style="margin-bottom:14px">
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-            <span style="font-size:12px;font-weight:600">${d.dept}</span>
-            <span style="font-size:12px;color:${d.violations > 0 ? '#dc2626' : '#16a34a'};font-weight:700">${d.violations} violation${d.violations !== 1 ? 's' : ''}</span>
-          </div>
-          <div class="bar-bg">
-            <div class="bar-fill red" style="width:${d.violations > 0 ? Math.max(Math.round((d.violations / Math.max(...deptBreakdown.map(x=>x.violations),1)) * 100), 8) : 0}%"></div>
-          </div>
-        </div>`).join('')}
-      </div>
-    </div>
-  </div>
-
-  <!-- SLA VIOLATORS TABLE -->
-  ${violatorsList.length > 0 ? `
-  <div class="section" style="margin-top:24px">
-    <div class="section-title"><span class="dot"></span> Staff SLA Violation Audit</div>
-    <table class="violation-table">
-      <thead>
-        <tr>
-          <th>Staff Member</th>
-          <th>Occupation</th>
-          <th>Department</th>
-          <th>Total Tasks</th>
-          <th>Violations</th>
-          <th>Violation Rate</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${violatorsList.map(s => {
-          const rate = (s.tasks_completed || 0) > 0 ? Math.round(((s.violations || 0) / s.tasks_completed) * 100) : 0;
-          return `<tr>
-            <td><strong>${s.name}</strong><br><span style="font-size:10px;color:#999">${s.email}</span></td>
-            <td>${s.occupation || 'N/A'}</td>
-            <td>${s.department}</td>
-            <td>${s.tasks_completed || 0}</td>
-            <td><span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${s.violations || 0}</span></td>
-            <td><span class="violation-rate ${rate > 30 ? 'high' : 'med'}">${rate}%</span></td>
-            <td><span class="badge ${rate > 50 ? 'red' : rate > 25 ? 'gold' : 'green'}">${rate > 50 ? 'Critical' : rate > 25 ? 'Review' : 'Monitor'}</span></td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-  </div>` : ''}
-
-  <!-- GUEST FEEDBACK -->
-  ${feedbackList.length > 0 ? `
-  <div class="section">
-    <div class="section-title"><span class="dot"></span> Guest Feedback Summary (Avg: ${avgRating} ★)</div>
-    <div class="feedback-grid">
-      ${feedbackList.map(r => `
-      <div class="feedback-card">
-        <div class="stars">${'★'.repeat(r.rating || 0)}${'☆'.repeat(5 - (r.rating || 0))}</div>
-        <div class="feedback-text">"${r.feedback || 'No comment provided'}"</div>
-        <div class="feedback-meta">Room ${r.guest_room} · ${r.service} · ${r.department}</div>
-      </div>`).join('')}
-    </div>
-  </div>` : ''}
-
-  <!-- FOOTER -->
-  <div class="report-footer">
-    <div>
-      <div class="footer-brand">Sentinel Pro</div>
-      <div class="footer-meta" style="margin-top:4px">Luxury Hotel Management System · Confidential</div>
-    </div>
-    <div class="footer-meta" style="text-align:right">
-      Report generated: ${new Date().toLocaleString()}<br>
-      Prepared by: ${profile.displayName}
-    </div>
-  </div>
-
 </div>
 
-<button class="print-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+<div class="kpi-grid">
+  <div class="kpi"><div class="kpi-val">AED ${revenue.toLocaleString()}</div><div class="kpi-lbl">Confirmed Revenue</div></div>
+  <div class="kpi blue"><div class="kpi-val">${requests.length}</div><div class="kpi-lbl">Total Requests</div></div>
+  <div class="kpi green"><div class="kpi-val green">${completionRate}%</div><div class="kpi-lbl">Completion Rate</div></div>
+  <div class="kpi ${violations.length > 0 ? 'red' : 'green'}"><div class="kpi-val ${violations.length > 0 ? 'red' : 'green'}">${violations.length}</div><div class="kpi-lbl">SLA Violations</div></div>
+</div>
 
-</body>
-</html>`;
+<div class="summary">
+  <div style="font-family:'Playfair Display',serif;font-size:15px;color:#C5A059;margin-bottom:14px">Executive Summary</div>
+  <div class="summary-grid">
+    <div class="summary-item"><div class="summary-val">${approvedStaff.length}</div><div class="summary-lbl">Active Staff</div></div>
+    <div class="summary-item"><div class="summary-val">${completed}</div><div class="summary-lbl">Completed Requests</div></div>
+    <div class="summary-item"><div class="summary-val">${avgRating}</div><div class="summary-lbl">Avg Guest Rating</div></div>
+    <div class="summary-item"><div class="summary-val">${requests.filter(r => r.rating).length}</div><div class="summary-lbl">Feedback Received</div></div>
+  </div>
+</div>
 
+<div class="section">
+  <div class="section-title">Department Performance</div>
+  <table class="dept-table">
+    <thead><tr><th>Department</th><th>Total</th><th>Completed</th><th>SLA Limit</th><th>Violations</th><th>Revenue (AED)</th><th>Volume</th></tr></thead>
+    <tbody>
+      ${deptBreakdown.map(d => `<tr>
+        <td><strong>${d.dept}</strong></td>
+        <td>${d.total}</td>
+        <td><span class="badge ${d.completed === d.total && d.total > 0 ? 'green' : d.completed > 0 ? 'gold' : 'red'}">${d.completed}/${d.total}</span></td>
+        <td>${d.slaMin} min</td>
+        <td><span class="badge ${d.violations > 0 ? 'red' : 'green'}">${d.violations}</span></td>
+        <td>${d.revenue > 0 ? 'AED ' + d.revenue.toLocaleString() : '—'}</td>
+        <td style="width:150px"><div class="bar-bg"><div class="bar-fill ${d.violations > 0 ? 'red' : ''}" style="width:${Math.round((d.total / barMax) * 100)}%"></div></div></td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+</div>
+
+${topItems.length > 0 ? `
+<div class="section">
+  <div class="section-title">Top Selling Items & Services</div>
+  <table class="item-table">
+    <thead><tr><th>Item / Service</th><th>Qty Sold</th><th>Revenue (AED)</th><th>Avg Price</th></tr></thead>
+    <tbody>
+      ${topItems.map(([name, data]) => `<tr>
+        <td><strong>${name}</strong></td>
+        <td>${data.qty}</td>
+        <td><strong>AED ${data.revenue.toLocaleString()}</strong></td>
+        <td>AED ${Math.round(data.revenue / data.qty)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+</div>` : ''}
+
+<div class="two-col">
+  <div>
+    <div class="section-title">Top Performers</div>
+    <div class="card">
+      ${leaderboard.slice(0, 5).length === 0 ? '<p style="color:#999;font-style:italic;font-size:13px">No completed tasks yet.</p>' :
+        leaderboard.slice(0, 5).map((s, i) => {
+          const rate = Math.round(((s.tasks_on_time || 0) / (s.tasks_completed || 1)) * 100);
+          return `<div class="performer">
+            <div style="font-size:20px;width:28px">${['🥇','🥈','🥉'][i] || `#${i+1}`}</div>
+            <div class="avatar">${s.name?.[0] || '?'}</div>
+            <div class="perf-info">
+              <div class="perf-name">${s.name}</div>
+              <div class="perf-role">${s.occupation || s.department}</div>
+              <div class="perf-stats">${s.tasks_completed} tasks · ${s.violations || 0} violations</div>
+            </div>
+            <div class="perf-rate" style="color:${rate>=80?'#16a34a':rate>=60?'#f59e0b':'#dc2626'}">${rate}%</div>
+          </div>`;
+        }).join('')}
+    </div>
+  </div>
+  <div>
+    <div class="section-title">Violations by Department</div>
+    <div class="card">
+      ${deptBreakdown.map(d => `
+      <div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="font-size:12px;font-weight:600">${d.dept}</span>
+          <span style="font-size:12px;color:${d.violations>0?'#dc2626':'#16a34a'};font-weight:700">${d.violations} violation${d.violations !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="bar-bg"><div class="bar-fill red" style="width:${d.violations > 0 ? Math.max(Math.round((d.violations / Math.max(...deptBreakdown.map(x=>x.violations), 1)) * 100), 8) : 0}%"></div></div>
+      </div>`).join('')}
+    </div>
+  </div>
+</div>
+
+${slaViolators.length > 0 ? `
+<div class="section">
+  <div class="section-title">Staff Violation Audit</div>
+  <table class="violation-table">
+    <thead><tr><th>Staff Member</th><th>Occupation</th><th>Dept</th><th>Tasks</th><th>Violations</th><th>Rate</th><th>Status</th></tr></thead>
+    <tbody>
+      ${slaViolators.map(s => {
+        const rate = (s.tasks_completed || 0) > 0 ? Math.round(((s.violations || 0) / s.tasks_completed) * 100) : 0;
+        return `<tr>
+          <td><strong>${s.name}</strong><br><span style="font-size:10px;color:#999">${s.email}</span></td>
+          <td>${s.occupation || 'N/A'}</td><td>${s.department}</td>
+          <td>${s.tasks_completed || 0}</td>
+          <td><span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${s.violations || 0}</span></td>
+          <td style="font-weight:700;color:${rate>30?'#dc2626':'#f59e0b'}">${rate}%</td>
+          <td><span class="badge ${rate>50?'red':rate>25?'gold':'green'}">${rate>50?'Critical':rate>25?'Review':'Monitor'}</span></td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>
+</div>` : ''}
+
+${requests.filter(r => r.rating).length > 0 ? `
+<div class="section">
+  <div class="section-title">Guest Feedback (Avg: ${avgRating} ★)</div>
+  <div class="feedback-grid">
+    ${requests.filter(r => r.rating).slice(0, 8).map(r => `
+    <div class="fb-card">
+      <div class="stars">${'★'.repeat(r.rating || 0)}${'☆'.repeat(5 - (r.rating || 0))}</div>
+      <div class="fb-text">"${r.feedback || 'No comment'}"</div>
+      <div class="fb-meta">Room ${r.guest_room} · ${r.service}</div>
+    </div>`).join('')}
+  </div>
+</div>` : ''}
+
+<div class="footer">
+  <div><div style="font-family:'Playfair Display',serif;font-size:14px;color:#C5A059">Sentinel Pro</div><div style="font-size:10px;color:#999;margin-top:3px">Luxury Hotel Management · Confidential</div></div>
+  <div style="font-size:10px;color:#999;text-align:right">Generated: ${new Date().toLocaleString()}<br>By: ${profile.displayName}</div>
+</div>
+</div>
+<button class="print-btn" onclick="window.print()">🖨 Print / Save PDF</button>
+</body></html>`;
     const win = window.open('', '_blank');
     if (win) { win.document.write(html); win.document.close(); }
   };
 
   return (
-    <div className="min-h-screen bg-[#001529] text-white p-4 sm:p-6 space-y-6">
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gold/20 pb-4">
+    <div className="min-h-screen bg-[#001529] text-white p-4 sm:p-6 space-y-5">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-gold/20 pb-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-serif text-gold">Executive Operations Center</h1>
           <p className="text-gold/60 text-[9px] uppercase tracking-widest mt-1">{profile.displayName} · All Departments</p>
@@ -1413,17 +1552,14 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
           <div className="relative">
             <div className="flex items-center bg-navy border border-gold/20">
               <select value={reportPeriod} onChange={e => setReportPeriod(e.target.value as any)} className="bg-transparent text-gold text-[9px] font-bold uppercase px-2 py-2 outline-none">
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
+                <option value="weekly">Weekly</option><option value="monthly">Monthly</option>
               </select>
-              <button onClick={() => setReportMenuOpen(!reportMenuOpen)} className="flex items-center gap-1 bg-gold text-navy px-3 py-2 text-[9px] font-bold uppercase">
-                <FileText size={12} /> Report
-              </button>
+              <button onClick={() => setReportMenuOpen(!reportMenuOpen)} className="flex items-center gap-1 bg-gold text-navy px-3 py-2 text-[9px] font-bold uppercase"><FileText size={12} /> Report</button>
             </div>
             <AnimatePresence>
               {reportMenuOpen && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="absolute right-0 mt-2 w-48 bg-navy border border-gold/30 shadow-2xl z-50">
-                  <button onClick={() => ('pdf')} className="w-full px-4 py-3 text-left text-[9px] uppercase hover:bg-gold/10 flex items-center gap-2 border-b border-gold/10"><Download size={12} className="text-gold" /> Download PDF</button>
+                  <button onClick={() => generateReport('pdf')} className="w-full px-4 py-3 text-left text-[9px] uppercase hover:bg-gold/10 flex items-center gap-2 border-b border-gold/10"><Download size={12} className="text-gold" /> Download PDF Report</button>
                   <button onClick={() => generateReport('email')} className="w-full px-4 py-3 text-left text-[9px] uppercase hover:bg-gold/10 flex items-center gap-2 border-b border-gold/10"><Mail size={12} className="text-gold" /> Email to Departments</button>
                   <button onClick={() => generateReport('csv')} className="w-full px-4 py-3 text-left text-[9px] uppercase hover:bg-gold/10 flex items-center gap-2"><ClipboardList size={12} className="text-gold" /> Export CSV</button>
                 </motion.div>
@@ -1437,57 +1573,82 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
               { key: 'sla', label: `SLA${violations.length > 0 ? `(${violations.length})` : ''}` },
               { key: 'requests', label: 'Requests' },
               { key: 'staff', label: `Staff${allPendingCount > 0 ? `(${allPendingCount})` : ''}` },
+              { key: 'qr', label: '📱 QR Codes' },
             ].map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>{tab.label}</button>
             ))}
           </div>
-          <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase">
-            <LogOut size={12} /> Logout
-          </button>
+          <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
         </div>
       </header>
 
       {violations.length > 0 && (
         <div className="border border-red-600 p-3 flex items-center gap-3" style={{ background: 'rgba(220,38,38,0.1)' }}>
           <AlertCircle className="text-red-500 flex-shrink-0" size={20} />
-          <div>
-            <h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''}</h3>
-            <div className="flex gap-1 mt-1 flex-wrap">{violations.slice(0, 5).map(v => <span key={v.id} className="bg-red-600 text-white text-[8px] font-bold px-1.5 py-0.5">RM {v.guest_room}</span>)}</div>
-          </div>
+          <div><h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''}</h3><div className="flex gap-1 mt-1 flex-wrap">{violations.slice(0, 5).map(v => <span key={v.id} className="bg-red-600 text-white text-[8px] font-bold px-1.5 py-0.5">RM {v.guest_room}</span>)}</div></div>
         </div>
       )}
 
+      {/* ANALYTICS */}
       {activeTab === 'analytics' && (
-        <div className="space-y-6">
+        <div className="space-y-5">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: 'Revenue (AED)', value: revenue.toLocaleString(), color: '#C5A059' },
-              { label: 'Active', value: pending, color: '#C5A059' },
-              { label: 'Completed', value: completed, color: '#4CAF50' },
-              { label: 'SLA Violations', value: violations.length, color: violations.length > 0 ? '#EF4444' : '#4CAF50' },
+              { label: 'Confirmed Revenue', value: `AED ${revenue.toLocaleString()}`, color: '#C5A059', sub: 'From completed orders' },
+              { label: 'Active Requests', value: pending, color: '#C5A059', sub: `${completed} completed` },
+              { label: 'Completion Rate', value: `${requests.length > 0 ? Math.round((completed / requests.length) * 100) : 0}%`, color: '#4CAF50', sub: `${completed} of ${requests.length}` },
+              { label: 'SLA Violations', value: violations.length, color: violations.length > 0 ? '#EF4444' : '#4CAF50', sub: 'Active violations' },
             ].map(k => (
               <div key={k.label} className="bg-[#001c36] border border-gold/10 p-4 text-center">
-                <div className="text-3xl font-serif mb-1" style={{ color: k.color }}>{k.value}</div>
+                <div className="text-2xl sm:text-3xl font-serif mb-1" style={{ color: k.color }}>{k.value}</div>
                 <div className="text-[9px] uppercase tracking-widest text-white/40 font-bold">{k.label}</div>
+                <div className="text-[8px] text-white/20 mt-1">{k.sub}</div>
               </div>
             ))}
           </div>
+
+          {/* Real revenue chart */}
           <div className="bg-[#001c36] border border-gold/10 p-5">
-            <h3 className="text-base font-serif text-white mb-3 flex items-center gap-2"><TrendingUp size={16} className="text-gold" /> Revenue — {reportPeriod}</h3>
-            <div className="h-[200px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={revenueData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#C5A05920" vertical={false} />
-                  <XAxis dataKey="name" stroke="#FFF" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: '#FFF', fontWeight: 'bold' }} />
-                  <YAxis stroke="#FFF" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: '#FFF', fontWeight: 'bold' }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#002349', border: '1px solid #C5A059' }} itemStyle={{ color: '#FFF', fontWeight: 'bold' }} />
-                  <Bar dataKey="fb" name="F&B" stackId="a" fill="#C5A059" />
-                  <Bar dataKey="car" name="Luxury Car" stackId="a" fill="#FFD700" />
-                  <Bar dataKey="other" name="Other" stackId="a" fill="#6B7280" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <h3 className="text-base font-serif text-white mb-3 flex items-center gap-2"><TrendingUp size={16} className="text-gold" /> Revenue by Department (Actual Completed Orders)</h3>
+            {deptRevenue.every(d => d.revenue === 0) ? (
+              <p className="text-white/20 italic text-sm py-8 text-center">No completed paid orders yet. Revenue will appear here as orders are completed.</p>
+            ) : (
+              <div className="h-[200px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={deptRevenue}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#C5A05920" vertical={false} />
+                    <XAxis dataKey="name" stroke="#FFF" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: '#FFF', fontWeight: 'bold' }} />
+                    <YAxis stroke="#FFF" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: '#FFF', fontWeight: 'bold' }} />
+                    <Tooltip contentStyle={{ backgroundColor: '#002349', border: '1px solid #C5A059' }} itemStyle={{ color: '#FFF', fontWeight: 'bold' }} formatter={(value: any) => [`AED ${value}`, 'Revenue']} />
+                    <Bar dataKey="revenue" name="Revenue (AED)" fill="#C5A059" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
+
+          {/* Top items */}
+          {topItems.length > 0 && (
+            <div className="bg-[#001c36] border border-gold/10 p-5">
+              <h3 className="text-base font-serif text-white mb-3 flex items-center gap-2"><Star size={16} className="text-gold" /> Top Selling Items</h3>
+              <div className="space-y-2">
+                {topItems.map(([name, data], i) => (
+                  <div key={name} className="flex items-center justify-between p-2 border-b border-gold/10">
+                    <div className="flex items-center gap-3">
+                      <span className="text-gold font-bold text-sm w-5">#{i + 1}</span>
+                      <div>
+                        <p className="text-white text-sm font-bold">{name}</p>
+                        <p className="text-[8px] text-white/40">{data.qty} units sold</p>
+                      </div>
+                    </div>
+                    <p className="text-gold font-bold">AED {data.revenue.toLocaleString()}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Guest Feedback */}
           <div className="bg-[#001c36] border border-gold/10 p-5">
             <h3 className="text-base font-serif text-white mb-3 flex items-center gap-2"><Star size={16} className="text-gold" /> Guest Feedback</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1498,16 +1659,17 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
                   <p className="text-[8px] text-gold font-bold uppercase mt-1">Room #{req.guest_room} · {req.service}</p>
                 </div>
               ))}
-              {requests.filter(r => r.rating).length === 0 && <p className="text-white/20 italic font-serif py-6 text-center text-sm">No feedback yet.</p>}
+              {requests.filter(r => r.rating).length === 0 && <p className="text-white/20 italic py-6 text-center text-sm col-span-2">No feedback yet.</p>}
             </div>
           </div>
         </div>
       )}
 
+      {/* LEADERBOARD */}
       {activeTab === 'leaderboard' && (
         <div className="bg-[#001c36] border border-gold/10 p-5 space-y-4">
           <h2 className="text-xl font-serif text-gold">Staff Performance Leaderboard</h2>
-          {leaderboard.length === 0 ? <p className="text-white/20 italic font-serif py-12 text-center">No completed tasks yet.</p> : (
+          {leaderboard.length === 0 ? <p className="text-white/20 italic py-12 text-center">No completed tasks yet.</p> : (
             <div className="space-y-2">
               {leaderboard.map((staff, idx) => {
                 const rate = Math.round(((staff.tasks_on_time || 0) / (staff.tasks_completed || 1)) * 100);
@@ -1519,9 +1681,10 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
                       <p className="font-bold text-white text-sm truncate">{staff.name}</p>
                       <p className="text-[8px] text-gold uppercase">{staff.occupation} · {staff.department}</p>
                     </div>
-                    <div className="text-center px-2"><p className="text-base font-serif text-green-400">{rate}%</p><p className="text-[7px] text-white/40 uppercase">On Time</p></div>
+                    <div className="text-center px-2"><p className="text-base font-serif" style={{ color: rate >= 80 ? '#22c55e' : rate >= 60 ? '#f59e0b' : '#ef4444' }}>{rate}%</p><p className="text-[7px] text-white/40 uppercase">On Time</p></div>
                     <div className="text-center px-2"><p className="text-base font-serif text-gold">{staff.tasks_completed || 0}</p><p className="text-[7px] text-white/40 uppercase">Tasks</p></div>
                     <div className="text-center px-2"><p className={cn('text-base font-serif', (staff.violations || 0) > 0 ? 'text-red-400' : 'text-green-400')}>{staff.violations || 0}</p><p className="text-[7px] text-white/40 uppercase">Violations</p></div>
+                    {staff.logged_in && <span className="text-[8px] text-green-400 font-bold">● Online</span>}
                   </div>
                 );
               })}
@@ -1530,9 +1693,20 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
         </div>
       )}
 
+      {/* SLA */}
       {activeTab === 'sla' && (
         <div className="space-y-4">
-          <h2 className="text-xl font-serif text-gold">SLA Monitoring</h2>
+          <h2 className="text-xl font-serif text-gold">SLA Monitoring — All Departments</h2>
+          {/* SLA limits per dept */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {slaSettings.map((s: any) => (
+              <div key={s.department} className="bg-[#001c36] border border-gold/10 p-3 text-center">
+                <p className="text-[9px] text-white/40 uppercase">{s.department}</p>
+                <p className="text-2xl font-serif text-gold">{s.sla_minutes}m</p>
+                <p className="text-[8px] text-white/20">SLA limit</p>
+              </div>
+            ))}
+          </div>
           <div className="bg-[#001c36] border border-gold/10 p-5">
             <h3 className="text-base font-serif text-white mb-3">Currently Delayed</h3>
             {violations.length === 0 ? <p className="text-green-400 font-bold text-sm">✓ All tasks within SLA</p> : (
@@ -1540,7 +1714,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
                 {violations.map(req => (
                   <div key={req.id} className="flex items-center justify-between p-3 bg-red-900/20 border border-red-500">
                     <div><p className="text-white font-bold text-sm">{req.assigned_to || 'Unassigned'}</p><p className="text-[9px] text-red-400 uppercase">{req.department} · Room {req.guest_room} · {req.service}</p></div>
-                    <div className="text-right"><p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m</p><p className="text-[8px] text-red-400">+{getElapsedMin(req.created_at) - (slaLimits[req.department as keyof typeof slaLimits] || 5)}m OVER</p></div>
+                    <div className="text-right"><p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m elapsed</p><p className="text-[8px] text-white/40">SLA: {slaSettings.find((x: any) => x.department === req.department)?.sla_minutes || 5}m</p></div>
                   </div>
                 ))}
               </div>
@@ -1552,18 +1726,19 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead><tr className="bg-navy/50 text-gold text-[9px] uppercase tracking-widest border-b border-gold/20">
-                    <th className="p-3 text-left">Staff</th><th className="p-3 text-left">Dept</th><th className="p-3 text-center">Tasks</th><th className="p-3 text-center">Violations</th><th className="p-3 text-center">Rate</th>
+                    <th className="p-3 text-left">Staff</th><th className="p-3 text-left">Dept</th><th className="p-3 text-center">Tasks</th><th className="p-3 text-center">Violations</th><th className="p-3 text-center">Rate</th><th className="p-3 text-right">Action</th>
                   </tr></thead>
                   <tbody>
                     {slaViolators.map(staff => {
                       const rate = (staff.tasks_completed || 0) > 0 ? Math.round(((staff.violations || 0) / staff.tasks_completed) * 100) : 0;
                       return (
-                        <tr key={staff.id} className="border-b border-gold/10 hover:bg-red-900/10">
+                        <tr key={staff.id} className="border-b border-gold/10">
                           <td className="p-3 text-sm text-white">{staff.name}</td>
                           <td className="p-3 text-xs text-white/60">{staff.department}</td>
                           <td className="p-3 text-center text-sm font-bold text-white">{staff.tasks_completed || 0}</td>
                           <td className="p-3 text-center"><span className="bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">{staff.violations || 0}</span></td>
                           <td className="p-3 text-center"><span className={cn('text-sm font-bold', rate > 30 ? 'text-red-400' : 'text-orange-400')}>{rate}%</span></td>
+                          <td className="p-3 text-right"><button onClick={() => forceLogout(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Force Logout</button></td>
                         </tr>
                       );
                     })}
@@ -1575,10 +1750,11 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
         </div>
       )}
 
+      {/* REQUESTS */}
       {activeTab === 'requests' && (
         <div className="space-y-3">
           <h2 className="text-xl font-serif text-gold">All Requests</h2>
-          {requests.length === 0 && <p className="text-white/20 italic font-serif py-12 text-center">No requests yet.</p>}
+          {requests.length === 0 && <p className="text-white/20 italic py-12 text-center">No requests yet.</p>}
           {requests.map(req => {
             const over = getSLAExceeded(req);
             return (
@@ -1592,11 +1768,14 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
                     </div>
                     <p className="text-sm font-serif text-white">{req.service}</p>
                     <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to || 'Unassigned'}</p>
+                    {req.line_items && req.line_items.map((li: any, i: number) => (
+                      <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>
+                    ))}
                     {req.late_reason && <p className="text-[9px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
                   </div>
                   <div className="text-right ml-4 flex-shrink-0">
                     <p className="text-[9px] text-white/40">{new Date(req.created_at).toLocaleTimeString()}</p>
-                    {req.total_price && <p className="text-gold font-bold text-sm">{req.total_price} AED</p>}
+                    {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                   </div>
                 </div>
               </div>
@@ -1605,16 +1784,17 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
         </div>
       )}
 
+      {/* STAFF */}
       {activeTab === 'staff' && (
         <div className="bg-[#001c36] border border-gold/10 p-5 space-y-6">
-          <h2 className="text-xl font-serif text-gold">Staff Approval Center</h2>
+          <h2 className="text-xl font-serif text-gold">Executive Staff Center</h2>
           {pendingManagers.length > 0 && (
             <div>
               <h3 className="text-[10px] font-bold uppercase tracking-widest text-gold mb-3 flex items-center gap-2"><ShieldCheck size={12} /> Manager Profiles Awaiting Approval ({pendingManagers.length})</h3>
               <div className="space-y-2">
                 {pendingManagers.map(staff => (
                   <div key={staff.id} className="flex items-center justify-between p-3 bg-gold/5 border border-gold/30">
-                    <div><p className="text-white font-bold text-sm">{staff.name}</p><p className="text-[9px] text-gold uppercase font-bold">{staff.occupation} · {staff.department}</p><p className="text-[8px] text-white/40">{staff.email}</p></div>
+                    <div><p className="text-white font-bold text-sm">{staff.name}</p><p className="text-[9px] text-gold uppercase">{staff.occupation} · {staff.department}</p><p className="text-[8px] text-white/40">{staff.email}</p></div>
                     <div className="flex gap-2">
                       <button onClick={() => approveStaff(staff.id)} className="px-3 py-1.5 bg-gold text-navy text-[9px] font-bold uppercase">Approve ✓</button>
                       <button onClick={() => deleteStaff(staff.id)} className="px-3 py-1.5 bg-red-600 text-white text-[9px] font-bold uppercase">Reject</button>
@@ -1629,26 +1809,52 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead><tr className="bg-navy/50 text-gold text-[9px] uppercase tracking-widest border-b border-gold/20">
-                  <th className="p-3 text-left">Name</th><th className="p-3 text-left">Occupation</th><th className="p-3 text-left">Dept</th><th className="p-3 text-center">Tasks</th><th className="p-3 text-center">Violations</th><th className="p-3 text-right">Action</th>
+                  <th className="p-3 text-left">Name</th><th className="p-3 text-left">Role</th><th className="p-3 text-left">Dept</th><th className="p-3 text-center">Tasks</th><th className="p-3 text-center">Violations</th><th className="p-3 text-center">Status</th><th className="p-3 text-right">Actions</th>
                 </tr></thead>
                 <tbody>
                   {approvedStaff.map(staff => (
                     <tr key={staff.id} className="border-b border-gold/10 hover:bg-gold/5">
-                      <td className="p-3 text-sm text-white">{staff.name}</td>
+                      <td className="p-3 text-sm text-white font-bold">{staff.name}<br /><span className="text-[8px] text-white/40 font-normal">{staff.email}</span></td>
                       <td className="p-3 text-xs text-white/60">{staff.occupation}</td>
                       <td className="p-3 text-xs text-white/60 uppercase">{staff.department}</td>
                       <td className="p-3 text-center text-sm font-bold text-white">{staff.tasks_completed || 0}</td>
                       <td className="p-3 text-center"><span className={cn('text-sm font-bold', (staff.violations || 0) > 0 ? 'text-red-400' : 'text-green-400')}>{staff.violations || 0}</span></td>
+                      <td className="p-3 text-center">{staff.logged_in ? <span className="text-[8px] text-green-400 font-bold">● Online</span> : <span className="text-[8px] text-white/20">Offline</span>}</td>
                       <td className="p-3 text-right"><div className="flex justify-end gap-1">
-                        <button onClick={() => terminateStaff(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Terminate</button>
+                        {staff.logged_in && <button onClick={() => forceLogout(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Force Logout</button>}
+                        <button onClick={() => terminateStaff(staff.id)} className="px-2 py-1 bg-red-800 text-white text-[8px] font-bold uppercase">Terminate</button>
                         <button onClick={() => deleteStaff(staff.id)} className="px-2 py-1 bg-red-600 text-white text-[8px] font-bold uppercase">Delete</button>
                       </div></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {approvedStaff.length === 0 && <p className="text-white/20 italic py-8 text-center text-sm">No approved staff yet.</p>}
+              {approvedStaff.length === 0 && <p className="text-white/20 italic py-8 text-center text-sm">No approved staff.</p>}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* QR CODES */}
+      {activeTab === 'qr' && (
+        <div className="bg-[#001c36] border border-gold/10 p-5 space-y-5">
+          <h2 className="text-xl font-serif text-gold flex items-center gap-2"><QrCode size={20} /> Room QR Code Generator</h2>
+          <p className="text-white/60 text-sm">Generate printable QR codes for all rooms. Guests scan the code and the room number is automatically filled — they only need to enter their name.</p>
+          <div className="bg-navy/30 border border-gold/20 p-4 space-y-2">
+            <p className="text-[9px] text-gold uppercase tracking-widest font-bold">Rooms in System ({rooms.length})</p>
+            <div className="flex flex-wrap gap-2">
+              {rooms.map(r => <span key={r.id} className="text-[9px] bg-navy/50 border border-gold/20 text-gold px-2 py-1 font-bold">Room {r.room_number}</span>)}
+            </div>
+          </div>
+          <button onClick={generateQRCodes} className="gold-button m-0 flex items-center gap-2 w-full justify-center">
+            <QrCode size={16} /> Generate & Print QR Codes for All Rooms
+          </button>
+          <div className="border border-gold/10 p-4 bg-navy/20 space-y-2">
+            <p className="text-[9px] text-gold uppercase tracking-widest font-bold">How It Works</p>
+            <p className="text-[10px] text-white/50">1. Click "Generate" — a printable page opens with QR codes for every room</p>
+            <p className="text-[10px] text-white/50">2. Print and laminate each QR code</p>
+            <p className="text-[10px] text-white/50">3. Place in the corresponding room (bedside table, welcome card, etc.)</p>
+            <p className="text-[10px] text-white/50">4. Guest scans → room auto-fills → they only enter their name</p>
           </div>
         </div>
       )}
@@ -1694,7 +1900,7 @@ export default function App() {
           message: row.notes, department: row.department, status: row.status,
           guestId: row.guest_id, timestamp: row.created_at, totalPrice: row.total_price,
           rating: row.rating, feedbackComment: row.feedback, feedbackDismissed: row.feedback_dismissed,
-          assignedStaffName: row.assigned_to,
+          assignedStaffName: row.assigned_to, lineItems: row.line_items,
         }));
         setRequests(mapped);
         const unrated = mapped.find((r: any) => r.status === 'Completed' && !r.rating && !r.feedbackDismissed);
@@ -1714,8 +1920,8 @@ export default function App() {
     if (!profile || !roomNumber) return;
     const service = customData?.type ? customData : selectedService;
     if (!service) return;
-    const menuPrices: { [k: string]: number } = { b1: 145, b2: 95, a1: 125, a2: 245, a3: 185, d1: 65, d2: 28, d3: 45 };
-    const totalPrice = Object.entries(cart).reduce((acc, [id, qty]) => acc + (menuPrices[id] || 0) * qty, 0) || customData?.totalPrice || 0;
+    const lineItems = customData?.lineItems || null;
+    const totalPrice = lineItems ? lineItems.reduce((s: number, li: any) => s + li.total, 0) : customData?.totalPrice || 0;
     try {
       const { error } = await supabase.from('requests').insert({
         guest_room: roomNumber, guest_id: profile.uid, guest_name: profile.displayName,
@@ -1723,12 +1929,13 @@ export default function App() {
         notes: customData?.notes || message || dietaryRequirements,
         department: service.dept || customData?.dept || 'Front Office',
         status: 'Pending', total_price: totalPrice > 0 ? totalPrice : null,
-        language, created_at: new Date().toISOString(),
+        line_items: lineItems, language,
+        created_at: new Date().toISOString(),
       });
       if (error) throw error;
       setShowRequestModal(false); setMessage(''); setSelectedService(null);
       setCart({}); setDietaryRequirements(''); setGuestTab('services');
-      alert(t('registration_submitted_successfully'));
+      alert('✅ Your request has been submitted successfully!');
     } catch (e: any) { alert(e.message); }
   };
 
@@ -1743,11 +1950,7 @@ export default function App() {
   const isExecutive = profile?.role === 'manager' && profile?.department === 'None';
   const isDeptManager = profile?.role === 'manager' && profile?.department !== 'None';
 
-  if (loading) return (
-    <div className="min-h-screen bg-navy flex items-center justify-center">
-      <div className="text-gold font-serif text-2xl animate-pulse">Loading...</div>
-    </div>
-  );
+  if (loading) return <div className="min-h-screen bg-navy flex items-center justify-center"><div className="text-gold font-serif text-2xl animate-pulse">Loading...</div></div>;
 
   return (
     <div className={cn('main-content', isRTL && 'rtl', profile?.role === 'manager' && 'manager-dark-mode')}>
@@ -1759,7 +1962,7 @@ export default function App() {
         <div className="luxury-container">
           <AnimatePresence mode="wait">
             {!profile ? (
-              <motion.div key="auth" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <motion.div key="auth" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 {pathname === '/staff-portal' ? (
                   <StaffLogin onLoginSuccess={p => setProfile(p)} onReturnToGuest={() => { window.history.pushState({}, '', '/'); setPathname('/'); }} />
                 ) : (
@@ -1802,48 +2005,41 @@ export default function App() {
                         </button>
                       ))}
                     </div>
-
-                    {/* REQUEST STATUS TRACKER */}
                     {requests.length > 0 && (
                       <section className="mt-8 px-4">
-                        <div className="flex items-center gap-2 mb-4 border-b border-gold/20 pb-2">
-                          <ClipboardList size={14} className="text-gold" />
-                          <h2 className="text-[10px] font-bold text-gold uppercase tracking-[0.25em]">Your Active Requests</h2>
+                        <div className="flex items-center gap-2 mb-3 border-b border-gold/20 pb-2">
+                          <ClipboardList size={13} className="text-gold" />
+                          <h2 className="text-[10px] font-bold text-gold uppercase tracking-[0.25em]">Your Requests</h2>
                         </div>
                         <div className="space-y-2">
                           {requests.map(req => (
                             <div key={req.id} className="flex items-center justify-between p-3 border border-navy/10 bg-white shadow-sm">
                               <div className="flex items-center gap-3">
-                                <div className={cn('w-7 h-7 flex items-center justify-center rounded-full border', statusColor(req.status))}>
-                                  {statusIcon(req.status)}
+                                <div className={cn('w-7 h-7 flex items-center justify-center rounded-full border', req.status === 'Completed' ? 'text-green-600 bg-green-50 border-green-200' : req.status === 'In Progress' ? 'text-blue-600 bg-blue-50 border-blue-200' : 'text-gold bg-gold/5 border-gold/30')}>
+                                  {req.status === 'Completed' ? <CheckCircle2 size={14} /> : <Clock size={14} />}
                                 </div>
                                 <div>
                                   <span className="text-navy font-bold text-sm font-serif block">{req.type}</span>
-                                  {req.status === 'In Progress' && req.assignedStaffName && (
-                                    <span className="text-[8px] text-blue-600 font-bold uppercase">✓ {req.assignedStaffName} is handling this</span>
-                                  )}
+                                  {/* Show line items */}
+                                  {req.lineItems && <span className="text-[8px] text-gold/70">{req.lineItems.map((li: any) => `${li.qty}x ${li.name}`).join(', ')}</span>}
+                                  {req.status === 'In Progress' && req.assignedStaffName && <span className="text-[8px] text-blue-600 font-bold uppercase block">✓ {req.assignedStaffName} is handling this</span>}
                                   {req.totalPrice && <span className="text-[8px] text-gold font-bold block">AED {req.totalPrice.toLocaleString()}</span>}
                                 </div>
                               </div>
-                              <span className={cn('text-[9px] font-bold px-2 py-1 border rounded-full', statusColor(req.status))}>{req.status}</span>
+                              <span className={cn('text-[9px] font-bold px-2 py-1 border rounded-full', req.status === 'Completed' ? 'text-green-600 border-green-200' : req.status === 'In Progress' ? 'text-blue-600 border-blue-200' : 'text-gold border-gold/30')}>{req.status}</span>
                             </div>
                           ))}
                         </div>
                       </section>
                     )}
-
                     <GuestFooter />
                   </>
                 )}
                 {guestTab === 'room-service' && (
-                  <RoomService cart={cart} updateCart={(id, delta) => setCart(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }))} onSubmit={notes => submitRequest({ type: t('room_service'), serviceKey: 'room_service', dept: 'F&B', notes })} />
+                  <RoomService cart={cart} updateCart={(id, delta) => setCart(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }))} onSubmit={(notes, items) => submitRequest({ type: t('room_service'), serviceKey: 'room_service', dept: 'F&B', notes, lineItems: items })} />
                 )}
-                {guestTab === 'restaurant-bookings' && (
-                  <RestaurantBooking onSubmit={data => submitRequest({ ...data, serviceKey: 'restaurant_bookings', dept: 'F&B' })} />
-                )}
-                {guestTab === 'concierge' && (
-                  <Concierge onSubmit={data => submitRequest({ ...data, serviceKey: 'concierge_services' })} />
-                )}
+                {guestTab === 'restaurant-bookings' && <RestaurantBooking onSubmit={data => submitRequest({ ...data, serviceKey: 'restaurant_bookings', dept: 'F&B' })} />}
+                {guestTab === 'concierge' && <Concierge onSubmit={data => submitRequest({ ...data, serviceKey: 'concierge_services' })} />}
               </motion.div>
             )}
           </AnimatePresence>
