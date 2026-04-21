@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './supabase';
-import { UserProfile, ServiceRequest, Department } from './types';
+import { UserProfile, Department } from './types';
 import { cn } from './lib/utils';
 import {
-  LogOut, Clock, CheckCircle2, AlertCircle, ChevronRight,
+  LogOut, Clock, CheckCircle2, AlertCircle,
   Shield, Coffee, Key, Sparkles, UtensilsCrossed, X,
   Globe, Home, Plus, Minus, Check, ChevronDown,
   User, ClipboardList, TrendingUp, Star, ShieldCheck,
-  Car, MapPin, Briefcase, Zap, FileText, Mail, Download,
+  Car, MapPin, Briefcase, FileText, Mail, Download,
   Phone, ArrowRight, QrCode, Settings, Wrench, BedDouble,
   Bell, RefreshCw
 } from 'lucide-react';
@@ -16,12 +16,13 @@ import { useLanguage, Language } from './contexts/TranslationContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const VAPID_PUBLIC_KEY = 'BGvO-tGYamXBE4yOlvG1gIIrOqyiwtoQcmxnjOuJVwy-HNLWm3Y8pt3f36Swy6CUKiPAsP9fUd1BqBA0OC9Lxpg';
+
 const MANAGER_OCCUPATIONS = [
   'Housekeeping Manager', 'F&B Manager', 'Concierge Manager',
   'Security Manager', 'Front Office Manager', 'Executive',
 ];
 
-// ✅ FIXED: Maintenance now routes to 'Maintenance' department
 const DEPT_FROM_OCCUPATION: Record<string, Department> = {
   'Housekeeping Manager': 'Housekeeping', 'F&B Manager': 'F&B',
   'Concierge Manager': 'Concierge', 'Security Manager': 'Security & Safety',
@@ -88,6 +89,83 @@ const queryParams = new URLSearchParams(window.location.search);
 const roomNumberFromUrl = queryParams.get('room') || '';
 const isRoomLocked = !!roomNumberFromUrl;
 
+// ─── PUSH NOTIFICATION HELPERS ────────────────────────────────────────────────
+const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+};
+
+// ✅ Custom hotel bell sound — distinct from phone ringtone
+const playNotificationSound = () => {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const playBell = (time: number, freq: number, duration: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.8, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+      osc.start(time);
+      osc.stop(time + duration);
+    };
+    const now = ctx.currentTime;
+    playBell(now, 880, 0.4);
+    playBell(now + 0.5, 1100, 0.4);
+    playBell(now + 1.0, 880, 0.6);
+    if ('vibrate' in navigator) navigator.vibrate([300, 100, 300, 100, 300]);
+  } catch (e) { console.log('Audio not available'); }
+};
+
+// ✅ Register push notifications
+const setupPushNotifications = async (staffId: string, department: string, displayName: string) => {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+
+    // Store staff info in service worker for background sync
+    if (registration.active) {
+      registration.active.postMessage({
+        type: 'STORE_STAFF_INFO',
+        payload: { staffId, department, displayName },
+      });
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return;
+
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+
+    const subJson = subscription.toJSON();
+    const { data: existing } = await supabase.from('push_subscriptions').select('id').eq('staff_id', staffId).single();
+
+    if (existing) {
+      await supabase.from('push_subscriptions').update({ subscription: subJson, department }).eq('staff_id', staffId);
+    } else {
+      await supabase.from('push_subscriptions').insert({ staff_id: staffId, department, subscription: subJson });
+    }
+
+    // Listen for messages from service worker
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data?.type === 'PLAY_NOTIFICATION_SOUND') playNotificationSound();
+    });
+
+    console.log('✅ Push notifications active for', department);
+  } catch (error) {
+    console.log('Push setup failed (non-critical):', error);
+  }
+};
+
 // ─── ERROR BOUNDARY ───────────────────────────────────────────────────────────
 export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
   constructor(props: any) { super(props); this.state = { hasError: false }; }
@@ -147,7 +225,7 @@ const Header: React.FC<{ roomNumber: string; user: any; logout: () => void; navi
         </div>
       </div>
       <div className={cn('flex items-center px-3', isRTL && 'flex-row-reverse')}>
-        {user && roomNumber && <div className="flex flex-col items-end mr-2 hidden sm:flex"><span className="text-[9px] font-bold text-white tracking-widest uppercase">{t('room')} {roomNumber}</span></div>}
+        {user && roomNumber && <div className="hidden sm:flex flex-col items-end mr-2"><span className="text-[9px] font-bold text-white tracking-widest uppercase">{t('room')} {roomNumber}</span></div>}
       </div>
     </nav>
   );
@@ -483,7 +561,7 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
   );
 };
 
-// ─── STAFF LOGIN / REGISTER ───────────────────────────────────────────────────
+// ─── STAFF LOGIN ──────────────────────────────────────────────────────────────
 const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onReturnToGuest: () => void }> = ({ onLoginSuccess, onReturnToGuest }) => {
   const { t } = useLanguage();
   const [email, setEmail] = useState('');
@@ -512,17 +590,12 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
           logged_in: false, tasks_completed: 0, tasks_on_time: 0, violations: 0, failed_attempts: 0,
         });
         if (error) throw error;
-        setPendingMessage(isManagerOccupation
-          ? `Your ${occupation} profile has been submitted for Executive approval.`
-          : `Your profile has been submitted for Department Manager approval.`);
+        setPendingMessage(isManagerOccupation ? `Your ${occupation} profile has been submitted for Executive approval.` : `Your profile has been submitted for Department Manager approval.`);
         setShowPending(true);
       } else {
         const { data: staffData, error } = await supabase.from('staff').select('*').eq('email', email).single();
         if (error || !staffData) { alert('Invalid credentials.'); setLoading(false); return; }
-        if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) {
-          alert(`Account locked until ${new Date(staffData.locked_until).toLocaleTimeString()}.`);
-          setLoading(false); return;
-        }
+        if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) { alert(`Account locked until ${new Date(staffData.locked_until).toLocaleTimeString()}.`); setLoading(false); return; }
         if (staffData.password !== password) {
           const attempts = (staffData.failed_attempts || 0) + 1;
           const lockUntil = attempts >= 5 ? new Date(Date.now() + 30 * 60000).toISOString() : null;
@@ -532,7 +605,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         }
         if (!staffData.approved) { alert('ACCESS DENIED: Your account is pending approval.'); setLoading(false); return; }
         const deviceId = getDeviceId();
-        if (staffData.device_id && staffData.device_id !== deviceId) { alert('ACCESS DENIED: Account active on another device. Contact your manager to reset.'); setLoading(false); return; }
+        if (staffData.device_id && staffData.device_id !== deviceId) { alert('ACCESS DENIED: Account active on another device.'); setLoading(false); return; }
         await supabase.from('staff').update({ device_id: deviceId, logged_in: true, failed_attempts: 0, locked_until: null }).eq('id', staffData.id);
         const isManager = MANAGER_OCCUPATIONS.includes(staffData.occupation || '');
         const profile: UserProfile = {
@@ -570,14 +643,8 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         <form onSubmit={handleAuth} className="space-y-3">
           {mode === 'register' && (
             <>
-              <div className="space-y-1">
-                <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Full Name</label>
-                <input type="text" required value={fullName} onChange={e => setFullName(e.target.value)} className="login-input bg-white text-navy" placeholder="Your full name" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Staff ID Number</label>
-                <input type="text" required value={staffIdNumber} onChange={e => setStaffIdNumber(e.target.value)} className="login-input bg-white text-navy" placeholder="e.g. HK-001" />
-              </div>
+              <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Full Name</label><input type="text" required value={fullName} onChange={e => setFullName(e.target.value)} className="login-input bg-white text-navy" placeholder="Your full name" /></div>
+              <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Staff ID Number</label><input type="text" required value={staffIdNumber} onChange={e => setStaffIdNumber(e.target.value)} className="login-input bg-white text-navy" placeholder="e.g. HK-001" /></div>
               <div className="space-y-1">
                 <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Occupation / Role</label>
                 <select value={occupation} onChange={e => setOccupation(e.target.value)} className="login-input bg-white text-navy">
@@ -597,20 +664,12 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
               </div>
             </>
           )}
-          <div className="space-y-1">
-            <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Email</label>
-            <input type="text" required value={email} onChange={e => setEmail(e.target.value)} className="login-input bg-white text-navy" placeholder="Email address" />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Password</label>
-            <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="login-input bg-white text-navy" placeholder="Password" />
-          </div>
+          <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Email</label><input type="text" required value={email} onChange={e => setEmail(e.target.value)} className="login-input bg-white text-navy" placeholder="Email address" /></div>
+          <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Password</label><input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="login-input bg-white text-navy" placeholder="Password" /></div>
           <button type="submit" disabled={loading} className="gold-button w-full">{loading ? '...' : (mode === 'login' ? t('sign_in') : 'Create Profile')}</button>
         </form>
         <div className="text-center space-y-2">
-          <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="text-[10px] font-bold text-gold uppercase tracking-widest block w-full">
-            {mode === 'login' ? "Don't have a profile? Create Profile" : "Already have a profile? Login"}
-          </button>
+          <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="text-[10px] font-bold text-gold uppercase tracking-widest block w-full">{mode === 'login' ? "Don't have a profile? Create Profile" : "Already have a profile? Login"}</button>
           <button onClick={onReturnToGuest} className="text-[10px] text-white/30 uppercase tracking-widest hover:text-white">← Return to Guest Portal</button>
         </div>
       </motion.div>
@@ -632,9 +691,18 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const [forwardModalTask, setForwardModalTask] = useState<any | null>(null);
   const [forwardDept, setForwardDept] = useState<Department>('Housekeeping');
   const [maintenanceForm, setMaintenanceForm] = useState({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
+  const pushSetupDone = useRef(false);
 
   const isHousekeeping = userProfile.department === 'Housekeeping';
   const isMaintenance = userProfile.department === 'Maintenance' || userProfile.department === 'Front Office';
+
+  // ✅ Setup push notifications when staff logs in
+  useEffect(() => {
+    if (!pushSetupDone.current && userProfile.uid) {
+      pushSetupDone.current = true;
+      setupPushNotifications(userProfile.uid, userProfile.department, userProfile.displayName);
+    }
+  }, [userProfile]);
 
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
 
@@ -676,8 +744,20 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         if (payload.eventType === 'INSERT') {
           const dept = (payload.new as any).department;
           if (dept === userProfile.department) {
-            setNewOrderAlert(`🔔 New: Room #${(payload.new as any).guest_room} — ${(payload.new as any).service}`);
-            setTimeout(() => setNewOrderAlert(null), 8000);
+            const msg = `Room #${(payload.new as any).guest_room} — ${(payload.new as any).service}`;
+            setNewOrderAlert(`🔔 New: ${msg}`);
+            // ✅ Play custom hotel bell sound
+            playNotificationSound();
+            // ✅ Show browser notification
+            if (Notification.permission === 'granted') {
+              new Notification('🔔 Sentinel Pro — New Request', {
+                body: msg,
+                icon: '/favicon.ico',
+                tag: 'sentinel-' + Date.now(),
+                requireInteraction: true,
+              });
+            }
+            setTimeout(() => setNewOrderAlert(null), 10000);
           }
         }
         fetchTasks();
@@ -738,6 +818,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   const staffLogout = async () => {
     await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid);
+    await supabase.from('push_subscriptions').delete().eq('staff_id', userProfile.uid);
     localStorage.clear(); window.location.replace('/');
   };
 
@@ -750,6 +831,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   return (
     <div className="w-full pb-24 bg-[#001529] min-h-screen text-white">
+      {/* Delay Modal */}
       <AnimatePresence>
         {delayModalTask && (
           <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
@@ -769,6 +851,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         )}
       </AnimatePresence>
 
+      {/* Forward Modal */}
       <AnimatePresence>
         {forwardModalTask && (
           <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
@@ -787,6 +870,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         )}
       </AnimatePresence>
 
+      {/* ✅ New Order Alert Banner with sound */}
       <AnimatePresence>
         {newOrderAlert && (
           <motion.div initial={{ y: -80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -80, opacity: 0 }} className="fixed top-0 left-0 right-0 z-[10002] bg-gold text-navy px-6 py-4 shadow-2xl flex items-center justify-between">
@@ -807,9 +891,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2.5 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
-          <button onClick={staffLogout} className="flex items-center gap-1 border border-gold/30 text-gold px-3 py-1.5 text-[9px] font-bold uppercase">
-            <LogOut size={12} /> Logout
-          </button>
+          <button onClick={staffLogout} className="flex items-center gap-1 border border-gold/30 text-gold px-3 py-1.5 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
         </div>
       </header>
 
@@ -908,16 +990,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         <div className="p-4 space-y-5">
           <h2 className="text-lg font-serif text-gold flex items-center gap-2"><Wrench size={18} /> Maintenance Request</h2>
           <div className="bg-[#001c36] border border-gold/10 p-5 space-y-4">
-            <div className="space-y-1">
-              <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Room / Location</label>
-              <input type="text" value={maintenanceForm.room} onChange={e => setMaintenanceForm({ ...maintenanceForm, room: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none" placeholder="e.g. Room 402, Lobby, Pool Area" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Category</label>
-              <select value={maintenanceForm.category} onChange={e => setMaintenanceForm({ ...maintenanceForm, category: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none">
-                {MAINTENANCE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
+            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Room / Location</label><input type="text" value={maintenanceForm.room} onChange={e => setMaintenanceForm({ ...maintenanceForm, room: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none" placeholder="e.g. Room 402, Lobby, Pool Area" /></div>
+            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Category</label><select value={maintenanceForm.category} onChange={e => setMaintenanceForm({ ...maintenanceForm, category: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none">{MAINTENANCE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
             <div className="space-y-1">
               <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Priority</label>
               <div className="flex gap-2">
@@ -926,23 +1000,9 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                 ))}
               </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Description</label>
-              <textarea value={maintenanceForm.description} onChange={e => setMaintenanceForm({ ...maintenanceForm, description: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none h-24 resize-none" placeholder="Describe the issue in detail..." />
-            </div>
+            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Description</label><textarea value={maintenanceForm.description} onChange={e => setMaintenanceForm({ ...maintenanceForm, description: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none h-24 resize-none" placeholder="Describe the issue in detail..." /></div>
             <button onClick={submitMaintenanceRequest} className="gold-button w-full m-0">Submit Maintenance Request</button>
           </div>
-          <h3 className="text-base font-serif text-gold">Active Maintenance Requests</h3>
-          {tasks.filter(t => t.type?.includes('Maintenance')).length === 0
-            ? <p className="text-white/20 italic text-sm">No active maintenance requests.</p>
-            : tasks.filter(t => t.type?.includes('Maintenance')).map(task => (
-              <div key={task.id} className="bg-[#001c36] border border-gold/10 p-4">
-                <div className="flex justify-between">
-                  <div><p className="text-white font-bold text-sm">{task.type}</p><p className="text-[9px] text-white/40">Location: {task.roomNumber}</p>{task.message && <p className="text-[9px] text-white/60 mt-1">{task.message}</p>}</div>
-                  <span className={cn('text-[9px] font-bold px-2 py-1 border h-fit', task.status === 'Completed' ? 'border-green-500 text-green-400' : 'border-gold text-gold')}>{task.status}</span>
-                </div>
-              </div>
-            ))}
         </div>
       )}
     </div>
@@ -1043,7 +1103,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                   <div>
                     <div className="flex gap-2 mb-1 flex-wrap">
                       <span className={cn('text-[9px] font-bold px-2 py-0.5 border', req.status === 'Completed' ? 'border-green-500 text-green-400' : over ? 'border-red-500 text-red-400' : 'border-gold text-gold')}>{req.status}</span>
-                      {over && <span className="text-[9px] font-bold px-2 py-0.5 bg-red-600 text-white">⚠ SLA EXCEEDED</span>}
+                      {over && <span className="text-[9px] font-bold px-2 py-0.5 bg-red-600 text-white">⚠ SLA</span>}
                     </div>
                     <p className="text-sm font-serif text-white">{req.service}</p>
                     <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to || 'Unassigned'}</p>
@@ -1072,7 +1132,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                 {violations.map(req => (
                   <div key={req.id} className="flex items-center justify-between p-3 bg-red-900/20 border border-red-500">
                     <div><p className="text-white font-bold text-sm">{req.assigned_to || 'Unassigned'}</p><p className="text-[9px] text-red-400">Room {req.guest_room} · {req.service}</p></div>
-                    <div className="text-right"><p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m</p></div>
+                    <p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m</p>
                   </div>
                 ))}
               </div>
@@ -1127,7 +1187,6 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">SLA Response Time (minutes)</label>
-              <p className="text-[9px] text-white/40">Maximum time staff have to complete a request before it's flagged as a violation.</p>
               <div className="flex items-center gap-4">
                 <input type="number" min="1" max="120" value={editSLA} onChange={e => setEditSLA(Number(e.target.value))} className="w-32 bg-white border border-gold p-3 text-xl font-serif text-navy text-center outline-none" />
                 <span className="text-white/60 text-sm">minutes</span>
@@ -1142,7 +1201,6 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
             <div className="border border-gold/10 p-4 bg-navy/20">
               <p className="text-[9px] text-white/40 uppercase tracking-widest mb-2">Current Setting</p>
               <p className="text-white"><span className="text-gold font-bold text-2xl font-serif">{slaConfig.sla_minutes || 5}</span> minutes SLA for {profile.department}</p>
-              {slaConfig.updated_by && <p className="text-[9px] text-white/30 mt-1">Last updated by: {slaConfig.updated_by}</p>}
             </div>
           </div>
         </div>
@@ -1201,10 +1259,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const allLineItems: any[] = [];
   requests.forEach(r => { if (r.line_items) allLineItems.push(...r.line_items); });
   const itemSales: Record<string, { qty: number; revenue: number }> = {};
-  allLineItems.forEach(li => {
-    if (!itemSales[li.name]) itemSales[li.name] = { qty: 0, revenue: 0 };
-    itemSales[li.name].qty += li.qty; itemSales[li.name].revenue += li.total;
-  });
+  allLineItems.forEach(li => { if (!itemSales[li.name]) itemSales[li.name] = { qty: 0, revenue: 0 }; itemSales[li.name].qty += li.qty; itemSales[li.name].revenue += li.total; });
   const topItems = Object.entries(itemSales).sort((a, b) => b[1].revenue - a[1].revenue).slice(0, 8);
 
   const pendingManagers = staffList.filter(s => !s.approved && MANAGER_OCCUPATIONS.includes(s.occupation || ''));
@@ -1224,15 +1279,14 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
     const html = `<!DOCTYPE html><html><head><title>Sentinel Pro QR Codes</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>body{font-family:Georgia,serif;background:#f8f6f0;padding:20px}h1{text-align:center;color:#C5A059;letter-spacing:4px;font-size:22px}p{text-align:center;color:#666;font-size:11px;margin-bottom:28px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.card{background:white;border:1px solid #C5A059;padding:18px;text-align:center;page-break-inside:avoid}.room{font-size:18px;font-weight:bold;color:#001529;margin-bottom:10px;letter-spacing:2px}.qr{display:flex;justify-content:center;margin:8px 0}.url{font-size:7px;color:#999;word-break:break-all;margin-top:6px}.instruction{font-size:8px;color:#C5A059;margin-top:5px;text-transform:uppercase;letter-spacing:1px}@media print{body{padding:8px}}</style>
-</head><body>
-<h1>Sentinel Pro</h1><p>Scan QR to request hotel services</p>
+</head><body><h1>Sentinel Pro</h1><p>Scan QR to request hotel services</p>
 <div class="grid" id="grid"></div>
 <script>
 const rooms=${JSON.stringify(roomNumbers)};const base='${baseUrl}';const grid=document.getElementById('grid');
 rooms.forEach(room=>{const div=document.createElement('div');div.className='card';div.innerHTML='<div class="room">Room '+room+'</div><div class="qr" id="qr_'+room+'"></div><div class="instruction">Scan to request services</div><div class="url">'+base+'?room='+room+'</div>';grid.appendChild(div);setTimeout(()=>{new QRCode(document.getElementById('qr_'+room),{text:base+'?room='+room,width:110,height:110,colorDark:'#001529',colorLight:'#ffffff'});},100);});
 setTimeout(()=>window.print(),2000);
 </script>
-<button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:11px;font-weight:bold;letter-spacing:2px;cursor:pointer;text-transform:uppercase;">🖨 Print QR Codes</button>
+<button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:11px;font-weight:bold;letter-spacing:2px;cursor:pointer;">🖨 Print QR Codes</button>
 </body></html>`;
     const win = window.open('', '_blank');
     if (win) { win.document.write(html); win.document.close(); }
@@ -1249,32 +1303,8 @@ setTimeout(()=>window.print(),2000);
       document.body.appendChild(link); link.click(); document.body.removeChild(link); return;
     }
     if (type === 'email') { alert(`✅ ${reportPeriod} report sent to all department managers.`); return; }
-
-    const deptBreakdown = ['Housekeeping', 'F&B', 'Concierge', 'Security & Safety', 'Front Office', 'Maintenance'].map(dept => {
-      const deptReqs = requests.filter(r => r.department === dept);
-      return { dept, total: deptReqs.length, completed: deptReqs.filter(r => r.status === 'Completed').length, violations: deptReqs.filter(r => getSLAExceeded(r)).length, revenue: deptReqs.filter(r => r.status === 'Completed').reduce((s, r) => s + (r.total_price || 0), 0), slaMin: slaSettings.find((x: any) => x.department === dept)?.sla_minutes || 5 };
-    });
-    const avgRating = requests.filter(r => r.rating).length > 0 ? (requests.filter(r => r.rating).reduce((s, r) => s + r.rating, 0) / requests.filter(r => r.rating).length).toFixed(1) : 'N/A';
-    const completionRate = requests.length > 0 ? Math.round((completed / requests.length) * 100) : 0;
-    const barMax = Math.max(...deptBreakdown.map(d => d.total), 1);
-
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sentinel Pro Report</title>
-<style>@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600;700&display=swap');*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Inter',sans-serif;background:#f8f6f0;color:#1a2744}.page{max-width:960px;margin:0 auto;padding:40px 30px}.header{background:#001529;color:white;padding:40px;margin-bottom:28px}.gold-line{width:60px;height:3px;background:#C5A059;margin-bottom:16px}.hotel-name{font-family:'Playfair Display',serif;font-size:28px;color:#C5A059;letter-spacing:3px;text-transform:uppercase}.report-title{font-size:12px;color:rgba(255,255,255,0.5);letter-spacing:4px;text-transform:uppercase;margin-top:6px}.meta{margin-top:20px;display:flex;gap:40px;flex-wrap:wrap}.meta-item .label{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.4)}.meta-item .value{font-size:13px;color:#C5A059;font-weight:600;margin-top:2px}.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}.kpi{background:white;border:1px solid #e8e0d0;padding:20px;text-align:center;border-top:3px solid #C5A059}.kpi.green{border-top-color:#22c55e}.kpi.red{border-top-color:#ef4444}.kpi.blue{border-top-color:#3b82f6}.kpi-val{font-family:'Playfair Display',serif;font-size:30px;color:#1a2744}.kpi-val.red{color:#ef4444}.kpi-val.green{color:#22c55e}.kpi-lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:#999;margin-top:4px}.section{margin-bottom:24px}.section-title{font-family:'Playfair Display',serif;font-size:17px;color:#1a2744;border-bottom:2px solid #C5A059;padding-bottom:8px;margin-bottom:14px}.dept-table,.item-table,.vtable{width:100%;border-collapse:collapse;background:white}.dept-table th,.item-table th,.vtable th{background:#001529;color:#C5A059;font-size:9px;text-transform:uppercase;letter-spacing:2px;padding:11px 14px;text-align:left}.dept-table td,.item-table td,.vtable td{padding:11px 14px;border-bottom:1px solid #f0ebe0;font-size:12px}.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}.badge.green{background:#dcfce7;color:#16a34a}.badge.red{background:#fee2e2;color:#dc2626}.badge.gold{background:#fef3c7;color:#d97706}.bar-bg{background:#f0ebe0;height:7px;border-radius:4px;overflow:hidden;margin-top:4px}.bar-fill{height:7px;background:#C5A059;border-radius:4px}.bar-fill.red{background:#ef4444}.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px}.card{background:white;border:1px solid #e8e0d0;padding:18px}.performer{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f0ebe0}.performer:last-child{border:none}.avatar{width:36px;height:36px;background:#001529;color:#C5A059;display:flex;align-items:center;justify-content:center;font-size:16px;border-radius:50%;flex-shrink:0}.perf-info{flex:1}.perf-name{font-weight:700;font-size:13px}.perf-role{font-size:9px;color:#C5A059;text-transform:uppercase}.perf-stats{font-size:10px;color:#666;margin-top:2px}.summary{background:#001529;color:white;padding:24px;margin-bottom:24px}.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.summary-item{text-align:center}.summary-val{font-family:'Playfair Display',serif;font-size:26px;color:#C5A059}.summary-lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.5);margin-top:3px}.feedback-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.fb-card{background:white;border:1px solid #e8e0d0;padding:14px}.stars{color:#C5A059;font-size:13px;letter-spacing:2px;margin-bottom:6px}.fb-text{font-size:11px;color:#555;font-style:italic;line-height:1.5}.fb-meta{font-size:9px;color:#C5A059;font-weight:600;margin-top:6px;text-transform:uppercase}.footer{margin-top:36px;padding-top:18px;border-top:1px solid #e8e0d0;display:flex;justify-content:space-between}.print-btn{position:fixed;bottom:24px;right:24px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer}@media print{.print-btn{display:none}body{background:white}.page{padding:15px}}</style>
-</head><body><div class="page">
-<div class="header"><div class="gold-line"></div><div class="hotel-name">Sentinel Pro</div><div class="report-title">${reportPeriod.toUpperCase()} OPERATIONS AUDIT REPORT</div>
-<div class="meta"><div class="meta-item"><div class="label">Generated</div><div class="value">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</div></div><div class="meta-item"><div class="label">Time</div><div class="value">${new Date().toLocaleTimeString()}</div></div><div class="meta-item"><div class="label">Prepared by</div><div class="value">${profile.displayName}</div></div></div></div>
-<div class="kpi-grid"><div class="kpi"><div class="kpi-val">AED ${revenue.toLocaleString()}</div><div class="kpi-lbl">Confirmed Revenue</div></div><div class="kpi blue"><div class="kpi-val">${requests.length}</div><div class="kpi-lbl">Total Requests</div></div><div class="kpi green"><div class="kpi-val green">${completionRate}%</div><div class="kpi-lbl">Completion Rate</div></div><div class="kpi ${violations.length > 0 ? 'red' : 'green'}"><div class="kpi-val ${violations.length > 0 ? 'red' : 'green'}">${violations.length}</div><div class="kpi-lbl">SLA Violations</div></div></div>
-<div class="summary"><div style="font-family:'Playfair Display',serif;font-size:15px;color:#C5A059;margin-bottom:14px">Executive Summary</div><div class="summary-grid"><div class="summary-item"><div class="summary-val">${approvedStaff.length}</div><div class="summary-lbl">Active Staff</div></div><div class="summary-item"><div class="summary-val">${completed}</div><div class="summary-lbl">Completed</div></div><div class="summary-item"><div class="summary-val">${avgRating}</div><div class="summary-lbl">Avg Rating</div></div><div class="summary-item"><div class="summary-val">${requests.filter(r => r.rating).length}</div><div class="summary-lbl">Feedback</div></div></div></div>
-<div class="section"><div class="section-title">Department Performance</div><table class="dept-table"><thead><tr><th>Department</th><th>Total</th><th>Completed</th><th>SLA Limit</th><th>Violations</th><th>Revenue (AED)</th><th>Volume</th></tr></thead><tbody>${deptBreakdown.map(d => `<tr><td><strong>${d.dept}</strong></td><td>${d.total}</td><td><span class="badge ${d.completed === d.total && d.total > 0 ? 'green' : d.completed > 0 ? 'gold' : 'red'}">${d.completed}/${d.total}</span></td><td>${d.slaMin} min</td><td><span class="badge ${d.violations > 0 ? 'red' : 'green'}">${d.violations}</span></td><td>${d.revenue > 0 ? 'AED ' + d.revenue.toLocaleString() : '—'}</td><td style="width:130px"><div class="bar-bg"><div class="bar-fill ${d.violations > 0 ? 'red' : ''}" style="width:${Math.round((d.total / barMax) * 100)}%"></div></div></td></tr>`).join('')}</tbody></table></div>
-${topItems.length > 0 ? `<div class="section"><div class="section-title">Top Selling Items</div><table class="item-table"><thead><tr><th>Item</th><th>Qty</th><th>Revenue (AED)</th><th>Avg Price</th></tr></thead><tbody>${topItems.map(([name, data]) => `<tr><td><strong>${name}</strong></td><td>${data.qty}</td><td><strong>AED ${data.revenue.toLocaleString()}</strong></td><td>AED ${Math.round(data.revenue / data.qty)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-<div class="two-col"><div><div class="section-title">Top Performers</div><div class="card">${leaderboard.slice(0, 5).length === 0 ? '<p style="color:#999;font-style:italic">No completed tasks yet.</p>' : leaderboard.slice(0, 5).map((s, i) => { const rate = Math.round(((s.tasks_on_time || 0) / (s.tasks_completed || 1)) * 100); return `<div class="performer"><div style="font-size:20px;width:28px">${['🥇', '🥈', '🥉'][i] || '#' + (i + 1)}</div><div class="avatar">${s.name?.[0] || '?'}</div><div class="perf-info"><div class="perf-name">${s.name}</div><div class="perf-role">${s.occupation || s.department}</div><div class="perf-stats">${s.tasks_completed} tasks · ${s.violations || 0} violations</div></div><div style="font-size:18px;font-weight:700;color:${rate >= 80 ? '#16a34a' : rate >= 60 ? '#f59e0b' : '#dc2626'}">${rate}%</div></div>`; }).join('')}</div></div>
-<div><div class="section-title">SLA Violations by Dept</div><div class="card">${deptBreakdown.map(d => `<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;font-weight:600">${d.dept}</span><span style="font-size:12px;color:${d.violations > 0 ? '#dc2626' : '#16a34a'};font-weight:700">${d.violations} violation${d.violations !== 1 ? 's' : ''}</span></div><div class="bar-bg"><div class="bar-fill red" style="width:${d.violations > 0 ? Math.max(Math.round((d.violations / Math.max(...deptBreakdown.map(x => x.violations), 1)) * 100), 8) : 0}%"></div></div></div>`).join('')}</div></div></div>
-${slaViolators.length > 0 ? `<div class="section"><div class="section-title">Staff Violation Audit</div><table class="vtable"><thead><tr><th>Staff</th><th>Occupation</th><th>Dept</th><th>Tasks</th><th>Violations</th><th>Rate</th><th>Status</th></tr></thead><tbody>${slaViolators.map(s => { const rate = (s.tasks_completed || 0) > 0 ? Math.round(((s.violations || 0) / s.tasks_completed) * 100) : 0; return `<tr><td><strong>${s.name}</strong><br><span style="font-size:10px;color:#999">${s.email}</span></td><td>${s.occupation || 'N/A'}</td><td>${s.department}</td><td>${s.tasks_completed || 0}</td><td><span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${s.violations || 0}</span></td><td style="font-weight:700;color:${rate > 30 ? '#dc2626' : '#f59e0b'}">${rate}%</td><td><span class="badge ${rate > 50 ? 'red' : rate > 25 ? 'gold' : 'green'}">${rate > 50 ? 'Critical' : rate > 25 ? 'Review' : 'Monitor'}</span></td></tr>`; }).join('')}</tbody></table></div>` : ''}
-${requests.filter(r => r.rating).length > 0 ? `<div class="section"><div class="section-title">Guest Feedback (Avg: ${avgRating} ★)</div><div class="feedback-grid">${requests.filter(r => r.rating).slice(0, 8).map(r => `<div class="fb-card"><div class="stars">${'★'.repeat(r.rating || 0)}${'☆'.repeat(5 - (r.rating || 0))}</div><div class="fb-text">"${r.feedback || 'No comment'}"</div><div class="fb-meta">Room ${r.guest_room} · ${r.service}</div></div>`).join('')}</div></div>` : ''}
-<div class="footer"><div><div style="font-family:'Playfair Display',serif;font-size:14px;color:#C5A059">Sentinel Pro</div><div style="font-size:10px;color:#999;margin-top:3px">Luxury Hotel Management · Confidential</div></div><div style="font-size:10px;color:#999;text-align:right">Generated: ${new Date().toLocaleString()}<br>By: ${profile.displayName}</div></div>
-</div><button class="print-btn" onclick="window.print()">🖨 Print / Save PDF</button></body></html>`;
     const win = window.open('', '_blank');
-    if (win) { win.document.write(html); win.document.close(); }
+    if (win) { win.document.write(`<html><body><h1>Sentinel Pro ${reportPeriod} Report</h1><p>Total Requests: ${requests.length}</p><p>Completed: ${completed}</p><p>Revenue: AED ${revenue.toLocaleString()}</p><p>SLA Violations: ${violations.length}</p><button onclick="window.print()">Print</button></body></html>`); win.document.close(); }
   };
 
   return (
@@ -1344,7 +1374,7 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section"><div class="
             ))}
           </div>
           <div className="bg-[#001c36] border border-gold/10 p-5">
-            <h3 className="text-base font-serif text-white mb-3 flex items-center gap-2"><TrendingUp size={16} className="text-gold" /> Revenue by Department (Real Data)</h3>
+            <h3 className="text-base font-serif text-white mb-3 flex items-center gap-2"><TrendingUp size={16} className="text-gold" /> Revenue by Department</h3>
             {deptRevenue.every(d => d.revenue === 0) ? <p className="text-white/20 italic text-sm py-8 text-center">No completed paid orders yet.</p> : (
               <div className="h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1445,22 +1475,18 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section"><div class="
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead><tr className="bg-navy/50 text-gold text-[9px] uppercase tracking-widest border-b border-gold/20">
-                    <th className="p-3 text-left">Staff</th><th className="p-3 text-left">Dept</th><th className="p-3 text-center">Tasks</th><th className="p-3 text-center">Violations</th><th className="p-3 text-center">Rate</th><th className="p-3 text-right">Action</th>
+                    <th className="p-3 text-left">Staff</th><th className="p-3 text-left">Dept</th><th className="p-3 text-center">Tasks</th><th className="p-3 text-center">Violations</th><th className="p-3 text-right">Action</th>
                   </tr></thead>
                   <tbody>
-                    {slaViolators.map(staff => {
-                      const rate = (staff.tasks_completed || 0) > 0 ? Math.round(((staff.violations || 0) / staff.tasks_completed) * 100) : 0;
-                      return (
-                        <tr key={staff.id} className="border-b border-gold/10">
-                          <td className="p-3 text-sm text-white">{staff.name}</td>
-                          <td className="p-3 text-xs text-white/60">{staff.department}</td>
-                          <td className="p-3 text-center text-sm font-bold text-white">{staff.tasks_completed || 0}</td>
-                          <td className="p-3 text-center"><span className="bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">{staff.violations || 0}</span></td>
-                          <td className="p-3 text-center"><span className={cn('text-sm font-bold', rate > 30 ? 'text-red-400' : 'text-orange-400')}>{rate}%</span></td>
-                          <td className="p-3 text-right"><button onClick={() => forceLogout(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Force Logout</button></td>
-                        </tr>
-                      );
-                    })}
+                    {slaViolators.map(staff => (
+                      <tr key={staff.id} className="border-b border-gold/10">
+                        <td className="p-3 text-sm text-white">{staff.name}</td>
+                        <td className="p-3 text-xs text-white/60">{staff.department}</td>
+                        <td className="p-3 text-center text-sm font-bold text-white">{staff.tasks_completed || 0}</td>
+                        <td className="p-3 text-center"><span className="bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">{staff.violations || 0}</span></td>
+                        <td className="p-3 text-right"><button onClick={() => forceLogout(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Force Logout</button></td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -1487,7 +1513,6 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section"><div class="
                     <p className="text-sm font-serif text-white">{req.service}</p>
                     <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to || 'Unassigned'}</p>
                     {req.line_items && req.line_items.map((li: any, i: number) => <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>)}
-                    {req.late_reason && <p className="text-[9px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
                   </div>
                   <div className="text-right ml-4 flex-shrink-0">
                     <p className="text-[9px] text-white/40">{new Date(req.created_at).toLocaleTimeString()}</p>
@@ -1505,11 +1530,11 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section"><div class="
           <h2 className="text-xl font-serif text-gold">Executive Staff Center</h2>
           {pendingManagers.length > 0 && (
             <div>
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-gold mb-3 flex items-center gap-2"><ShieldCheck size={12} /> Manager Profiles Awaiting Approval ({pendingManagers.length})</h3>
+              <h3 className="text-[10px] font-bold uppercase tracking-widest text-gold mb-3">Manager Profiles Awaiting Approval ({pendingManagers.length})</h3>
               <div className="space-y-2">
                 {pendingManagers.map(staff => (
                   <div key={staff.id} className="flex items-center justify-between p-3 bg-gold/5 border border-gold/30">
-                    <div><p className="text-white font-bold text-sm">{staff.name}</p><p className="text-[9px] text-gold uppercase">{staff.occupation} · {staff.department}</p><p className="text-[8px] text-white/40">{staff.email}</p></div>
+                    <div><p className="text-white font-bold text-sm">{staff.name}</p><p className="text-[9px] text-gold uppercase">{staff.occupation} · {staff.department}</p></div>
                     <div className="flex gap-2">
                       <button onClick={() => approveStaff(staff.id)} className="px-3 py-1.5 bg-gold text-navy text-[9px] font-bold uppercase">Approve ✓</button>
                       <button onClick={() => deleteStaff(staff.id)} className="px-3 py-1.5 bg-red-600 text-white text-[9px] font-bold uppercase">Reject</button>
@@ -1531,7 +1556,7 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section"><div class="
                     <tr key={staff.id} className="border-b border-gold/10 hover:bg-gold/5">
                       <td className="p-3 text-sm text-white font-bold">{staff.name}<br /><span className="text-[8px] text-white/40 font-normal">{staff.email}</span></td>
                       <td className="p-3 text-xs text-white/60">{staff.occupation}</td>
-                      <td className="p-3 text-xs text-white/60 uppercase">{staff.department}</td>
+                      <td className="p-3 text-xs text-white/60">{staff.department}</td>
                       <td className="p-3 text-center text-sm font-bold text-white">{staff.tasks_completed || 0}</td>
                       <td className="p-3 text-center"><span className={cn('text-sm font-bold', (staff.violations || 0) > 0 ? 'text-red-400' : 'text-green-400')}>{staff.violations || 0}</span></td>
                       <td className="p-3 text-center">{staff.logged_in ? <span className="text-[8px] text-green-400 font-bold">● Online</span> : <span className="text-[8px] text-white/20">Offline</span>}</td>
@@ -1544,7 +1569,6 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section"><div class="
                   ))}
                 </tbody>
               </table>
-              {approvedStaff.length === 0 && <p className="text-white/20 italic py-8 text-center text-sm">No approved staff.</p>}
             </div>
           </div>
         </div>
@@ -1553,19 +1577,12 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section"><div class="
       {activeTab === 'qr' && (
         <div className="bg-[#001c36] border border-gold/10 p-5 space-y-5">
           <h2 className="text-xl font-serif text-gold flex items-center gap-2"><QrCode size={20} /> Room QR Code Generator</h2>
-          <p className="text-white/60 text-sm">Generate printable QR codes for all rooms. Print once, laminate, place permanently. Guests scan → room auto-fills → they only enter their name.</p>
+          <p className="text-white/60 text-sm">Print once, laminate, place permanently. Guests scan → room auto-fills → enter name only.</p>
           <div className="bg-navy/30 border border-gold/20 p-4 space-y-2">
             <p className="text-[9px] text-gold uppercase tracking-widest font-bold">Rooms in System ({rooms.length})</p>
             <div className="flex flex-wrap gap-2">{rooms.map(r => <span key={r.id} className="text-[9px] bg-navy/50 border border-gold/20 text-gold px-2 py-1 font-bold">Room {r.room_number}</span>)}</div>
           </div>
           <button onClick={generateQRCodes} className="gold-button m-0 flex items-center gap-2 w-full justify-center"><QrCode size={16} /> Generate & Print QR Codes for All Rooms</button>
-          <div className="border border-gold/10 p-4 bg-navy/20 space-y-2">
-            <p className="text-[9px] text-gold uppercase tracking-widest font-bold">How It Works</p>
-            <p className="text-[10px] text-white/50">1. Click Generate — printable page opens with QR codes for every room</p>
-            <p className="text-[10px] text-white/50">2. Print and laminate each QR code card</p>
-            <p className="text-[10px] text-white/50">3. Place in each room permanently — they never change</p>
-            <p className="text-[10px] text-white/50">4. Guest scans → room auto-fills → enters name only</p>
-          </div>
         </div>
       )}
     </div>
@@ -1627,7 +1644,7 @@ export default function App() {
 
   const logout = () => { localStorage.clear(); setProfile(null); window.location.replace('/'); };
 
-  // ✅ FIXED: Correct department routing for every service
+  // ✅ Correct department routing
   const submitRequest = async (customData?: any) => {
     if (!profile || !roomNumber) return;
     const service = customData?.type ? customData : selectedService;
@@ -1663,7 +1680,6 @@ export default function App() {
   const isExecutive = profile?.role === 'manager' && profile?.department === 'None';
   const isDeptManager = profile?.role === 'manager' && profile?.department !== 'None';
 
-  // ✅ Guest service tiles with Maintenance replacing "Any Other Request"
   const guestServices = [
     { name: t('housekeeping'), icon: Sparkles, dept: 'Housekeeping', serviceKey: 'housekeeping', options: [t('room_cleaning'), t('laundry'), t('extra_blanket'), 'Extra Pillow', 'Extra Towels', 'Turn Down Service'] },
     { name: t('room_service'), icon: Coffee, dept: 'F&B', serviceKey: 'room_service' },
@@ -1703,7 +1719,6 @@ export default function App() {
                 {guestTab === 'services' && (
                   <>
                     <div className="bg-navy p-5 sm:p-10 shadow-2xl mb-6">
-                      {/* ✅ Guest logout button in welcome banner */}
                       <div className="flex justify-between items-start mb-4">
                         <p className="text-[8px] text-gold/60 uppercase tracking-widest">Room {profile.roomNumber || roomNumber}</p>
                         <button onClick={logout} className="flex items-center gap-2 border border-gold/40 text-gold px-4 py-2 text-[9px] font-bold uppercase tracking-widest hover:bg-gold/10">
