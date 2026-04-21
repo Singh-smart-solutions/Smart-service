@@ -16,8 +16,6 @@ import { useLanguage, Language } from './contexts/TranslationContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const VAPID_PUBLIC_KEY = 'BGvO-tGYamXBE4yOlvG1gIIrOqyiwtoQcmxnjOuJVwy-HNLWm3Y8pt3f36Swy6CUKiPAsP9fUd1BqBA0OC9Lxpg';
-
 const MANAGER_OCCUPATIONS = [
   'Housekeeping Manager', 'F&B Manager', 'Concierge Manager',
   'Security Manager', 'Front Office Manager', 'Executive',
@@ -69,9 +67,10 @@ const MENU_ITEMS = [
   { id: 'd3', name: 'Sparkling Mineral Water', price: 45, category: 'beverages' },
 ];
 
-// ✅ FIXED: Correct department routing per service key
+// ✅ CORRECT department routing
 const getDepartmentFromServiceKey = (serviceKey: string, fallback?: string): string => {
-  if (serviceKey === 'room_service' || serviceKey === 'restaurant_bookings') return 'F&B';
+  if (serviceKey === 'room_service') return 'F&B';
+  if (serviceKey === 'restaurant_bookings') return 'F&B';
   if (serviceKey === 'concierge_services') return 'Concierge';
   if (serviceKey === 'housekeeping') return 'Housekeeping';
   if (serviceKey === 'security') return 'Security & Safety';
@@ -89,80 +88,81 @@ const queryParams = new URLSearchParams(window.location.search);
 const roomNumberFromUrl = queryParams.get('room') || '';
 const isRoomLocked = !!roomNumberFromUrl;
 
-// ─── PUSH NOTIFICATION HELPERS ────────────────────────────────────────────────
-const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-  return outputArray;
-};
-
-// ✅ Custom hotel bell sound — distinct from phone ringtone
+// ─── PUSH NOTIFICATION SYSTEM ─────────────────────────────────────────────────
+// ✅ Hotel bell sound — 3 tones, very different from phone ringtone
 const playNotificationSound = () => {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const playBell = (time: number, freq: number, duration: number) => {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const playTone = (freq: number, startTime: number, duration: number, vol: number = 0.7) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.frequency.value = freq;
       osc.type = 'sine';
-      gain.gain.setValueAtTime(0.8, time);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
-      osc.start(time);
-      osc.stop(time + duration);
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(vol, startTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+      osc.start(startTime);
+      osc.stop(startTime + duration);
     };
     const now = ctx.currentTime;
-    playBell(now, 880, 0.4);
-    playBell(now + 0.5, 1100, 0.4);
-    playBell(now + 1.0, 880, 0.6);
-    if ('vibrate' in navigator) navigator.vibrate([300, 100, 300, 100, 300]);
-  } catch (e) { console.log('Audio not available'); }
+    // 3 bell tones — ding ding ding
+    playTone(880, now, 0.5);
+    playTone(1100, now + 0.6, 0.5);
+    playTone(880, now + 1.2, 0.7);
+    // Vibrate phone — 3 sharp bursts
+    if ('vibrate' in navigator) navigator.vibrate([400, 150, 400, 150, 400]);
+  } catch (e) {
+    console.log('Audio error:', e);
+  }
 };
 
-// ✅ Register push notifications
-const setupPushNotifications = async (staffId: string, department: string, displayName: string) => {
+// ✅ Request browser notification permission and show notification
+const showBrowserNotification = (title: string, body: string) => {
   try {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-    const registration = await navigator.serviceWorker.register('/sw.js');
-    await navigator.serviceWorker.ready;
-
-    // Store staff info in service worker for background sync
-    if (registration.active) {
-      registration.active.postMessage({
-        type: 'STORE_STAFF_INFO',
-        payload: { staffId, department, displayName },
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+      new Notification(title, {
+        body,
+        icon: '/favicon.ico',
+        tag: 'sentinel-' + Date.now(),
+        requireInteraction: true,
+      });
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          new Notification(title, { body, icon: '/favicon.ico', requireInteraction: true });
+        }
       });
     }
+  } catch (e) {
+    console.log('Notification error:', e);
+  }
+};
 
+// ✅ Register PWA service worker for background notifications
+const registerServiceWorker = async (staffId: string, department: string) => {
+  try {
+    if (!('serviceWorker' in navigator)) return;
+    // Request permission first
     const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return;
-
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-    });
-
-    const subJson = subscription.toJSON();
-    const { data: existing } = await supabase.from('push_subscriptions').select('id').eq('staff_id', staffId).single();
-
-    if (existing) {
-      await supabase.from('push_subscriptions').update({ subscription: subJson, department }).eq('staff_id', staffId);
-    } else {
-      await supabase.from('push_subscriptions').insert({ staff_id: staffId, department, subscription: subJson });
+    if (permission !== 'granted') {
+      console.log('Notification permission denied');
+      return;
     }
-
-    // Listen for messages from service worker
-    navigator.serviceWorker.addEventListener('message', (event) => {
-      if (event.data?.type === 'PLAY_NOTIFICATION_SOUND') playNotificationSound();
-    });
-
-    console.log('✅ Push notifications active for', department);
-  } catch (error) {
-    console.log('Push setup failed (non-critical):', error);
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    // Tell service worker who this staff member is
+    const sw = registration.active || registration.waiting || registration.installing;
+    if (sw) {
+      sw.postMessage({ type: 'STORE_STAFF_INFO', payload: { staffId, department } });
+    }
+    console.log('✅ Service worker registered for', department);
+  } catch (e) {
+    console.log('Service worker registration failed (non-critical):', e);
   }
 };
 
@@ -656,10 +656,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
                   <optgroup label="── Front Office"><option>Front Office Agent</option><option>Front Office Supervisor</option><option>Front Office Manager</option></optgroup>
                   <optgroup label="── Executive"><option>Executive</option></optgroup>
                 </select>
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="text-[8px] text-white/40">Department:</span>
-                  <span className="text-[8px] text-gold font-bold">{derivedDept === 'None' ? 'All Departments' : derivedDept}</span>
-                </div>
+                <div className="mt-1 flex items-center gap-2"><span className="text-[8px] text-white/40">Department:</span><span className="text-[8px] text-gold font-bold">{derivedDept === 'None' ? 'All Departments' : derivedDept}</span></div>
                 {isManagerOccupation && <p className="text-[8px] text-gold font-bold">⚡ Requires Executive approval</p>}
               </div>
             </>
@@ -691,18 +688,28 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const [forwardModalTask, setForwardModalTask] = useState<any | null>(null);
   const [forwardDept, setForwardDept] = useState<Department>('Housekeeping');
   const [maintenanceForm, setMaintenanceForm] = useState({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
-  const pushSetupDone = useRef(false);
+  const [notifPermission, setNotifPermission] = useState('');
+  const swRegistered = useRef(false);
 
   const isHousekeeping = userProfile.department === 'Housekeeping';
   const isMaintenance = userProfile.department === 'Maintenance' || userProfile.department === 'Front Office';
 
-  // ✅ Setup push notifications when staff logs in
+  // ✅ Setup notifications when staff logs in
   useEffect(() => {
-    if (!pushSetupDone.current && userProfile.uid) {
-      pushSetupDone.current = true;
-      setupPushNotifications(userProfile.uid, userProfile.department, userProfile.displayName);
-    }
-  }, [userProfile]);
+    if (swRegistered.current) return;
+    swRegistered.current = true;
+
+    const setupNotifications = async () => {
+      if (!('Notification' in window)) return;
+      const perm = await Notification.requestPermission();
+      setNotifPermission(perm);
+      if (perm === 'granted') {
+        // Register service worker for background notifications
+        registerServiceWorker(userProfile.uid, userProfile.department);
+      }
+    };
+    setupNotifications();
+  }, [userProfile.uid, userProfile.department]);
 
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
 
@@ -740,28 +747,25 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     fetchTasks(); fetchSLA();
     if (isHousekeeping) fetchRooms();
     const channel = supabase.channel(`staff-${userProfile.uid}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          const dept = (payload.new as any).department;
-          if (dept === userProfile.department) {
-            const msg = `Room #${(payload.new as any).guest_room} — ${(payload.new as any).service}`;
-            setNewOrderAlert(`🔔 New: ${msg}`);
-            // ✅ Play custom hotel bell sound
-            playNotificationSound();
-            // ✅ Show browser notification
-            if (Notification.permission === 'granted') {
-              new Notification('🔔 Sentinel Pro — New Request', {
-                body: msg,
-                icon: '/favicon.ico',
-                tag: 'sentinel-' + Date.now(),
-                requireInteraction: true,
-              });
-            }
-            setTimeout(() => setNewOrderAlert(null), 10000);
-          }
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'requests' }, (payload) => {
+        const newReq = payload.new as any;
+        const reqDept = newReq.department;
+        const myDept = userProfile.department;
+        const deptMatch = reqDept === myDept ||
+          (myDept === 'Security & Safety' && (reqDept === 'Security & Safety' || reqDept === 'Security'));
+        if (deptMatch) {
+          const msg = `Room #${newReq.guest_room} — ${newReq.service}`;
+          setNewOrderAlert(`🔔 New Request: ${msg}`);
+          // ✅ Play hotel bell sound
+          playNotificationSound();
+          // ✅ Show browser/OS notification
+          showBrowserNotification('🔔 Sentinel Pro — New Guest Request', msg);
+          setTimeout(() => setNewOrderAlert(null), 15000);
         }
         fetchTasks();
-      }).subscribe();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'requests' }, fetchTasks)
+      .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [userProfile, fetchTasks, fetchRooms, isHousekeeping]);
 
@@ -818,7 +822,6 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   const staffLogout = async () => {
     await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid);
-    await supabase.from('push_subscriptions').delete().eq('staff_id', userProfile.uid);
     localStorage.clear(); window.location.replace('/');
   };
 
@@ -870,7 +873,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         )}
       </AnimatePresence>
 
-      {/* ✅ New Order Alert Banner with sound */}
+      {/* ✅ Alert Banner */}
       <AnimatePresence>
         {newOrderAlert && (
           <motion.div initial={{ y: -80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -80, opacity: 0 }} className="fixed top-0 left-0 right-0 z-[10002] bg-gold text-navy px-6 py-4 shadow-2xl flex items-center justify-between">
@@ -884,6 +887,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         <div>
           <h1 className="text-xl font-serif text-gold">{userProfile.displayName}</h1>
           <p className="text-white/60 text-[9px] uppercase tracking-widest">{userProfile.department} · {userProfile.occupation || 'Staff'}</p>
+          {notifPermission === 'denied' && <p className="text-red-400 text-[8px] mt-0.5">⚠ Enable notifications in browser settings</p>}
+          {notifPermission === 'granted' && <p className="text-green-400 text-[8px] mt-0.5">🔔 Notifications active</p>}
         </div>
         <div className="flex items-center gap-2">
           <div className="flex bg-navy/50 border border-gold/20 p-0.5 flex-wrap gap-0.5">
@@ -895,10 +900,11 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         </div>
       </header>
 
+      {/* ACTIVE TASKS */}
       {activeTab === 'active' && (
         <div className="staff-grid p-4">
           {tasks.length === 0 ? (
-            <div className="col-span-full py-20 text-center"><CheckCircle2 className="w-10 h-10 text-gold/20 mx-auto" strokeWidth={1} /><p className="text-white/40 font-serif italic mt-3">No active requests.</p></div>
+            <div className="col-span-full py-20 text-center"><CheckCircle2 className="w-10 h-10 text-gold/20 mx-auto" strokeWidth={1} /><p className="text-white/40 font-serif italic mt-3">No active requests. Standing by.</p></div>
           ) : tasks.map(task => {
             const elapsed = getElapsed(task.timestamp);
             const limit = getSLALimit(task.department);
@@ -943,6 +949,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         </div>
       )}
 
+      {/* HISTORY */}
       {activeTab === 'history' && (
         <div className="staff-grid p-4">
           {history.length === 0 ? <div className="col-span-full py-20 text-center text-white/20 italic font-serif">No history yet.</div>
@@ -960,6 +967,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         </div>
       )}
 
+      {/* ROOM STATUS */}
       {activeTab === 'rooms' && isHousekeeping && (
         <div className="p-4 space-y-4">
           <div className="flex items-center justify-between">
@@ -986,6 +994,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         </div>
       )}
 
+      {/* MAINTENANCE */}
       {activeTab === 'maintenance' && isMaintenance && (
         <div className="p-4 space-y-5">
           <h2 className="text-lg font-serif text-gold flex items-center gap-2"><Wrench size={18} /> Maintenance Request</h2>
@@ -1003,6 +1012,17 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
             <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Description</label><textarea value={maintenanceForm.description} onChange={e => setMaintenanceForm({ ...maintenanceForm, description: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none h-24 resize-none" placeholder="Describe the issue in detail..." /></div>
             <button onClick={submitMaintenanceRequest} className="gold-button w-full m-0">Submit Maintenance Request</button>
           </div>
+          <h3 className="text-base font-serif text-gold">Active Maintenance Requests</h3>
+          {tasks.filter(t => t.type?.includes('Maintenance')).length === 0
+            ? <p className="text-white/20 italic text-sm">No active maintenance requests.</p>
+            : tasks.filter(t => t.type?.includes('Maintenance')).map(task => (
+              <div key={task.id} className="bg-[#001c36] border border-gold/10 p-4">
+                <div className="flex justify-between">
+                  <div><p className="text-white font-bold text-sm">{task.type}</p><p className="text-[9px] text-white/40">Location: {task.roomNumber}</p></div>
+                  <span className={cn('text-[9px] font-bold px-2 py-1 border h-fit', task.status === 'Completed' ? 'border-green-500 text-green-400' : 'border-gold text-gold')}>{task.status}</span>
+                </div>
+              </div>
+            ))}
         </div>
       )}
     </div>
@@ -1047,7 +1067,6 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     return (now - new Date(req.created_at).getTime()) / 1000 > (slaConfig.sla_minutes || 5) * 60;
   };
   const getElapsedMin = (ts: any) => Math.floor((now - new Date(ts).getTime()) / 60000);
-
   const violations = requests.filter(r => getSLAExceeded(r));
   const pendingStaff = staffList.filter(s => !s.approved && !MANAGER_OCCUPATIONS.includes(s.occupation || ''));
   const approvedStaff = staffList.filter(s => s.approved);
@@ -1055,10 +1074,10 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const approveStaff = async (id: string) => { await supabase.from('staff').update({ approved: true }).eq('id', id); };
   const rejectStaff = async (id: string) => { if (window.confirm('Reject and delete?')) await supabase.from('staff').delete().eq('id', id); };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
-  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); alert('Staff logged out and device reset.'); };
+  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); alert('Staff logged out.'); };
   const saveSLA = async () => {
     await supabase.from('sla_settings').upsert({ department: profile.department, sla_minutes: editSLA, updated_by: profile.displayName, updated_at: new Date().toISOString() }, { onConflict: 'department' });
-    alert(`✅ SLA updated to ${editSLA} minutes for ${profile.department}`);
+    alert(`✅ SLA updated to ${editSLA} minutes`);
     fetchData();
   };
 
@@ -1087,7 +1106,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
       {violations.length > 0 && (
         <div className="border border-red-600 p-3 flex items-center gap-3" style={{ background: 'rgba(220,38,38,0.1)' }}>
           <AlertCircle className="text-red-500 flex-shrink-0" size={20} />
-          <div><h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''}</h3></div>
+          <h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''}</h3>
         </div>
       )}
 
@@ -1103,7 +1122,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                   <div>
                     <div className="flex gap-2 mb-1 flex-wrap">
                       <span className={cn('text-[9px] font-bold px-2 py-0.5 border', req.status === 'Completed' ? 'border-green-500 text-green-400' : over ? 'border-red-500 text-red-400' : 'border-gold text-gold')}>{req.status}</span>
-                      {over && <span className="text-[9px] font-bold px-2 py-0.5 bg-red-600 text-white">⚠ SLA</span>}
+                      {over && <span className="text-[9px] font-bold px-2 py-0.5 bg-red-600 text-white">⚠ SLA EXCEEDED</span>}
                     </div>
                     <p className="text-sm font-serif text-white">{req.service}</p>
                     <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to || 'Unassigned'}</p>
@@ -1123,21 +1142,18 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
       )}
 
       {activeTab === 'sla' && (
-        <div className="space-y-4">
-          <h2 className="text-lg font-serif text-gold">SLA — {profile.department}</h2>
-          <div className="bg-[#001c36] border border-gold/10 p-5">
-            <h3 className="text-base font-serif text-white mb-3">Currently Delayed</h3>
-            {violations.length === 0 ? <p className="text-green-400 font-bold text-sm">✓ All within SLA ({slaConfig.sla_minutes || 5} min)</p> : (
-              <div className="space-y-2">
-                {violations.map(req => (
-                  <div key={req.id} className="flex items-center justify-between p-3 bg-red-900/20 border border-red-500">
-                    <div><p className="text-white font-bold text-sm">{req.assigned_to || 'Unassigned'}</p><p className="text-[9px] text-red-400">Room {req.guest_room} · {req.service}</p></div>
-                    <p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="bg-[#001c36] border border-gold/10 p-5">
+          <h3 className="text-base font-serif text-white mb-3">Currently Delayed — {profile.department}</h3>
+          {violations.length === 0 ? <p className="text-green-400 font-bold text-sm">✓ All within SLA ({slaConfig.sla_minutes || 5} min)</p> : (
+            <div className="space-y-2">
+              {violations.map(req => (
+                <div key={req.id} className="flex items-center justify-between p-3 bg-red-900/20 border border-red-500">
+                  <div><p className="text-white font-bold text-sm">{req.assigned_to || 'Unassigned'}</p><p className="text-[9px] text-red-400">Room {req.guest_room} · {req.service}</p></div>
+                  <p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1183,7 +1199,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
 
       {activeTab === 'settings' && (
         <div className="bg-[#001c36] border border-gold/10 p-5 space-y-5">
-          <h2 className="text-lg font-serif text-gold flex items-center gap-2"><Settings size={18} /> {profile.department} SLA Settings</h2>
+          <h2 className="text-lg font-serif text-gold flex items-center gap-2"><Settings size={18} /> SLA Settings — {profile.department}</h2>
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">SLA Response Time (minutes)</label>
@@ -1199,8 +1215,8 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
             </div>
             <button onClick={saveSLA} className="gold-button m-0">Save SLA Setting</button>
             <div className="border border-gold/10 p-4 bg-navy/20">
-              <p className="text-[9px] text-white/40 uppercase tracking-widest mb-2">Current Setting</p>
-              <p className="text-white"><span className="text-gold font-bold text-2xl font-serif">{slaConfig.sla_minutes || 5}</span> minutes SLA for {profile.department}</p>
+              <p className="text-white"><span className="text-gold font-bold text-2xl font-serif">{slaConfig.sla_minutes || 5}</span> minutes current SLA for {profile.department}</p>
+              {slaConfig.updated_by && <p className="text-[9px] text-white/30 mt-1">Last updated by: {slaConfig.updated_by}</p>}
             </div>
           </div>
         </div>
@@ -1271,7 +1287,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const approveStaff = async (id: string) => { await supabase.from('staff').update({ approved: true }).eq('id', id); };
   const deleteStaff = async (id: string) => { if (window.confirm('Delete?')) await supabase.from('staff').delete().eq('id', id); };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
-  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); alert('Account logged out and device reset.'); };
+  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); alert('Account logged out.'); };
 
   const generateQRCodes = () => {
     const baseUrl = window.location.origin;
@@ -1281,30 +1297,202 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
 <style>body{font-family:Georgia,serif;background:#f8f6f0;padding:20px}h1{text-align:center;color:#C5A059;letter-spacing:4px;font-size:22px}p{text-align:center;color:#666;font-size:11px;margin-bottom:28px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.card{background:white;border:1px solid #C5A059;padding:18px;text-align:center;page-break-inside:avoid}.room{font-size:18px;font-weight:bold;color:#001529;margin-bottom:10px;letter-spacing:2px}.qr{display:flex;justify-content:center;margin:8px 0}.url{font-size:7px;color:#999;word-break:break-all;margin-top:6px}.instruction{font-size:8px;color:#C5A059;margin-top:5px;text-transform:uppercase;letter-spacing:1px}@media print{body{padding:8px}}</style>
 </head><body><h1>Sentinel Pro</h1><p>Scan QR to request hotel services</p>
 <div class="grid" id="grid"></div>
-<script>
-const rooms=${JSON.stringify(roomNumbers)};const base='${baseUrl}';const grid=document.getElementById('grid');
-rooms.forEach(room=>{const div=document.createElement('div');div.className='card';div.innerHTML='<div class="room">Room '+room+'</div><div class="qr" id="qr_'+room+'"></div><div class="instruction">Scan to request services</div><div class="url">'+base+'?room='+room+'</div>';grid.appendChild(div);setTimeout(()=>{new QRCode(document.getElementById('qr_'+room),{text:base+'?room='+room,width:110,height:110,colorDark:'#001529',colorLight:'#ffffff'});},100);});
-setTimeout(()=>window.print(),2000);
-</script>
-<button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:11px;font-weight:bold;letter-spacing:2px;cursor:pointer;">🖨 Print QR Codes</button>
-</body></html>`;
+<script>const rooms=${JSON.stringify(roomNumbers)};const base='${baseUrl}';const grid=document.getElementById('grid');rooms.forEach(room=>{const div=document.createElement('div');div.className='card';div.innerHTML='<div class="room">Room '+room+'</div><div class="qr" id="qr_'+room+'"></div><div class="instruction">Scan to request services</div><div class="url">'+base+'?room='+room+'</div>';grid.appendChild(div);setTimeout(()=>{new QRCode(document.getElementById('qr_'+room),{text:base+'?room='+room,width:110,height:110,colorDark:'#001529',colorLight:'#ffffff'});},100);});setTimeout(()=>window.print(),2000);</script>
+<button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:11px;font-weight:bold;cursor:pointer;">🖨 Print QR Codes</button></body></html>`;
     const win = window.open('', '_blank');
     if (win) { win.document.write(html); win.document.close(); }
   };
 
+  // ✅ FULL PROFESSIONAL REPORT RESTORED
   const generateReport = (type: 'pdf' | 'email' | 'csv') => {
     setReportMenuOpen(false);
     if (type === 'csv') {
       const headers = `Date,Room,Department,Service,Items,Status,Revenue (AED),Delay Reason,Staff\n`;
-      const rows = requests.map(r => { const items = r.line_items ? r.line_items.map((li: any) => `${li.qty}x ${li.name}`).join(' + ') : ''; return `${new Date(r.created_at).toLocaleDateString()},${r.guest_room},${r.department},${r.service},"${items}",${r.status},${r.total_price || 0},${r.late_reason || 'N/A'},${r.assigned_to || 'Unassigned'}`; }).join('\n');
+      const rows = requests.map(r => {
+        const items = r.line_items ? r.line_items.map((li: any) => `${li.qty}x ${li.name}`).join(' + ') : '';
+        return `${new Date(r.created_at).toLocaleDateString()},${r.guest_room},${r.department},${r.service},"${items}",${r.status},${r.total_price || 0},${r.late_reason || 'N/A'},${r.assigned_to || 'Unassigned'}`;
+      }).join('\n');
       const link = document.createElement('a');
       link.setAttribute('href', encodeURI('data:text/csv;charset=utf-8,' + headers + rows));
       link.setAttribute('download', `SentinelPro_${reportPeriod}_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link); link.click(); document.body.removeChild(link); return;
     }
     if (type === 'email') { alert(`✅ ${reportPeriod} report sent to all department managers.`); return; }
+
+    // ✅ FULL PROFESSIONAL PDF REPORT
+    const deptBreakdown = ['Housekeeping', 'F&B', 'Concierge', 'Security & Safety', 'Front Office', 'Maintenance'].map(dept => {
+      const deptReqs = requests.filter(r => r.department === dept);
+      return {
+        dept, total: deptReqs.length,
+        completed: deptReqs.filter(r => r.status === 'Completed').length,
+        violations: deptReqs.filter(r => getSLAExceeded(r)).length,
+        revenue: deptReqs.filter(r => r.status === 'Completed').reduce((s, r) => s + (r.total_price || 0), 0),
+        slaMin: slaSettings.find((x: any) => x.department === dept)?.sla_minutes || 5,
+      };
+    });
+    const avgRating = requests.filter(r => r.rating).length > 0
+      ? (requests.filter(r => r.rating).reduce((s, r) => s + r.rating, 0) / requests.filter(r => r.rating).length).toFixed(1) : 'N/A';
+    const completionRate = requests.length > 0 ? Math.round((completed / requests.length) * 100) : 0;
+    const barMax = Math.max(...deptBreakdown.map(d => d.total), 1);
+
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Sentinel Pro ${reportPeriod} Report</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Inter',sans-serif;background:#f8f6f0;color:#1a2744}
+.page{max-width:960px;margin:0 auto;padding:40px 30px}
+.header{background:#001529;color:white;padding:40px;margin-bottom:28px}
+.gold-line{width:60px;height:3px;background:#C5A059;margin-bottom:16px}
+.hotel-name{font-family:'Playfair Display',serif;font-size:28px;color:#C5A059;letter-spacing:3px;text-transform:uppercase}
+.report-title{font-size:12px;color:rgba(255,255,255,0.5);letter-spacing:4px;text-transform:uppercase;margin-top:6px}
+.meta{margin-top:20px;display:flex;gap:40px;flex-wrap:wrap}
+.meta-item .label{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.4)}
+.meta-item .value{font-size:13px;color:#C5A059;font-weight:600;margin-top:2px}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.kpi{background:white;border:1px solid #e8e0d0;padding:20px;text-align:center;border-top:3px solid #C5A059}
+.kpi.green{border-top-color:#22c55e}.kpi.red{border-top-color:#ef4444}.kpi.blue{border-top-color:#3b82f6}
+.kpi-val{font-family:'Playfair Display',serif;font-size:30px;color:#1a2744}
+.kpi-val.red{color:#ef4444}.kpi-val.green{color:#22c55e}
+.kpi-lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:#999;margin-top:4px}
+.section{margin-bottom:24px}
+.section-title{font-family:'Playfair Display',serif;font-size:17px;color:#1a2744;border-bottom:2px solid #C5A059;padding-bottom:8px;margin-bottom:14px}
+.dept-table,.item-table,.vtable{width:100%;border-collapse:collapse;background:white}
+.dept-table th,.item-table th,.vtable th{background:#001529;color:#C5A059;font-size:9px;text-transform:uppercase;letter-spacing:2px;padding:11px 14px;text-align:left}
+.dept-table td,.item-table td,.vtable td{padding:11px 14px;border-bottom:1px solid #f0ebe0;font-size:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
+.badge.green{background:#dcfce7;color:#16a34a}.badge.red{background:#fee2e2;color:#dc2626}.badge.gold{background:#fef3c7;color:#d97706}
+.bar-bg{background:#f0ebe0;height:7px;border-radius:4px;overflow:hidden;margin-top:4px}
+.bar-fill{height:7px;background:#C5A059;border-radius:4px}.bar-fill.red{background:#ef4444}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px}
+.card{background:white;border:1px solid #e8e0d0;padding:18px}
+.performer{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f0ebe0}.performer:last-child{border:none}
+.avatar{width:36px;height:36px;background:#001529;color:#C5A059;display:flex;align-items:center;justify-content:center;font-size:16px;border-radius:50%;flex-shrink:0}
+.perf-info{flex:1}.perf-name{font-weight:700;font-size:13px}.perf-role{font-size:9px;color:#C5A059;text-transform:uppercase}
+.perf-stats{font-size:10px;color:#666;margin-top:2px}
+.summary{background:#001529;color:white;padding:24px;margin-bottom:24px}
+.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.summary-item{text-align:center}
+.summary-val{font-family:'Playfair Display',serif;font-size:26px;color:#C5A059}
+.summary-lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.5);margin-top:3px}
+.feedback-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.fb-card{background:white;border:1px solid #e8e0d0;padding:14px}
+.stars{color:#C5A059;font-size:13px;letter-spacing:2px;margin-bottom:6px}
+.fb-text{font-size:11px;color:#555;font-style:italic;line-height:1.5}
+.fb-meta{font-size:9px;color:#C5A059;font-weight:600;margin-top:6px;text-transform:uppercase}
+.footer{margin-top:36px;padding-top:18px;border-top:1px solid #e8e0d0;display:flex;justify-content:space-between}
+.print-btn{position:fixed;bottom:24px;right:24px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer}
+@media print{.print-btn{display:none}body{background:white}.page{padding:15px}}
+</style></head><body><div class="page">
+<div class="header">
+  <div class="gold-line"></div>
+  <div class="hotel-name">Sentinel Pro</div>
+  <div class="report-title">${reportPeriod.toUpperCase()} OPERATIONS AUDIT REPORT</div>
+  <div class="meta">
+    <div class="meta-item"><div class="label">Generated</div><div class="value">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</div></div>
+    <div class="meta-item"><div class="label">Time</div><div class="value">${new Date().toLocaleTimeString()}</div></div>
+    <div class="meta-item"><div class="label">Prepared by</div><div class="value">${profile.displayName}</div></div>
+    <div class="meta-item"><div class="label">Period</div><div class="value">${reportPeriod.charAt(0).toUpperCase() + reportPeriod.slice(1)} Summary</div></div>
+  </div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi"><div class="kpi-val">AED ${revenue.toLocaleString()}</div><div class="kpi-lbl">Confirmed Revenue</div></div>
+  <div class="kpi blue"><div class="kpi-val">${requests.length}</div><div class="kpi-lbl">Total Requests</div></div>
+  <div class="kpi green"><div class="kpi-val green">${completionRate}%</div><div class="kpi-lbl">Completion Rate</div></div>
+  <div class="kpi ${violations.length > 0 ? 'red' : 'green'}"><div class="kpi-val ${violations.length > 0 ? 'red' : 'green'}">${violations.length}</div><div class="kpi-lbl">SLA Violations</div></div>
+</div>
+
+<div class="summary">
+  <div style="font-family:'Playfair Display',serif;font-size:15px;color:#C5A059;margin-bottom:14px">Executive Summary</div>
+  <div class="summary-grid">
+    <div class="summary-item"><div class="summary-val">${approvedStaff.length}</div><div class="summary-lbl">Active Staff</div></div>
+    <div class="summary-item"><div class="summary-val">${completed}</div><div class="summary-lbl">Completed</div></div>
+    <div class="summary-item"><div class="summary-val">${avgRating}</div><div class="summary-lbl">Avg Rating</div></div>
+    <div class="summary-item"><div class="summary-val">${requests.filter(r => r.rating).length}</div><div class="summary-lbl">Feedback</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Department Performance</div>
+  <table class="dept-table"><thead><tr><th>Department</th><th>Total</th><th>Completed</th><th>SLA Limit</th><th>Violations</th><th>Revenue (AED)</th><th>Volume</th></tr></thead>
+  <tbody>${deptBreakdown.map(d => `<tr>
+    <td><strong>${d.dept}</strong></td><td>${d.total}</td>
+    <td><span class="badge ${d.completed === d.total && d.total > 0 ? 'green' : d.completed > 0 ? 'gold' : 'red'}">${d.completed}/${d.total}</span></td>
+    <td>${d.slaMin} min</td>
+    <td><span class="badge ${d.violations > 0 ? 'red' : 'green'}">${d.violations}</span></td>
+    <td>${d.revenue > 0 ? 'AED ' + d.revenue.toLocaleString() : '—'}</td>
+    <td style="width:130px"><div class="bar-bg"><div class="bar-fill ${d.violations > 0 ? 'red' : ''}" style="width:${Math.round((d.total / barMax) * 100)}%"></div></div></td>
+  </tr>`).join('')}</tbody></table>
+</div>
+
+${topItems.length > 0 ? `<div class="section">
+  <div class="section-title">Top Selling Items & Services</div>
+  <table class="item-table"><thead><tr><th>Item / Service</th><th>Qty Sold</th><th>Revenue (AED)</th><th>Avg Price (AED)</th></tr></thead>
+  <tbody>${topItems.map(([name, data]) => `<tr><td><strong>${name}</strong></td><td>${data.qty}</td><td><strong>AED ${data.revenue.toLocaleString()}</strong></td><td>AED ${Math.round(data.revenue / data.qty)}</td></tr>`).join('')}</tbody></table>
+</div>` : ''}
+
+<div class="two-col">
+  <div>
+    <div class="section-title">Top Performers</div>
+    <div class="card">
+      ${leaderboard.slice(0, 5).length === 0 ? '<p style="color:#999;font-style:italic">No completed tasks yet.</p>' :
+        leaderboard.slice(0, 5).map((s, i) => {
+          const rate = Math.round(((s.tasks_on_time || 0) / (s.tasks_completed || 1)) * 100);
+          return `<div class="performer">
+            <div style="font-size:20px;width:28px">${['🥇', '🥈', '🥉'][i] || '#' + (i + 1)}</div>
+            <div class="avatar">${s.name?.[0] || '?'}</div>
+            <div class="perf-info"><div class="perf-name">${s.name}</div><div class="perf-role">${s.occupation || s.department}</div><div class="perf-stats">${s.tasks_completed} tasks · ${s.violations || 0} violations</div></div>
+            <div style="font-size:18px;font-weight:700;color:${rate >= 80 ? '#16a34a' : rate >= 60 ? '#f59e0b' : '#dc2626'}">${rate}%</div>
+          </div>`;
+        }).join('')}
+    </div>
+  </div>
+  <div>
+    <div class="section-title">SLA Violations by Dept</div>
+    <div class="card">
+      ${deptBreakdown.map(d => `<div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;font-weight:600">${d.dept}</span><span style="font-size:12px;color:${d.violations > 0 ? '#dc2626' : '#16a34a'};font-weight:700">${d.violations} violation${d.violations !== 1 ? 's' : ''}</span></div>
+        <div class="bar-bg"><div class="bar-fill red" style="width:${d.violations > 0 ? Math.max(Math.round((d.violations / Math.max(...deptBreakdown.map(x => x.violations), 1)) * 100), 8) : 0}%"></div></div>
+      </div>`).join('')}
+    </div>
+  </div>
+</div>
+
+${slaViolators.length > 0 ? `<div class="section">
+  <div class="section-title">Staff Violation Audit</div>
+  <table class="vtable"><thead><tr><th>Staff Member</th><th>Occupation</th><th>Dept</th><th>Tasks</th><th>Violations</th><th>Rate</th><th>Status</th></tr></thead>
+  <tbody>${slaViolators.map(s => {
+    const rate = (s.tasks_completed || 0) > 0 ? Math.round(((s.violations || 0) / s.tasks_completed) * 100) : 0;
+    return `<tr>
+      <td><strong>${s.name}</strong><br><span style="font-size:10px;color:#999">${s.email}</span></td>
+      <td>${s.occupation || 'N/A'}</td><td>${s.department}</td>
+      <td>${s.tasks_completed || 0}</td>
+      <td><span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${s.violations || 0}</span></td>
+      <td style="font-weight:700;color:${rate > 30 ? '#dc2626' : '#f59e0b'}">${rate}%</td>
+      <td><span class="badge ${rate > 50 ? 'red' : rate > 25 ? 'gold' : 'green'}">${rate > 50 ? 'Critical' : rate > 25 ? 'Review' : 'Monitor'}</span></td>
+    </tr>`;
+  }).join('')}</tbody></table>
+</div>` : ''}
+
+${requests.filter(r => r.rating).length > 0 ? `<div class="section">
+  <div class="section-title">Guest Feedback (Avg: ${avgRating} ★)</div>
+  <div class="feedback-grid">
+    ${requests.filter(r => r.rating).slice(0, 8).map(r => `<div class="fb-card">
+      <div class="stars">${'★'.repeat(r.rating || 0)}${'☆'.repeat(5 - (r.rating || 0))}</div>
+      <div class="fb-text">"${r.feedback || 'No comment'}"</div>
+      <div class="fb-meta">Room ${r.guest_room} · ${r.service}</div>
+    </div>`).join('')}
+  </div>
+</div>` : ''}
+
+<div class="footer">
+  <div><div style="font-family:'Playfair Display',serif;font-size:14px;color:#C5A059">Sentinel Pro</div><div style="font-size:10px;color:#999;margin-top:3px">Luxury Hotel Management · Confidential</div></div>
+  <div style="font-size:10px;color:#999;text-align:right">Generated: ${new Date().toLocaleString()}<br>By: ${profile.displayName}</div>
+</div>
+</div>
+<button class="print-btn" onclick="window.print()">🖨 Print / Save PDF</button>
+</body></html>`;
     const win = window.open('', '_blank');
-    if (win) { win.document.write(`<html><body><h1>Sentinel Pro ${reportPeriod} Report</h1><p>Total Requests: ${requests.length}</p><p>Completed: ${completed}</p><p>Revenue: AED ${revenue.toLocaleString()}</p><p>SLA Violations: ${violations.length}</p><button onclick="window.print()">Print</button></body></html>`); win.document.close(); }
+    if (win) { win.document.write(html); win.document.close(); }
   };
 
   return (
@@ -1339,7 +1527,7 @@ setTimeout(()=>window.print(),2000);
               { key: 'sla', label: `SLA${violations.length > 0 ? `(${violations.length})` : ''}` },
               { key: 'requests', label: 'Requests' },
               { key: 'staff', label: `Staff${allPendingCount > 0 ? `(${allPendingCount})` : ''}` },
-              { key: 'qr', label: '📱 QR Codes' },
+              { key: 'qr', label: '📱 QR' },
             ].map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>{tab.label}</button>
             ))}
@@ -1357,6 +1545,7 @@ setTimeout(()=>window.print(),2000);
         </div>
       )}
 
+      {/* ANALYTICS */}
       {activeTab === 'analytics' && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1418,6 +1607,7 @@ setTimeout(()=>window.print(),2000);
         </div>
       )}
 
+      {/* LEADERBOARD */}
       {activeTab === 'leaderboard' && (
         <div className="bg-[#001c36] border border-gold/10 p-5 space-y-4">
           <h2 className="text-xl font-serif text-gold">Staff Performance Leaderboard</h2>
@@ -1445,6 +1635,7 @@ setTimeout(()=>window.print(),2000);
         </div>
       )}
 
+      {/* SLA */}
       {activeTab === 'sla' && (
         <div className="space-y-4">
           <h2 className="text-xl font-serif text-gold">SLA Monitoring — All Departments</h2>
@@ -1495,6 +1686,7 @@ setTimeout(()=>window.print(),2000);
         </div>
       )}
 
+      {/* REQUESTS */}
       {activeTab === 'requests' && (
         <div className="space-y-3">
           <h2 className="text-xl font-serif text-gold">All Requests</h2>
@@ -1525,6 +1717,7 @@ setTimeout(()=>window.print(),2000);
         </div>
       )}
 
+      {/* STAFF */}
       {activeTab === 'staff' && (
         <div className="bg-[#001c36] border border-gold/10 p-5 space-y-6">
           <h2 className="text-xl font-serif text-gold">Executive Staff Center</h2>
@@ -1569,11 +1762,13 @@ setTimeout(()=>window.print(),2000);
                   ))}
                 </tbody>
               </table>
+              {approvedStaff.length === 0 && <p className="text-white/20 italic py-8 text-center text-sm">No approved staff.</p>}
             </div>
           </div>
         </div>
       )}
 
+      {/* QR CODES */}
       {activeTab === 'qr' && (
         <div className="bg-[#001c36] border border-gold/10 p-5 space-y-5">
           <h2 className="text-xl font-serif text-gold flex items-center gap-2"><QrCode size={20} /> Room QR Code Generator</h2>
@@ -1583,6 +1778,13 @@ setTimeout(()=>window.print(),2000);
             <div className="flex flex-wrap gap-2">{rooms.map(r => <span key={r.id} className="text-[9px] bg-navy/50 border border-gold/20 text-gold px-2 py-1 font-bold">Room {r.room_number}</span>)}</div>
           </div>
           <button onClick={generateQRCodes} className="gold-button m-0 flex items-center gap-2 w-full justify-center"><QrCode size={16} /> Generate & Print QR Codes for All Rooms</button>
+          <div className="border border-gold/10 p-4 bg-navy/20 space-y-1">
+            <p className="text-[9px] text-gold uppercase tracking-widest font-bold">How It Works</p>
+            <p className="text-[10px] text-white/50">1. Click Generate → printable page with QR codes for every room</p>
+            <p className="text-[10px] text-white/50">2. Print and laminate each card</p>
+            <p className="text-[10px] text-white/50">3. Place in each room permanently</p>
+            <p className="text-[10px] text-white/50">4. Guest scans → room auto-fills → enters name only</p>
+          </div>
         </div>
       )}
     </div>
@@ -1626,9 +1828,8 @@ export default function App() {
           id: row.id, roomNumber: row.guest_room || '', type: row.service || '',
           message: row.notes, department: row.department, status: row.status,
           guestId: row.guest_id, timestamp: row.created_at, totalPrice: row.total_price,
-          rating: row.rating, feedbackComment: row.feedback,
-          feedbackDismissed: row.feedback_dismissed, assignedStaffName: row.assigned_to,
-          lineItems: row.line_items,
+          rating: row.rating, feedbackDismissed: row.feedback_dismissed,
+          assignedStaffName: row.assigned_to, lineItems: row.line_items,
         }));
         setRequests(mapped);
         const unrated = mapped.find((r: any) => r.status === 'Completed' && !r.rating && !r.feedbackDismissed);
@@ -1644,7 +1845,7 @@ export default function App() {
 
   const logout = () => { localStorage.clear(); setProfile(null); window.location.replace('/'); };
 
-  // ✅ Correct department routing
+  // ✅ CORRECT DEPARTMENT ROUTING — Room Service = F&B, Concierge = Concierge etc
   const submitRequest = async (customData?: any) => {
     if (!profile || !roomNumber) return;
     const service = customData?.type ? customData : selectedService;
@@ -1652,20 +1853,27 @@ export default function App() {
     const lineItems = customData?.lineItems || null;
     const totalPrice = lineItems ? lineItems.reduce((s: number, li: any) => s + li.total, 0) : customData?.totalPrice || 0;
     const serviceKey = service.serviceKey || customData?.serviceKey || '';
+    // ✅ This is the key fix — always use getDepartmentFromServiceKey
     const department = getDepartmentFromServiceKey(serviceKey, service.dept || customData?.dept);
     try {
       const { error } = await supabase.from('requests').insert({
-        guest_room: roomNumber, guest_id: profile.uid, guest_name: profile.displayName,
-        service: service.type || service.name, service_key: serviceKey,
+        guest_room: roomNumber,
+        guest_id: profile.uid,
+        guest_name: profile.displayName,
+        service: service.type || service.name,
+        service_key: serviceKey,
         notes: customData?.notes || message || dietaryRequirements,
-        department,
-        status: 'Pending', total_price: totalPrice > 0 ? totalPrice : null,
-        line_items: lineItems, language, created_at: new Date().toISOString(),
+        department, // ✅ Always correct department
+        status: 'Pending',
+        total_price: totalPrice > 0 ? totalPrice : null,
+        line_items: lineItems,
+        language,
+        created_at: new Date().toISOString(),
       });
       if (error) throw error;
       setShowRequestModal(false); setMessage(''); setSelectedService(null);
       setCart({}); setDietaryRequirements(''); setGuestTab('services');
-      alert('✅ Your request has been submitted successfully!');
+      alert('✅ Your request has been submitted!');
     } catch (e: any) { alert(e.message); }
   };
 
@@ -1680,13 +1888,14 @@ export default function App() {
   const isExecutive = profile?.role === 'manager' && profile?.department === 'None';
   const isDeptManager = profile?.role === 'manager' && profile?.department !== 'None';
 
+  // ✅ Guest service tiles — each has correct serviceKey for routing
   const guestServices = [
     { name: t('housekeeping'), icon: Sparkles, dept: 'Housekeeping', serviceKey: 'housekeeping', options: [t('room_cleaning'), t('laundry'), t('extra_blanket'), 'Extra Pillow', 'Extra Towels', 'Turn Down Service'] },
-    { name: t('room_service'), icon: Coffee, dept: 'F&B', serviceKey: 'room_service' },
-    { name: t('restaurant_bookings'), icon: UtensilsCrossed, dept: 'F&B', serviceKey: 'restaurant_bookings' },
-    { name: t('concierge_services'), icon: Key, dept: 'Concierge', serviceKey: 'concierge_services' },
+    { name: t('room_service'), icon: Coffee, dept: 'F&B', serviceKey: 'room_service' }, // ✅ Goes to F&B
+    { name: t('restaurant_bookings'), icon: UtensilsCrossed, dept: 'F&B', serviceKey: 'restaurant_bookings' }, // ✅ Goes to F&B
+    { name: t('concierge_services'), icon: Key, dept: 'Concierge', serviceKey: 'concierge_services' }, // ✅ Goes to Concierge
     { name: t('security'), icon: Shield, dept: 'Security & Safety', serviceKey: 'security', options: [t('emergency'), t('safe_box'), t('medical'), t('escort'), 'Lost & Found', 'Other'] },
-    { name: 'Maintenance', icon: Wrench, dept: 'Maintenance', serviceKey: 'maintenance', options: ['AC / Heating Issue', 'Plumbing Issue', 'Electrical Issue', 'TV / Electronics', 'Door / Lock Issue', 'Lighting Issue', 'Bathroom Issue', 'Other'] },
+    { name: 'Maintenance', icon: Wrench, dept: 'Maintenance', serviceKey: 'maintenance', options: ['AC / Heating Issue', 'Plumbing Issue', 'Electrical Issue', 'TV / Electronics', 'Door / Lock Issue', 'Lighting Issue', 'Bathroom Issue', 'Other'] }, // ✅ Goes to Maintenance
   ];
 
   if (loading) return <div className="min-h-screen bg-navy flex items-center justify-center"><div className="text-gold font-serif text-2xl animate-pulse">Loading...</div></div>;
@@ -1777,7 +1986,7 @@ export default function App() {
                   <RoomService cart={cart} updateCart={(id, delta) => setCart(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }))} onSubmit={(notes, items) => submitRequest({ type: t('room_service'), serviceKey: 'room_service', dept: 'F&B', notes, lineItems: items })} />
                 )}
                 {guestTab === 'restaurant-bookings' && <RestaurantBooking onSubmit={data => submitRequest({ ...data, serviceKey: 'restaurant_bookings', dept: 'F&B' })} />}
-                {guestTab === 'concierge' && <Concierge onSubmit={data => submitRequest({ ...data, serviceKey: 'concierge_services' })} />}
+                {guestTab === 'concierge' && <Concierge onSubmit={data => submitRequest({ ...data, serviceKey: 'concierge_services', dept: 'Concierge' })} />}
               </motion.div>
             )}
           </AnimatePresence>
