@@ -1,15 +1,22 @@
-import {StrictMode} from 'react';
-import {createRoot} from 'react-dom/client';
-import App, { ErrorBoundary } from './App.tsx';
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App, { ErrorBoundary } from './App';
+import SentinelAdmin from './SentinelAdmin';
 import { LanguageProvider } from './contexts/TranslationContext';
 import './index.css';
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ErrorBoundary>
+const isAdminRoute = window.location.pathname === '/sentinel-admin';
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    {isAdminRoute ? (
+      <SentinelAdmin />
+    ) : (
       <LanguageProvider>
-        <App />
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
       </LanguageProvider>
-    </ErrorBoundary>
-  </StrictMode>,
+    )}
+  </React.StrictMode>
 );
