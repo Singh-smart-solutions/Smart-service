@@ -4,6 +4,7 @@ export type Department =
   | 'Concierge'
   | 'Security & Safety'
   | 'Front Office'
+  | 'Maintenance'
   | 'None';
 
 export type UserRole = 'guest' | 'staff' | 'manager';
