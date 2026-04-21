@@ -1925,7 +1925,15 @@ export default function App() {
                 {guestTab === 'services' && (
                   <>
                     <div className="bg-navy p-5 sm:p-10 shadow-2xl mb-6">
-                      <h2 className="text-2xl sm:text-4xl font-serif text-white mb-3 leading-tight">
+  <div className="flex justify-between items-start mb-4">
+    <div>
+      <p className="text-[8px] text-gold/60 uppercase tracking-widest">Room {profile.roomNumber || roomNumber}</p>
+    </div>
+    <button onClick={logout} className="flex items-center gap-2 border border-gold/40 text-gold px-4 py-2 text-[9px] font-bold uppercase tracking-widest hover:bg-gold/10">
+      <LogOut size={12} /> Checkout / Logout
+    </button>
+  </div>
+  <h2 className="text-2xl sm:text-4xl font-serif text-white mb-3 leading-tight">
                         {new Date().getHours() < 12 ? t('greeting_morning') : new Date().getHours() < 17 ? t('greeting_afternoon') : t('greeting_evening')},
                         <span className="text-gold italic"> {profile.displayName}</span>
                       </h2>
