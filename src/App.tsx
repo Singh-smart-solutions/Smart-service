@@ -713,12 +713,6 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
 
-  // ✅ 5-second polling fallback — ensures updates even if real-time fails
-  useEffect(() => {
-    const poll = setInterval(() => { fetchTasks(); }, 5000);
-    return () => clearInterval(poll);
-  }, [fetchTasks]);
-
   const fetchSLA = async () => {
     const { data } = await supabase.from('sla_settings').select('*');
     if (data) { const map: any = {}; data.forEach((s: any) => { map[s.department] = s.sla_minutes; }); setSlaSettings(map); }
@@ -748,6 +742,12 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     const { data } = await supabase.from('rooms').select('*').order('room_number');
     if (data) setRooms(data);
   }, []);
+
+  // ✅ 5-second polling fallback — updates even if real-time fails
+  useEffect(() => {
+    const poll = setInterval(() => { fetchTasks(); }, 5000);
+    return () => clearInterval(poll);
+  }, [fetchTasks]);
 
   useEffect(() => {
     fetchTasks(); fetchSLA();
