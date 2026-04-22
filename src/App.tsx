@@ -747,7 +747,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     fetchTasks(); fetchSLA();
     if (isHousekeeping) fetchRooms();
     const channel = supabase.channel(`staff-${userProfile.uid}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'requests' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, (payload) => {
         const newReq = payload.new as any;
         const reqDept = newReq.department;
         const myDept = userProfile.department;
