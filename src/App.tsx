@@ -713,6 +713,12 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
 
+  // ✅ 5-second polling fallback — ensures updates even if real-time fails
+  useEffect(() => {
+    const poll = setInterval(() => { fetchTasks(); }, 5000);
+    return () => clearInterval(poll);
+  }, [fetchTasks]);
+
   const fetchSLA = async () => {
     const { data } = await supabase.from('sla_settings').select('*');
     if (data) { const map: any = {}; data.forEach((s: any) => { map[s.department] = s.sla_minutes; }); setSlaSettings(map); }
@@ -748,23 +754,23 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     if (isHousekeeping) fetchRooms();
     const channel = supabase.channel(`staff-${userProfile.uid}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, (payload) => {
-        const newReq = payload.new as any;
-        const reqDept = newReq.department;
-        const myDept = userProfile.department;
-        const deptMatch = reqDept === myDept ||
-          (myDept === 'Security & Safety' && (reqDept === 'Security & Safety' || reqDept === 'Security'));
-        if (deptMatch) {
-          const msg = `Room #${newReq.guest_room} — ${newReq.service}`;
-          setNewOrderAlert(`🔔 New Request: ${msg}`);
-          // ✅ Play hotel bell sound
-          playNotificationSound();
-          // ✅ Show browser/OS notification
-          showBrowserNotification('🔔 Sentinel Pro — New Guest Request', msg);
-          setTimeout(() => setNewOrderAlert(null), 15000);
+        // ✅ Only alert on INSERT (new guest request), fetch on ALL events (INSERT + UPDATE + DELETE)
+        if (payload.eventType === 'INSERT') {
+          const newReq = payload.new as any;
+          const reqDept = newReq.department;
+          const myDept = userProfile.department;
+          const deptMatch = reqDept === myDept ||
+            (myDept === 'Security & Safety' && (reqDept === 'Security & Safety' || reqDept === 'Security'));
+          if (deptMatch) {
+            const msg = `Room #${newReq.guest_room} — ${newReq.service}`;
+            setNewOrderAlert(`🔔 New Request: ${msg}`);
+            playNotificationSound();
+            showBrowserNotification('🔔 Sentinel Pro — New Guest Request', msg);
+            setTimeout(() => setNewOrderAlert(null), 15000);
+          }
         }
         fetchTasks();
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'requests' }, fetchTasks)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [userProfile, fetchTasks, fetchRooms, isHousekeeping]);
@@ -821,9 +827,9 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   };
 
   const staffLogout = async () => {
-  await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', userProfile.uid);
-  localStorage.clear(); window.location.replace('/');
-};
+    await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid);
+    localStorage.clear(); window.location.replace('/');
+  };
 
   const tabs = [
     { key: 'active', label: `Active (${tasks.length})` },
@@ -1040,6 +1046,12 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
 
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
 
+  // ✅ 5-second polling fallback — ensures updates even if real-time fails
+  useEffect(() => {
+    const poll = setInterval(() => { fetchData(); }, 5000);
+    return () => clearInterval(poll);
+  }, []);
+
   const fetchData = async () => {
     const dept = profile.department;
     let reqQ = supabase.from('requests').select('*').order('created_at', { ascending: false });
@@ -1099,11 +1111,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
-          <button onClick={async () => { 
-  await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('email', profile.email);
-  localStorage.clear(); 
-  window.location.replace('/'); 
-}} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
+          <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
         </div>
       </header>
 
@@ -1241,6 +1249,12 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
+
+  // ✅ 5-second polling fallback — ensures updates even if real-time fails
+  useEffect(() => {
+    const poll = setInterval(() => { fetchData(); }, 5000);
+    return () => clearInterval(poll);
+  }, []);
 
   const fetchData = async () => {
     const { data: reqData } = await supabase.from('requests').select('*').order('created_at', { ascending: false });
