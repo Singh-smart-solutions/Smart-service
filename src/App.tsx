@@ -821,9 +821,9 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   };
 
   const staffLogout = async () => {
-    await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid);
-    localStorage.clear(); window.location.replace('/');
-  };
+  await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', userProfile.uid);
+  localStorage.clear(); window.location.replace('/');
+};
 
   const tabs = [
     { key: 'active', label: `Active (${tasks.length})` },
