@@ -1,0 +1,1 @@
+{"root":["./vite.config.ts","./public/sw.js","./src/App.tsx","./src/SentinelAdmin.tsx","./src/firebase.ts","./src/main.tsx","./src/supabase.ts","./src/types.ts","./src/components/CarCard.tsx","./src/components/ConciergeMenu.tsx","./src/contexts/TranslationContext.tsx","./src/lib/utils.ts"],"version":"5.8.3"}
