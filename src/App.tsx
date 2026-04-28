@@ -775,12 +775,13 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   const getElapsed = (ts: any) => {
     if (!ts) return 0;
-    const created = new Date(ts).getTime();
-    const current = Date.now();
+    // Parse UTC timestamp and compare with UTC now
+    const created = new Date(ts + 'Z').getTime();
+    const current = new Date().getTime();
     const diff = Math.floor((current - created) / 1000);
-    // If diff is negative or impossibly large, return 0
     if (diff < 0) return 0;
     return diff;
+  };
   };
   const getSLALimit = (dept: string) => (slaSettings[dept] || 5) * 60;
 
