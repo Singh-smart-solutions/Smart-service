@@ -604,9 +604,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
           setLoading(false); return;
         }
         if (!staffData.approved) { alert('ACCESS DENIED: Your account is pending approval.'); setLoading(false); return; }
-        const deviceId = getDeviceId();
-        const deviceId = getDeviceId();
-        await supabase.from('staff').update({ device_id: deviceId, logged_in: true, failed_attempts: 0, locked_until: null }).eq('id', staffData.id);
+        await supabase.from('staff').update({ logged_in: true, failed_attempts: 0, locked_until: null, device_id: null }).eq('id', staffData.id);
         const isManager = MANAGER_OCCUPATIONS.includes(staffData.occupation || '');
         const profile: UserProfile = {
           uid: staffData.id, email: staffData.email, displayName: staffData.name,
@@ -1886,7 +1884,6 @@ export default function App() {
         total_price: totalPrice > 0 ? totalPrice : null,
         line_items: lineItems,
         language,
-        created_at: new Date().toISOString(),
       });
       if (error) throw error;
       setShowRequestModal(false); setMessage(''); setSelectedService(null);
