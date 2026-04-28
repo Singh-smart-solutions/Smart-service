@@ -825,7 +825,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   };
 
   const staffLogout = async () => {
-  await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', userProfile.uid);
+  await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid);
   localStorage.clear(); window.location.replace('/');
 };
 
@@ -1197,7 +1197,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     {staff.logged_in && <span className="text-[8px] text-green-400 font-bold">● Online</span>}
                   </div>
                   <div className="flex gap-2">
-                    {staff.logged_in && <button onClick={() => forceLogout(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Force Logout</button>}
+                    <button onClick={() => forceLogout(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Force Logout</button>
                     <button onClick={() => terminateStaff(staff.id)} className="px-2 py-1 bg-red-800 text-white text-[8px] font-bold uppercase">Terminate</button>
                   </div>
                 </div>
@@ -1884,6 +1884,7 @@ export default function App() {
         total_price: totalPrice > 0 ? totalPrice : null,
         line_items: lineItems,
         language,
+        created_at: new Date().toISOString(),
       });
       if (error) throw error;
       setShowRequestModal(false); setMessage(''); setSelectedService(null);
