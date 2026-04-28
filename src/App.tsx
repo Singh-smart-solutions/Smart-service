@@ -775,13 +775,11 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   const getElapsed = (ts: any) => {
     if (!ts) return 0;
-    // Parse UTC timestamp and compare with UTC now
-    const created = new Date(ts + 'Z').getTime();
-    const current = new Date().getTime();
-    const diff = Math.floor((current - created) / 1000);
+    // Add 'Z' to ensure timestamp treated as UTC, matching Supabase storage
+    const tsWithZ = ts.endsWith('Z') ? ts : ts + 'Z';
+    const diff = Math.floor((Date.now() - new Date(tsWithZ).getTime()) / 1000);
     if (diff < 0) return 0;
     return diff;
-  };
   };
   const getSLALimit = (dept: string) => (slaSettings[dept] || 5) * 60;
 
