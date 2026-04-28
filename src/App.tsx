@@ -773,7 +773,15 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     return () => { supabase.removeChannel(channel); };
   }, [userProfile, fetchTasks, fetchRooms, isHousekeeping]);
 
-  const getElapsed = (ts: any) => { if (!ts) return 0; return Math.floor((now - new Date(ts).getTime()) / 1000); };
+  const getElapsed = (ts: any) => {
+    if (!ts) return 0;
+    const created = new Date(ts).getTime();
+    const current = Date.now();
+    const diff = Math.floor((current - created) / 1000);
+    // If diff is negative or impossibly large, return 0
+    if (diff < 0 || diff > 86400) return 0;
+    return diff;
+  };
   const getSLALimit = (dept: string) => (slaSettings[dept] || 5) * 60;
 
   const handleAccept = async (id: string) => {
@@ -818,7 +826,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       guest_room: maintenanceForm.room, guest_id: 'maintenance', guest_name: userProfile.displayName,
       service: `Maintenance: ${maintenanceForm.category}`,
       notes: `${maintenanceForm.description} [Priority: ${maintenanceForm.priority}]`,
-      department: 'Maintenance', status: 'Pending', created_at: new Date().toISOString(),
+      department: 'Maintenance', status: 'Pending',
     });
     alert('✅ Maintenance request submitted.');
     setMaintenanceForm({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
@@ -1884,7 +1892,6 @@ export default function App() {
         total_price: totalPrice > 0 ? totalPrice : null,
         line_items: lineItems,
         language,
-        created_at: new Date().toISOString(),
       });
       if (error) throw error;
       setShowRequestModal(false); setMessage(''); setSelectedService(null);
