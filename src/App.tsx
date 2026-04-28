@@ -779,7 +779,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     const current = Date.now();
     const diff = Math.floor((current - created) / 1000);
     // If diff is negative or impossibly large, return 0
-    if (diff < 0 || diff > 86400) return 0;
+    if (diff < 0) return 0;
     return diff;
   };
   const getSLALimit = (dept: string) => (slaSettings[dept] || 5) * 60;
