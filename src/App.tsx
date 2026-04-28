@@ -605,7 +605,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         }
         if (!staffData.approved) { alert('ACCESS DENIED: Your account is pending approval.'); setLoading(false); return; }
         const deviceId = getDeviceId();
-        if (staffData.device_id && staffData.device_id !== deviceId) { alert('ACCESS DENIED: Account active on another device.'); setLoading(false); return; }
+        const deviceId = getDeviceId();
         await supabase.from('staff').update({ device_id: deviceId, logged_in: true, failed_attempts: 0, locked_until: null }).eq('id', staffData.id);
         const isManager = MANAGER_OCCUPATIONS.includes(staffData.occupation || '');
         const profile: UserProfile = {
@@ -827,9 +827,9 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   };
 
   const staffLogout = async () => {
-    await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid);
-    localStorage.clear(); window.location.replace('/');
-  };
+  await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', userProfile.uid);
+  localStorage.clear(); window.location.replace('/');
+};
 
   const tabs = [
     { key: 'active', label: `Active (${tasks.length})` },
