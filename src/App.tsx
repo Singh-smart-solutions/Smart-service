@@ -116,7 +116,6 @@ const playNotificationSound = () => {
     // Vibrate phone — 3 sharp bursts
     if ('vibrate' in navigator) navigator.vibrate([400, 150, 400, 150, 400]);
   } catch (e) {
-    console.log('Audio error:', e);
   }
 };
 
@@ -139,7 +138,6 @@ const showBrowserNotification = (title: string, body: string) => {
       });
     }
   } catch (e) {
-    console.log('Notification error:', e);
   }
 };
 
@@ -150,7 +148,6 @@ const registerServiceWorker = async (staffId: string, department: string) => {
     // Request permission first
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
-      console.log('Notification permission denied');
       return;
     }
     const registration = await navigator.serviceWorker.register('/sw.js');
@@ -160,10 +157,36 @@ const registerServiceWorker = async (staffId: string, department: string) => {
     if (sw) {
       sw.postMessage({ type: 'STORE_STAFF_INFO', payload: { staffId, department } });
     }
-    console.log('✅ Service worker registered for', department);
   } catch (e) {
-    console.log('Service worker registration failed (non-critical):', e);
   }
+};
+
+// ─── TOAST NOTIFICATION SYSTEM ───────────────────────────────────────────────
+let toastTimeout: any = null;
+let setToastGlobal: ((msg: { text: string; type: 'success' | 'error' | 'info' }) => void) | null = null;
+
+const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
+  if (setToastGlobal) {
+    setToastGlobal({ text, type });
+    if (toastTimeout) clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => { if (setToastGlobal) setToastGlobal({ text: '', type: 'info' }); }, 3500);
+  }
+};
+
+const ToastContainer: React.FC = () => {
+  const [toast, setToast] = useState<{ text: string; type: 'success' | 'error' | 'info' }>({ text: '', type: 'success' });
+  useEffect(() => { setToastGlobal = setToast; return () => { setToastGlobal = null; }; }, []);
+  if (!toast.text) return null;
+  const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-navy' };
+  const icons = { success: '✓', error: '✕', info: 'ℹ' };
+  return (
+    <motion.div initial={{ y: -80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -80, opacity: 0 }}
+      className={`fixed top-4 left-1/2 z-[99999] -translate-x-1/2 px-6 py-3 shadow-2xl flex items-center gap-3 min-w-[260px] max-w-[90vw] ${colors[toast.type]}`}
+      style={{ borderLeft: '4px solid #C5A059' }}>
+      <span className="text-white font-bold">{icons[toast.type]}</span>
+      <span className="text-white text-sm font-medium">{toast.text}</span>
+    </motion.div>
+  );
 };
 
 // ─── ERROR BOUNDARY ───────────────────────────────────────────────────────────
@@ -497,7 +520,7 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
       const profile: UserProfile = { uid: guestId, email: 'guest@hotel.com', displayName: fullName || `Guest ${roomNumber}`, role: 'guest', department: 'None', roomNumber, status: 'Approved' };
       localStorage.setItem('sentinel_local_session', JSON.stringify(profile));
       onLoginSuccess(profile);
-    } catch (err: any) { alert(err.message); } finally { setLoading(false); }
+    } catch (err: any) { showToast(err.message || 'An error occurred. Please try again.', 'error'); } finally { setLoading(false); }
   };
 
   const handleManagerAuth = async (e: React.FormEvent) => {
@@ -514,8 +537,8 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
       onLoginSuccess(mp); return;
     }
     const newCount = failCount + 1; setFailCount(newCount);
-    if (newCount >= 3) { alert('Too many failed attempts.'); setShowManagerLock(false); setShowSecret(false); setFailCount(0); setManagerPassword(''); }
-    else alert(`Invalid password. Attempt ${newCount} of 3.`);
+    if (newCount >= 3) { showToast('Too many failed attempts. Please try again later.', 'error'); setShowManagerLock(false); setShowSecret(false); setFailCount(0); setManagerPassword(''); }
+    else showToast(`Incorrect password. Attempt ${newCount} of 3.`, 'error');
   };
 
   return (
@@ -582,7 +605,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
     try {
       if (mode === 'register') {
         const { data: existing } = await supabase.from('staff').select('id').eq('email', email).single();
-        if (existing) { alert('Profile already exists. Please login.'); setMode('login'); setLoading(false); return; }
+        if (existing) { showToast('A profile with this email already exists. Please login.', 'info'); setMode('login'); setLoading(false); return; }
         const { error } = await supabase.from('staff').insert({
           name: fullName, staff_id: staffIdNumber, email, password,
           department: derivedDept, occupation, approved: false,
@@ -594,16 +617,16 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         setShowPending(true);
       } else {
         const { data: staffData, error } = await supabase.from('staff').select('*').eq('email', email).single();
-        if (error || !staffData) { alert('Invalid credentials.'); setLoading(false); return; }
-        if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) { alert(`Account locked until ${new Date(staffData.locked_until).toLocaleTimeString()}.`); setLoading(false); return; }
+        if (error || !staffData) { showToast('Invalid email or password. Please try again.', 'error'); setLoading(false); return; }
+        if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) { showToast(`Account is locked until ${new Date(staffData.locked_until).toLocaleTimeString()}. Please try again later.`, 'error'); setLoading(false); return; }
         if (staffData.password !== password) {
           const attempts = (staffData.failed_attempts || 0) + 1;
           const lockUntil = attempts >= 5 ? new Date(Date.now() + 30 * 60000).toISOString() : null;
           await supabase.from('staff').update({ failed_attempts: attempts, ...(lockUntil ? { locked_until: lockUntil } : {}) }).eq('id', staffData.id);
-          alert(attempts >= 5 ? 'Account locked for 30 minutes.' : `Invalid password. ${5 - attempts} attempts remaining.`);
+          showToast(attempts >= 5 ? 'Account locked for 30 minutes due to too many failed attempts.' : `Incorrect password. ${5 - attempts} attempts remaining.`, 'error');
           setLoading(false); return;
         }
-        if (!staffData.approved) { alert('ACCESS DENIED: Your account is pending approval.'); setLoading(false); return; }
+        if (!staffData.approved) { showToast('Your account is pending manager approval. Please wait.', 'info'); setLoading(false); return; }
         await supabase.from('staff').update({ logged_in: true, failed_attempts: 0, locked_until: null, device_id: null }).eq('id', staffData.id);
         const isManager = MANAGER_OCCUPATIONS.includes(staffData.occupation || '');
         const profile: UserProfile = {
@@ -615,7 +638,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         localStorage.setItem('sentinel_local_session', JSON.stringify(profile));
         onLoginSuccess(profile);
       }
-    } catch (err: any) { alert(err.message); } finally { setLoading(false); }
+    } catch (err: any) { showToast(err.message || 'An error occurred. Please try again.', 'error'); } finally { setLoading(false); }
   };
 
   return (
@@ -811,7 +834,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       department: forwardDept, status: 'Pending', assigned_to: null, assigned_to_email: null, accepted_at: null,
       notes: (forwardModalTask.message || '') + ` [Forwarded from ${userProfile.department} by ${userProfile.displayName}]`
     }).eq('id', forwardModalTask.id);
-    alert(`✅ Request forwarded to ${forwardDept} department.`);
+    showToast(`Request forwarded to ${forwardDept} department`, 'success');
     setForwardModalTask(null);
   };
 
@@ -821,14 +844,14 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   };
 
   const submitMaintenanceRequest = async () => {
-    if (!maintenanceForm.room || !maintenanceForm.description) { alert('Please fill in room/location and description.'); return; }
+    if (!maintenanceForm.room || !maintenanceForm.description) { showToast('Please fill in both room/location and description fields.', 'error'); return; }
     await supabase.from('requests').insert({
       guest_room: maintenanceForm.room, guest_id: 'maintenance', guest_name: userProfile.displayName,
       service: `Maintenance: ${maintenanceForm.category}`,
       notes: `${maintenanceForm.description} [Priority: ${maintenanceForm.priority}]`,
       department: 'Maintenance', status: 'Pending',
     });
-    alert('✅ Maintenance request submitted.');
+    showToast('Maintenance request submitted successfully!', 'success');
     setMaintenanceForm({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
   };
 
@@ -1090,12 +1113,12 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const approvedStaff = staffList.filter(s => s.approved);
 
   const approveStaff = async (id: string) => { await supabase.from('staff').update({ approved: true }).eq('id', id); };
-  const rejectStaff = async (id: string) => { if (window.confirm('Reject and delete?')) await supabase.from('staff').delete().eq('id', id); };
+  const rejectStaff = async (id: string) => { if (window.confirm('Are you sure you want to reject and delete this profile?')) { await supabase.from('staff').delete().eq('id', id); showToast('Staff profile rejected and deleted', 'info'); } };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
-  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); alert('Staff logged out.'); };
+  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); showToast('Staff member logged out successfully', 'success'); };
   const saveSLA = async () => {
     await supabase.from('sla_settings').upsert({ department: profile.department, sla_minutes: editSLA, updated_by: profile.displayName, updated_at: new Date().toISOString() }, { onConflict: 'department' });
-    alert(`✅ SLA updated to ${editSLA} minutes`);
+    showToast(`SLA updated to ${editSLA} minutes`, 'success');
     fetchData();
   };
 
@@ -1309,9 +1332,9 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const slaViolators = staffList.filter(s => (s.violations || 0) > 0).sort((a, b) => (b.violations || 0) - (a.violations || 0));
 
   const approveStaff = async (id: string) => { await supabase.from('staff').update({ approved: true }).eq('id', id); };
-  const deleteStaff = async (id: string) => { if (window.confirm('Delete?')) await supabase.from('staff').delete().eq('id', id); };
+  const deleteStaff = async (id: string) => { if (window.confirm('Are you sure you want to permanently delete this staff member?')) { await supabase.from('staff').delete().eq('id', id); showToast('Staff member deleted', 'info'); } };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
-  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); alert('Account logged out.'); };
+  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); showToast('Account logged out successfully', 'success'); };
 
   const generateQRCodes = () => {
     const baseUrl = window.location.origin;
@@ -1341,7 +1364,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
       link.setAttribute('download', `SentinelPro_${reportPeriod}_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link); link.click(); document.body.removeChild(link); return;
     }
-    if (type === 'email') { alert(`✅ ${reportPeriod} report sent to all department managers.`); return; }
+    if (type === 'email') { showToast(`${reportPeriod} report sent to all department managers`, 'success'); return; }
 
     // ✅ FULL PROFESSIONAL PDF REPORT
     const deptBreakdown = ['Housekeeping', 'F&B', 'Concierge', 'Security & Safety', 'Front Office', 'Maintenance'].map(dept => {
@@ -1827,7 +1850,7 @@ export default function App() {
   const [message, setMessage] = useState('');
   const [dietaryRequirements, setDietaryRequirements] = useState('');
   const [feedbackRequest, setFeedbackRequest] = useState<any | null>(null);
-  const [roomNumber] = useState(roomNumberFromUrl || '402');
+  const [roomNumber] = useState(roomNumberFromUrl || '');
   const [pathname, setPathname] = useState(window.location.pathname);
   const { language, t, isRTL } = useLanguage();
 
@@ -1898,8 +1921,8 @@ export default function App() {
       if (error) throw error;
       setShowRequestModal(false); setMessage(''); setSelectedService(null);
       setCart({}); setDietaryRequirements(''); setGuestTab('services');
-      alert('✅ Your request has been submitted!');
-    } catch (e: any) { alert(e.message); }
+      showToast('Your request has been submitted successfully!', 'success');
+    } catch (e: any) { showToast(e.message || 'An error occurred. Please try again.', 'error'); }
   };
 
   const submitFeedback = async (rating: number, comment: string) => {
@@ -1926,6 +1949,8 @@ export default function App() {
   if (loading) return <div className="min-h-screen bg-navy flex items-center justify-center"><div className="text-gold font-serif text-2xl animate-pulse">Loading...</div></div>;
 
   return (
+    <>
+    <ToastContainer />
     <div className={cn('main-content', isRTL && 'rtl', profile?.role === 'manager' && 'manager-dark-mode')}>
       <GlobalLanguageSelector />
       {profile && profile.role === 'guest' && (
@@ -2049,5 +2074,6 @@ export default function App() {
         )}
       </AnimatePresence>
     </div>
+  </>
   );
 }
