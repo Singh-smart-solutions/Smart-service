@@ -603,7 +603,7 @@ const printBookingTicket = (booking: any) => {
 // ─── RESTAURANT BOOKING PORTAL ───────────────────────────────────────────────
 const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [bookings, setBookings] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'book' | 'mybookings' | 'manage' | 'menu' | 'settings'>('book');
+  const [activeTab, setActiveTab] = useState<'book' | 'mybookings' | 'manage' | 'walkin' | 'menu' | 'settings'>('book');
   const [selectedRestaurant, setSelectedRestaurant] = useState('turquoise');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -619,6 +619,16 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [rejectModal, setRejectModal] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectAlt, setRejectAlt] = useState('');
+  const [walkInName, setWalkInName] = useState('');
+  const [walkInPhone, setWalkInPhone] = useState('');
+  const [walkInEmail, setWalkInEmail] = useState('');
+  const [walkInRestaurant, setWalkInRestaurant] = useState('turquoise');
+  const [walkInDate, setWalkInDate] = useState('');
+  const [walkInTime, setWalkInTime] = useState('');
+  const [walkInPax, setWalkInPax] = useState('2');
+  const [walkInNotes, setWalkInNotes] = useState('');
+  const [walkInLoading, setWalkInLoading] = useState(false);
+  const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
   // Reservation access controlled by occupation
 
   const isFBManager = profile.role === 'manager' && profile.department === 'F&B';
@@ -711,6 +721,194 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
     fetchBookings();
   };
 
+  // ─── WALK-IN BOOKING ────────────────────────────────────────────────────────
+  const submitWalkIn = async () => {
+    if (!walkInName || !walkInDate || !walkInTime || !walkInPax) {
+      showToast('Please fill in guest name, date, time and guests', 'error'); return;
+    }
+    setWalkInLoading(true);
+    try {
+      const ref = generateBookingRef();
+      const restaurant = RESTAURANTS.find(r => r.id === walkInRestaurant);
+      const { data, error } = await supabase.from('restaurant_bookings').insert({
+        booking_ref: ref,
+        guest_id: 'WALKIN-' + Date.now(),
+        guest_name: walkInName.toUpperCase(),
+        room_number: 'WALK-IN',
+        restaurant: walkInRestaurant,
+        date: walkInDate,
+        time: walkInTime,
+        pax: Number(walkInPax),
+        notes: walkInNotes,
+        status: 'Confirmed',
+        confirmed_by: profile.displayName,
+        confirmed_at: new Date().toISOString(),
+      }).select().single();
+      if (error) throw error;
+
+      showToast(`Walk-in booking created! Ref: ${ref}`, 'success');
+
+      // Send WhatsApp if phone provided
+      if (walkInPhone) {
+        const msg = encodeURIComponent(
+          `Dear ${walkInName},
+
+Your reservation at ${restaurant?.name} has been confirmed!
+
+` +
+          `📋 Booking Ref: ${ref}
+📅 Date: ${walkInDate}
+🕐 Time: ${walkInTime}
+👥 Guests: ${walkInPax}
+` +
+          `${walkInNotes ? '📝 Notes: ' + walkInNotes + '
+' : ''}` +
+          `
+Please arrive 5 minutes early. We look forward to welcoming you!
+
+Sentinel Pro · Luxury Hotel`
+        );
+        window.open(`https://wa.me/${walkInPhone.replace(/\D/g,'')}?text=${msg}`, '_blank');
+      }
+
+      // Send email if email provided
+      if (walkInEmail) {
+        const subject = encodeURIComponent(`Reservation Confirmed — ${restaurant?.name} — Ref: ${ref}`);
+        const body = encodeURIComponent(
+          `Dear ${walkInName},
+
+Your reservation has been confirmed.
+
+` +
+          `Booking Reference: ${ref}
+Restaurant: ${restaurant?.name}
+Date: ${walkInDate}
+Time: ${walkInTime}
+Guests: ${walkInPax}
+` +
+          `${walkInNotes ? 'Special Requests: ' + walkInNotes + '
+' : ''}` +
+          `
+Please present this reference upon arrival.
+Arrive 5 minutes before your reservation.
+
+For any changes please contact reception.
+
+Kind regards,
+Sentinel Pro · Luxury Hotel`
+        );
+        window.open(`mailto:${walkInEmail}?subject=${subject}&body=${body}`, '_blank');
+      }
+
+      // Print ticket
+      if (data) setTimeout(() => printBookingTicket({ ...data, guest_name: walkInName.toUpperCase() }), 800);
+
+      // Reset form
+      setWalkInName(''); setWalkInPhone(''); setWalkInEmail('');
+      setWalkInDate(''); setWalkInTime(''); setWalkInPax('2'); setWalkInNotes('');
+      fetchBookings();
+      setActiveTab('manage');
+    } catch (e: any) {
+      showToast(e.message || 'Failed to create booking', 'error');
+    } finally { setWalkInLoading(false); }
+  };
+
+  // ─── PDF REPORT ───────────────────────────────────────────────────────────
+  const generatePDFReport = () => {
+    const filtered = bookings.filter(b => b.date === reportDate && b.status !== 'Cancelled');
+    const inHouse = filtered.filter(b => b.room_number !== 'WALK-IN');
+    const walkIns = filtered.filter(b => b.room_number === 'WALK-IN');
+    const totalPax = filtered.reduce((s, b) => s + (b.pax || 0), 0);
+    const paxGroups: Record<string, number> = {};
+    filtered.forEach(b => { const k = b.pax >= 8 ? '8+' : String(b.pax); paxGroups[k] = (paxGroups[k] || 0) + 1; });
+
+    const html = `<!DOCTYPE html><html><head><title>Reservation Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: 'Inter', sans-serif; background:white; padding:20px; font-size:11px; }
+  .report-header { background:#001529; color:white; padding:16px 20px; margin-bottom:12px; }
+  .hotel-name { font-family:'Playfair Display',serif; font-size:20px; color:#C5A059; letter-spacing:3px; }
+  .report-title { font-size:11px; color:rgba(255,255,255,0.6); margin-top:4px; letter-spacing:1px; }
+  .report-meta { display:flex; gap:16px; margin-top:8px; }
+  .meta-box { background:rgba(197,160,89,0.15); border:1px solid #C5A059; padding:6px 12px; text-align:center; }
+  .meta-val { font-size:18px; font-weight:bold; color:#C5A059; }
+  .meta-label { font-size:8px; color:rgba(255,255,255,0.5); text-transform:uppercase; letter-spacing:1px; }
+  .pax-summary { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .pax-box { background:#f8f6f0; border:1px solid #ddd; padding:6px 12px; text-align:center; min-width:80px; }
+  .pax-val { font-size:16px; font-weight:bold; color:#001529; }
+  .pax-label { font-size:8px; color:#999; text-transform:uppercase; }
+  .section-header { background:#001529; color:white; padding:6px 10px; font-weight:bold; font-size:10px; letter-spacing:1px; margin-bottom:0; }
+  .section-header.walkin { background:#4A0000; }
+  table { width:100%; border-collapse:collapse; margin-bottom:16px; }
+  th { background:#f4f2ec; padding:5px 6px; text-align:left; font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:#666; border-bottom:2px solid #C5A059; }
+  td { padding:5px 6px; border-bottom:1px solid #eee; font-size:10px; vertical-align:top; }
+  tr:nth-child(even) td { background:#fafaf8; }
+  .gold { color:#C5A059; font-weight:bold; }
+  .badge { display:inline-block; background:#001529; color:white; font-size:8px; padding:1px 6px; }
+  .badge.walkin { background:#7C3AED; }
+  .footer { text-align:center; color:#999; font-size:8px; margin-top:16px; border-top:1px solid #eee; padding-top:8px; }
+  @media print { body { padding:10px; } }
+</style></head><body>
+<div class="report-header">
+  <div class="hotel-name">SENTINEL PRO</div>
+  <div class="report-title">RESTAURANT RESERVATIONS REPORT &nbsp;·&nbsp; ${reportDate}</div>
+  <div class="report-meta">
+    <div class="meta-box"><div class="meta-val">${filtered.length}</div><div class="meta-label">Reservations</div></div>
+    <div class="meta-box"><div class="meta-val">${totalPax}</div><div class="meta-label">Total People</div></div>
+    <div class="meta-box"><div class="meta-val">${inHouse.length}</div><div class="meta-label">In-House</div></div>
+    <div class="meta-box"><div class="meta-val">${walkIns.length}</div><div class="meta-label">Walk-in</div></div>
+  </div>
+</div>
+
+<div class="pax-summary">
+  ${Object.entries(paxGroups).sort().map(([k,v]) => `<div class="pax-box"><div class="pax-val">${v}</div><div class="pax-label">${k} Pax</div></div>`).join('')}
+</div>
+
+${inHouse.length > 0 ? `
+<div class="section-header">IN-HOUSE GUESTS</div>
+<table>
+  <thead><tr><th>#</th><th>Time</th><th>Guest Name</th><th>Room</th><th>Restaurant</th><th>Pax</th><th>Special Requests</th><th>Created By</th></tr></thead>
+  <tbody>
+    ${inHouse.map((b, i) => `<tr>
+      <td class="gold">${i+1}</td>
+      <td>${b.time}</td>
+      <td><strong>${b.guest_name?.toUpperCase()}</strong></td>
+      <td>${b.room_number}</td>
+      <td>${RESTAURANTS.find(r => r.id === b.restaurant)?.name || b.restaurant}</td>
+      <td><strong>${b.pax}</strong></td>
+      <td style="color:#555;font-style:italic">${b.notes || '—'}</td>
+      <td>${b.confirmed_by || '—'}</td>
+    </tr>`).join('')}
+  </tbody>
+</table>` : ''}
+
+${walkIns.length > 0 ? `
+<div class="section-header walkin">OUTSIDE / WALK-IN GUESTS</div>
+<table>
+  <thead><tr><th>#</th><th>Time</th><th>Guest Name</th><th>Type</th><th>Restaurant</th><th>Pax</th><th>Special Requests</th><th>Created By</th></tr></thead>
+  <tbody>
+    ${walkIns.map((b, i) => `<tr>
+      <td class="gold">${i+1}</td>
+      <td>${b.time}</td>
+      <td><strong>${b.guest_name?.toUpperCase()}</strong></td>
+      <td><span class="badge walkin">WALK-IN</span></td>
+      <td>${RESTAURANTS.find(r => r.id === b.restaurant)?.name || b.restaurant}</td>
+      <td><strong>${b.pax}</strong></td>
+      <td style="color:#555;font-style:italic">${b.notes || '—'}</td>
+      <td>${b.confirmed_by || '—'}</td>
+    </tr>`).join('')}
+  </tbody>
+</table>` : ''}
+
+<div class="footer">SENTINEL PRO · Luxury Hotel Management · Report generated ${new Date().toLocaleString()}</div>
+<script>setTimeout(() => window.print(), 800);</script>
+</body></html>`;
+
+    const win = window.open('', '_blank');
+    if (win) { win.document.write(html); win.document.close(); }
+  };
+
   const confirmBooking = async (id: string, guestName: string, restaurant: string, date: string, time: string) => {
     const { error } = await supabase.from('restaurant_bookings').update({ 
       status: 'Confirmed',
@@ -782,6 +980,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
     ...(isGuest ? [{ key: 'book', label: '+ New Booking' }] : []),
     ...(isGuest ? [{ key: 'mybookings', label: 'My Bookings' }] : []),
     ...(isReservationStaff ? [{ key: 'manage', label: `All Bookings (${bookings.filter(b => b.status !== 'Cancelled').length})` }] : []),
+    ...(isReservationStaff ? [{ key: 'walkin', label: '🚶 Walk-in / Outside' }] : []),
     ...(isFBManager || isExecutive ? [{ key: 'menu', label: '🍽 Menu' }] : []),
     ...(isFBManager || isExecutive ? [{ key: 'settings', label: '⚙ Settings' }] : []),
   ];
@@ -901,11 +1100,23 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
             <p className="text-[9px] text-white/50 uppercase tracking-widest">{isGuest ? `Room ${profile.roomNumber}` : `${profile.displayName} · ${profile.department || 'Executive'}`}</p>
           </div>
           {(isFBManager || isExecutive || isStaff) && (
-            <button onClick={exportBookings} className="flex items-center gap-1 border border-gold/30 text-gold px-3 py-1.5 text-[9px] font-bold uppercase">
-              <Download size={11} /> Export CSV
+            <div className="flex gap-2">
+            <button onClick={() => generatePDFReport()} className="flex items-center gap-1 bg-gold text-navy px-3 py-1.5 text-[9px] font-bold uppercase">
+              📄 PDF Report
             </button>
+            <button onClick={exportBookings} className="flex items-center gap-1 border border-gold/30 text-gold px-3 py-1.5 text-[9px] font-bold uppercase">
+              <Download size={11} /> CSV
+            </button>
+          </div>
           )}
         </div>
+        {isReservationStaff && (
+          <div className="flex items-center gap-2 px-1 pb-1">
+            <span className="text-[8px] text-white/40 uppercase">Report Date:</span>
+            <input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)}
+              className="bg-white/10 text-white text-[9px] px-2 py-1 border border-gold/20 outline-none" />
+          </div>
+        )}
         <div className="flex gap-0.5 flex-wrap pb-0">
           {tabs.map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
@@ -1093,6 +1304,66 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                   </div>
                 );
               })}
+          </div>
+        )}
+
+        {/* WALK-IN BOOKING TAB */}
+        {activeTab === 'walkin' && isReservationStaff && (
+          <div className="space-y-4">
+            <div className="bg-[#4A0000]/40 border border-[#7C3AED]/30 p-3 rounded">
+              <p className="text-[10px] text-white font-bold">🚶 Walk-in / Outside Guest Reservation</p>
+              <p className="text-[9px] text-white/50 mt-0.5">For guests who call or walk in directly — not hotel room guests. Booking is auto-confirmed.</p>
+            </div>
+            <div className="bg-[#001c36] border border-gold/10 p-4 space-y-3">
+              {[
+                { label: 'Guest Full Name *', key: 'name', type: 'text', val: walkInName, set: setWalkInName, placeholder: 'e.g. John Smith' },
+                { label: 'WhatsApp Number (optional)', key: 'phone', type: 'tel', val: walkInPhone, set: setWalkInPhone, placeholder: '+971XXXXXXXXX' },
+                { label: 'Email Address (optional)', key: 'email', type: 'email', val: walkInEmail, set: setWalkInEmail, placeholder: 'guest@email.com' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">{f.label}</label>
+                  <input type={f.type} value={f.val} onChange={e => f.set(e.target.value)} placeholder={f.placeholder}
+                    className="w-full bg-white border border-gold/30 p-2.5 text-sm text-navy outline-none focus:border-gold" />
+                </div>
+              ))}
+              <div>
+                <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Restaurant *</label>
+                <select value={walkInRestaurant} onChange={e => setWalkInRestaurant(e.target.value)}
+                  className="w-full bg-white border border-gold p-2.5 text-sm text-navy outline-none">
+                  {RESTAURANTS.map(r => <option key={r.id} value={r.id}>{r.emoji} {r.name}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Date *', type: 'date', val: walkInDate, set: setWalkInDate },
+                  { label: 'Time *', type: 'time', val: walkInTime, set: setWalkInTime },
+                  { label: 'Guests *', type: 'number', val: walkInPax, set: setWalkInPax },
+                ].map((f, i) => (
+                  <div key={i}>
+                    <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">{f.label}</label>
+                    <input type={f.type} value={f.val} onChange={e => f.set(e.target.value)} min={f.type === 'number' ? '1' : undefined}
+                      className="w-full bg-white border border-gold/30 p-2.5 text-sm text-navy outline-none" />
+                  </div>
+                ))}
+              </div>
+              <div>
+                <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Special Requests / Notes</label>
+                <textarea value={walkInNotes} onChange={e => setWalkInNotes(e.target.value)}
+                  placeholder="Dietary requirements, occasion, table preference..."
+                  className="w-full bg-white border border-gold/30 p-2.5 text-sm text-navy outline-none h-16 resize-none focus:border-gold" />
+              </div>
+              <div className="bg-navy/30 p-3 text-[9px] text-white/50 space-y-1">
+                <p className="text-gold font-bold text-[10px]">What happens after confirming:</p>
+                <p>✅ Booking created immediately as Confirmed</p>
+                {walkInPhone && <p>📱 WhatsApp confirmation message sent to {walkInPhone}</p>}
+                {walkInEmail && <p>✉️ Email confirmation sent to {walkInEmail}</p>}
+                <p>🖨️ Booking ticket opens for printing</p>
+              </div>
+              <button onClick={submitWalkIn} disabled={walkInLoading}
+                className="w-full bg-gold text-navy py-4 text-[10px] font-bold uppercase tracking-widest hover:bg-gold/80 disabled:opacity-50">
+                {walkInLoading ? 'Creating Booking...' : '✓ Confirm Walk-in Reservation'}
+              </button>
+            </div>
           </div>
         )}
 
