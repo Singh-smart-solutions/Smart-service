@@ -768,110 +768,128 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   };
 
   // ─── PDF REPORT ───────────────────────────────────────────────────────────
-  const generatePDFReport = () => {
-    // Supabase DATE returns "2026-04-29" format - normalize both sides
-    const filtered = bookings.filter(b => {
+  const generatePDFReport = async () => {
+    showToast('Fetching latest data...', 'info');
+    // Always fetch fresh data from Supabase before generating
+    const { data: freshData, error } = await supabase
+      .from('restaurant_bookings')
+      .select('*')
+      .order('time', { ascending: true });
+    if (error) { showToast('Failed to fetch data: ' + error.message, 'error'); return; }
+    const allBookings = freshData || [];
+    const filtered = allBookings.filter((b: any) => {
       const bDate = b.date ? String(b.date).substring(0, 10) : '';
       return bDate === reportDate && b.status !== 'Cancelled';
     });
     if (filtered.length === 0) {
-      showToast('No bookings found for ' + reportDate + '. Please check the date.', 'error');
+      showToast('No bookings found for ' + reportDate + '. Try a different date.', 'error');
       return;
     }
+
     const inHouse = filtered.filter(b => b.room_number !== 'WALK-IN');
     const walkIns = filtered.filter(b => b.room_number === 'WALK-IN');
-    const totalPax = filtered.reduce((s, b) => s + (b.pax || 0), 0);
+    const totalPax = filtered.reduce((s, b) => s + (Number(b.pax) || 0), 0);
+    const inHousePax = inHouse.reduce((s, b) => s + (Number(b.pax) || 0), 0);
+    const walkInPaxTotal = walkIns.reduce((s, b) => s + (Number(b.pax) || 0), 0);
+
+    // Pax breakdown
     const paxGroups: Record<string, number> = {};
-    filtered.forEach(b => { const k = b.pax >= 8 ? '8+' : String(b.pax); paxGroups[k] = (paxGroups[k] || 0) + 1; });
+    filtered.forEach(b => {
+      const k = Number(b.pax) >= 8 ? '8+ Pax' : Number(b.pax) + ' Pax';
+      paxGroups[k] = (paxGroups[k] || 0) + 1;
+    });
 
-    const html = `<!DOCTYPE html><html><head><title>Reservation Report</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600&display=swap');
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Inter', sans-serif; background:white; padding:20px; font-size:11px; }
-  .report-header { background:#001529; color:white; padding:16px 20px; margin-bottom:12px; }
-  .hotel-name { font-family:'Playfair Display',serif; font-size:20px; color:#C5A059; letter-spacing:3px; }
-  .report-title { font-size:11px; color:rgba(255,255,255,0.6); margin-top:4px; letter-spacing:1px; }
-  .report-meta { display:flex; gap:16px; margin-top:8px; }
-  .meta-box { background:rgba(197,160,89,0.15); border:1px solid #C5A059; padding:6px 12px; text-align:center; }
-  .meta-val { font-size:18px; font-weight:bold; color:#C5A059; }
-  .meta-label { font-size:8px; color:rgba(255,255,255,0.5); text-transform:uppercase; letter-spacing:1px; }
-  .pax-summary { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
-  .pax-box { background:#f8f6f0; border:1px solid #ddd; padding:6px 12px; text-align:center; min-width:80px; }
-  .pax-val { font-size:16px; font-weight:bold; color:#001529; }
-  .pax-label { font-size:8px; color:#999; text-transform:uppercase; }
-  .section-header { background:#001529; color:white; padding:6px 10px; font-weight:bold; font-size:10px; letter-spacing:1px; margin-bottom:0; }
-  .section-header.walkin { background:#4A0000; }
-  table { width:100%; border-collapse:collapse; margin-bottom:16px; }
-  th { background:#f4f2ec; padding:5px 6px; text-align:left; font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:#666; border-bottom:2px solid #C5A059; }
-  td { padding:5px 6px; border-bottom:1px solid #eee; font-size:10px; vertical-align:top; }
-  tr:nth-child(even) td { background:#fafaf8; }
-  .gold { color:#C5A059; font-weight:bold; }
-  .badge { display:inline-block; background:#001529; color:white; font-size:8px; padding:1px 6px; }
-  .badge.walkin { background:#7C3AED; }
-  .footer { text-align:center; color:#999; font-size:8px; margin-top:16px; border-top:1px solid #eee; padding-top:8px; }
-  @media print { body { padding:10px; } }
-</style></head><body>
-<div class="report-header">
-  <div class="hotel-name">SENTINEL PRO</div>
-  <div class="report-title">RESTAURANT RESERVATIONS REPORT &nbsp;·&nbsp; ${reportDate}</div>
-  <div class="report-meta">
-    <div class="meta-box"><div class="meta-val">${filtered.length}</div><div class="meta-label">Reservations</div></div>
-    <div class="meta-box"><div class="meta-val">${totalPax}</div><div class="meta-label">Total People</div></div>
-    <div class="meta-box"><div class="meta-val">${inHouse.length}</div><div class="meta-label">In-House</div></div>
-    <div class="meta-box"><div class="meta-val">${walkIns.length}</div><div class="meta-label">Walk-in</div></div>
-  </div>
-</div>
+    // Build rows using string concat — no nested backticks
+    const buildRow = (b: any, i: number) => {
+      const restName = RESTAURANTS.find((r: any) => r.id === b.restaurant)?.name || b.restaurant || '';
+      const roomDisplay = b.room_number === 'WALK-IN' ? '<span style="color:#7C3AED;font-weight:bold">OUTSIDE</span>' : b.room_number;
+      return '<tr style="background:' + (i % 2 === 0 ? '#ffffff' : '#f9f8f5') + '">' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #eee;color:#C5A059;font-weight:bold">' + (i + 1) + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #eee">' + (b.date || '') + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #eee;font-weight:bold">' + restName + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #eee;font-weight:bold">' + (b.guest_name || '').toUpperCase() + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center">' + roomDisplay + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;font-weight:bold">' + (b.pax || '') + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #eee;color:#555;font-style:italic">' + (b.notes || '—') + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:9px;color:#999">' + (b.time || '') + '</td>' +
+        '</tr>';
+    };
 
-<div class="pax-summary">
-  ${Object.entries(paxGroups).sort().map(([k,v]) => `<div class="pax-box"><div class="pax-val">${v}</div><div class="pax-label">${k} Pax</div></div>`).join('')}
-</div>
+    const paxSummaryHtml = Object.entries(paxGroups).sort().map(([k, v]) =>
+      '<div style="background:#f8f6f0;border:1px solid #ddd;padding:8px 14px;text-align:center;min-width:80px">' +
+      '<div style="font-size:18px;font-weight:bold;color:#001529">' + v + '</div>' +
+      '<div style="font-size:8px;color:#999;text-transform:uppercase">' + k + '</div></div>'
+    ).join('');
 
-${inHouse.length > 0 ? `
-<div class="section-header">IN-HOUSE GUESTS</div>
-<table>
-  <thead><tr><th>#</th><th>Time</th><th>Guest Name</th><th>Room</th><th>Restaurant</th><th>Pax</th><th>Special Requests</th><th>Created By</th></tr></thead>
-  <tbody>
-    ${inHouse.map((b, i) => `<tr>
-      <td class="gold">${i+1}</td>
-      <td>${b.time}</td>
-      <td><strong>${b.guest_name?.toUpperCase()}</strong></td>
-      <td>${b.room_number}</td>
-      <td>${RESTAURANTS.find(r => r.id === b.restaurant)?.name || b.restaurant}</td>
-      <td><strong>${b.pax}</strong></td>
-      <td style="color:#555;font-style:italic">${b.notes || '—'}</td>
-      <td>${b.confirmed_by || '—'}</td>
-    </tr>`).join('')}
-  </tbody>
-</table>` : ''}
+    const tableHeader = '<thead><tr style="background:#f4f2ec">' +
+      '<th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">S/No</th>' +
+      '<th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Date</th>' +
+      '<th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Restaurant</th>' +
+      '<th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Guest Name</th>' +
+      '<th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Room #</th>' +
+      '<th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Pax</th>' +
+      '<th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Guest Notes</th>' +
+      '<th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Time</th>' +
+      '</tr></thead>';
 
-${walkIns.length > 0 ? `
-<div class="section-header walkin">OUTSIDE / WALK-IN GUESTS</div>
-<table>
-  <thead><tr><th>#</th><th>Time</th><th>Guest Name</th><th>Type</th><th>Restaurant</th><th>Pax</th><th>Special Requests</th><th>Created By</th></tr></thead>
-  <tbody>
-    ${walkIns.map((b, i) => `<tr>
-      <td class="gold">${i+1}</td>
-      <td>${b.time}</td>
-      <td><strong>${b.guest_name?.toUpperCase()}</strong></td>
-      <td><span class="badge walkin">WALK-IN</span></td>
-      <td>${RESTAURANTS.find(r => r.id === b.restaurant)?.name || b.restaurant}</td>
-      <td><strong>${b.pax}</strong></td>
-      <td style="color:#555;font-style:italic">${b.notes || '—'}</td>
-      <td>${b.confirmed_by || '—'}</td>
-    </tr>`).join('')}
-  </tbody>
-</table>` : ''}
+    const inHouseRows = inHouse.map((b: any, i: number) => buildRow(b, i)).join('');
+    const walkInRows = walkIns.map((b: any, i: number) => buildRow(b, i)).join('');
 
-<div class="footer">SENTINEL PRO · Luxury Hotel Management · Report generated ${new Date().toLocaleString()}</div>
-<script>setTimeout(() => window.print(), 800);</script>
-</body></html>`;
+    const inHouseSection = inHouse.length > 0
+      ? '<div style="background:#001529;color:white;padding:7px 10px;font-weight:bold;font-size:10px;letter-spacing:1px;margin-bottom:0">IN-HOUSE GUESTS</div>' +
+        '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' + tableHeader + '<tbody>' + inHouseRows + '</tbody>' +
+        '<tfoot><tr><td colspan="8" style="padding:6px 8px;font-weight:bold;font-size:10px;background:#f4f2ec;border-top:2px solid #001529">' +
+        'Total In-House: ' + inHouse.length + ' bookings &nbsp;·&nbsp; ' + inHousePax + ' guests</td></tr></tfoot></table>'
+      : '';
+
+    const walkInSection = walkIns.length > 0
+      ? '<div style="background:#4A0000;color:white;padding:7px 10px;font-weight:bold;font-size:10px;letter-spacing:1px;margin-bottom:0">OUTSIDE / WALK-IN GUESTS</div>' +
+        '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' + tableHeader + '<tbody>' + walkInRows + '</tbody>' +
+        '<tfoot><tr><td colspan="8" style="padding:6px 8px;font-weight:bold;font-size:10px;background:#f4f2ec;border-top:2px solid #4A0000">' +
+        'Total Walk-in: ' + walkIns.length + ' bookings &nbsp;·&nbsp; ' + walkInPaxTotal + ' guests</td></tr></tfoot></table>'
+      : '';
+
+    const html = '<!DOCTYPE html><html><head><title>Reservation Report ' + reportDate + '</title>' +
+      '<style>@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600&display=swap');' +
+      '* { margin:0;padding:0;box-sizing:border-box; }' +
+      'body { font-family:Inter,sans-serif;background:white;padding:20px;font-size:11px; }' +
+      '@media print { body { padding:8px; } }</style></head><body>' +
+
+      // Header
+      '<div style="background:#001529;color:white;padding:16px 20px;margin-bottom:12px">' +
+      '<div style="font-family:Playfair Display,serif;font-size:22px;color:#C5A059;letter-spacing:3px">SENTINEL PRO</div>' +
+      '<div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:4px;letter-spacing:1px">RESTAURANT RESERVATIONS REPORT &nbsp;·&nbsp; ' + reportDate + '</div>' +
+      '<div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">' +
+      '<div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center"><div style="font-size:20px;font-weight:bold;color:#C5A059">' + filtered.length + '</div><div style="font-size:8px;color:rgba(255,255,255,0.5);text-transform:uppercase">Total Reservations</div></div>' +
+      '<div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center"><div style="font-size:20px;font-weight:bold;color:#C5A059">' + totalPax + '</div><div style="font-size:8px;color:rgba(255,255,255,0.5);text-transform:uppercase">Total People</div></div>' +
+      '<div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center"><div style="font-size:20px;font-weight:bold;color:#C5A059">' + inHouse.length + '</div><div style="font-size:8px;color:rgba(255,255,255,0.5);text-transform:uppercase">In-House</div></div>' +
+      '<div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center"><div style="font-size:20px;font-weight:bold;color:#C5A059">' + walkIns.length + '</div><div style="font-size:8px;color:rgba(255,255,255,0.5);text-transform:uppercase">Walk-in</div></div>' +
+      '</div></div>' +
+
+      // Pax breakdown
+      '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">' + paxSummaryHtml + '</div>' +
+
+      // Tables
+      inHouseSection +
+      walkInSection +
+
+      // Footer
+      '<div style="text-align:center;color:#999;font-size:8px;margin-top:16px;border-top:1px solid #eee;padding-top:8px">' +
+      'SENTINEL PRO &nbsp;·&nbsp; Luxury Hotel Management &nbsp;·&nbsp; Report generated ' + new Date().toLocaleString() + '</div>' +
+      '<script>setTimeout(function(){ window.print(); }, 600);</script>' +
+      '</body></html>';
 
     const win = window.open('', '_blank');
-    if (win) { win.document.write(html); win.document.close(); }
+    if (win) {
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+    } else {
+      showToast('Popup blocked — please allow popups for this site', 'error');
+    }
   };
 
-  const confirmBooking = async (id: string, guestName: string, restaurant: string, date: string, time: string) => {
+    const confirmBooking = async (id: string, guestName: string, restaurant: string, date: string, time: string) => {
     const { error } = await supabase.from('restaurant_bookings').update({ 
       status: 'Confirmed',
     }).eq('id', id);
