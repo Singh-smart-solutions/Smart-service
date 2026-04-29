@@ -1338,52 +1338,13 @@ ${walkIns.length > 0 ? `
                 <p className="text-white/50 text-[9px] font-bold uppercase">Send Confirmation To Guest:</p>
                 <div className="grid grid-cols-1 gap-2">
                   {lastWalkIn.phone && (
-                    <a href={'https://wa.me/' + lastWalkIn.phone.replace(/\D/g,'') + '?text=' + encodeURIComponent(
-                      'Dear ' + lastWalkIn.name + ', your reservation at ' + lastWalkIn.restaurant + ' is CONFIRMED!
-
-' +
-                      'Booking Ref: ' + lastWalkIn.ref + '
-Date: ' + lastWalkIn.date + '
-Time: ' + lastWalkIn.time + '
-Guests: ' + lastWalkIn.pax +
-                      (lastWalkIn.notes ? '
-Notes: ' + lastWalkIn.notes : '') +
-                      '
-
-Please arrive 5 minutes early.
-Sentinel Pro - Luxury Hotel'
-                    )} target="_blank" rel="noreferrer"
+                    <a href={'https://wa.me/' + lastWalkIn.phone.replace(/\D/g,'') + '?text=' + encodeURIComponent('Dear ' + lastWalkIn.name + ', your reservation at ' + lastWalkIn.restaurant + ' is CONFIRMED! Booking Ref: ' + lastWalkIn.ref + ' Date: ' + lastWalkIn.date + ' Time: ' + lastWalkIn.time + ' Guests: ' + lastWalkIn.pax + (lastWalkIn.notes ? ' Notes: ' + lastWalkIn.notes : '') + ' Please arrive 5 minutes early. Sentinel Pro - Luxury Hotel')} target="_blank" rel="noreferrer"
                       className="flex items-center justify-center gap-2 bg-green-600 text-white py-3 text-[10px] font-bold uppercase">
                       📱 Send WhatsApp to {lastWalkIn.phone}
                     </a>
                   )}
                   {lastWalkIn.email && (
-                    <a href={'mailto:' + lastWalkIn.email +
-                      '?subject=' + encodeURIComponent('Reservation Confirmed — ' + lastWalkIn.restaurant + ' — Ref: ' + lastWalkIn.ref) +
-                      '&body=' + encodeURIComponent(
-                        'Dear ' + lastWalkIn.name + ',
-
-Your reservation has been confirmed.
-
-' +
-                        'Booking Reference: ' + lastWalkIn.ref + '
-Restaurant: ' + lastWalkIn.restaurant +
-                        '
-Date: ' + lastWalkIn.date + '
-Time: ' + lastWalkIn.time + '
-Guests: ' + lastWalkIn.pax +
-                        (lastWalkIn.notes ? '
-Special Requests: ' + lastWalkIn.notes : '') +
-                        '
-
-Please present this reference upon arrival.
-Arrive 5 minutes before your reservation.
-
-For changes contact reception.
-
-Kind regards,
-Sentinel Pro - Luxury Hotel'
-                      )}
+                    <a href={'mailto:' + lastWalkIn.email + '?subject=' + encodeURIComponent('Reservation Confirmed - ' + lastWalkIn.restaurant + ' - Ref: ' + lastWalkIn.ref) + '&body=' + encodeURIComponent('Dear ' + lastWalkIn.name + ', Your reservation has been confirmed. Booking Reference: ' + lastWalkIn.ref + ' Restaurant: ' + lastWalkIn.restaurant + ' Date: ' + lastWalkIn.date + ' Time: ' + lastWalkIn.time + ' Guests: ' + lastWalkIn.pax + (lastWalkIn.notes ? ' Special Requests: ' + lastWalkIn.notes : '') + ' Please present this reference upon arrival. Arrive 5 minutes early. Kind regards, Sentinel Pro - Luxury Hotel')}
                       className="flex items-center justify-center gap-2 bg-blue-700 text-white py-3 text-[10px] font-bold uppercase">
                       ✉️ Send Email to {lastWalkIn.email}
                     </a>
