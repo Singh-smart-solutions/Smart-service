@@ -703,12 +703,10 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   };
 
   const exportBookings = () => {
-    const headers = 'Ref,Guest,Room,Restaurant,Date,Time,Pax,Notes,Status,Created
-';
+    const headers = 'Ref,Guest,Room,Restaurant,Date,Time,Pax,Notes,Status,Created\n';
     const rows = bookings.map(b =>
       `${b.booking_ref},${b.guest_name},${b.room_number},${b.restaurant},${b.date},${b.time},${b.pax},"${b.notes || ''}",${b.status},${b.created_at}`
-    ).join('
-');
+    ).join('\n');
     const link = document.createElement('a');
     link.setAttribute('href', encodeURI('data:text/csv;charset=utf-8,' + headers + rows));
     link.setAttribute('download', `RestaurantBookings_${new Date().toISOString().split('T')[0]}.csv`);
