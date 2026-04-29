@@ -1896,7 +1896,8 @@ export default function App() {
 
   // ✅ CORRECT DEPARTMENT ROUTING — Room Service = F&B, Concierge = Concierge etc
   const submitRequest = async (customData?: any) => {
-    if (!profile || !roomNumber) return;
+    const activeRoom = profile?.roomNumber || roomNumber;
+    if (!profile || !activeRoom) { showToast('Room number is required', 'error'); return; }
     const service = customData?.type ? customData : selectedService;
     if (!service) return;
     const lineItems = customData?.lineItems || null;
@@ -1906,7 +1907,7 @@ export default function App() {
     const department = getDepartmentFromServiceKey(serviceKey, service.dept || customData?.dept);
     try {
       const { error } = await supabase.from('requests').insert({
-        guest_room: roomNumber,
+        guest_room: activeRoom,
         guest_id: profile.uid,
         guest_name: profile.displayName,
         service: service.type || service.name,
