@@ -653,10 +653,15 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   useEffect(() => {
     fetchBookings();
     if (isFBManager || isExecutive || isStaff) { fetchMenuItems(); fetchSettings(); }
-    const channel = supabase.channel('restaurant-bookings')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurant_bookings' }, fetchBookings)
+    // ✅ Unique channel per user to avoid conflicts
+    const channel = supabase.channel(`restaurant-bookings-${profile.uid}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurant_bookings' }, () => {
+        fetchBookings();
+      })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    // ✅ Polling fallback every 3 seconds
+    const poll = setInterval(() => { fetchBookings(); }, 3000);
+    return () => { supabase.removeChannel(channel); clearInterval(poll); };
   }, [fetchBookings, fetchMenuItems, fetchSettings, isFBManager, isExecutive, isStaff]);
 
   const submitBooking = async () => {
