@@ -743,6 +743,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     id: row.id, roomNumber: row.guest_room || '', type: row.service || '',
     message: row.notes, department: row.department, status: row.status,
     guestId: row.guest_id || '', guestName: row.guest_name, timestamp: row.created_at,
+    acceptedAt: row.accepted_at, completedAt: row.closed_at,
     assignedStaffName: row.assigned_to, delayReason: row.late_reason, lineItems: row.line_items,
   });
 
@@ -764,11 +765,25 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     if (data) setRooms(data);
   }, []);
 
-  // ✅ 5-second polling fallback — updates even if real-time fails
+  // ✅ 5-second polling fallback + SLA escalation notifications
   useEffect(() => {
-    const poll = setInterval(() => { fetchTasks(); }, 5000);
+    const poll = setInterval(async () => {
+      fetchTasks();
+      // SLA Escalation checks
+      const dept = userProfile.department;
+      const slaLimit = (slaSettings[dept] || 5) * 60;
+      tasks.forEach(task => {
+        if (task.status === 'Completed') return;
+        const elapsed = getElapsed(task.timestamp);
+        const pct = (elapsed / slaLimit) * 100;
+        // Level 1: 80% of SLA used — warn staff
+        if (pct >= 80 && pct < 100 && task.status === 'In Progress') {
+          showBrowserNotification('⚠️ SLA Warning', `Room ${task.roomNumber} — ${Math.floor((slaLimit - elapsed)/60)}m remaining!`);
+        }
+      });
+    }, 5000);
     return () => clearInterval(poll);
-  }, [fetchTasks]);
+  }, [fetchTasks, tasks, slaSettings, userProfile]);
 
   useEffect(() => {
     fetchTasks(); fetchSLA();
@@ -806,6 +821,20 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     return diff;
   };
   const getSLALimit = (dept: string) => (slaSettings[dept] || 5) * 60;
+
+  const formatTime = (ts: any) => {
+    if (!ts) return '—';
+    const tsZ = ts.endsWith('Z') ? ts : ts.replace(' ', 'T') + 'Z';
+    return new Date(tsZ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const getDuration = (from: any, to: any) => {
+    if (!from || !to) return null;
+    const fromZ = from.endsWith('Z') ? from : from.replace(' ', 'T') + 'Z';
+    const toZ = to.endsWith('Z') ? to : to.replace(' ', 'T') + 'Z';
+    const mins = Math.floor((new Date(toZ).getTime() - new Date(fromZ).getTime()) / 60000);
+    return mins < 60 ? `${mins}m` : `${Math.floor(mins/60)}h ${mins%60}m`;
+  };
 
   const handleAccept = async (id: string) => {
     await supabase.from('requests').update({ status: 'In Progress', accepted_at: new Date().toISOString(), assigned_to: userProfile.displayName, assigned_to_email: userProfile.email }).eq('id', id);
@@ -949,22 +978,36 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
               <motion.div key={task.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={cn('staff-task-card bg-[#001c36] relative', isViolated ? 'border-red-500 bg-red-900/10' : 'border-gold/10')}>
                 {isViolated && <div className="w-full py-2 px-3 bg-red-600 text-white text-[9px] font-bold uppercase flex items-center gap-2 mb-2"><AlertCircle size={12} /> SLA EXCEEDED by {Math.floor((elapsed - limit) / 60)}m</div>}
                 <div className="flex justify-between items-start">
-                  <div className="bg-navy/50 px-2 py-1 text-gold text-[9px] font-bold border border-gold/20">ROOM #{task.roomNumber}</div>
-                  <div className={cn('font-mono text-base font-bold', isViolated ? 'text-red-400' : 'text-white')}>{Math.floor(elapsed / 60)}:{(elapsed % 60).toString().padStart(2, '0')}</div>
+                  <div className="bg-gold/20 px-3 py-1.5 text-gold text-[10px] font-bold border border-gold/50 tracking-widest">ROOM #{task.roomNumber}</div>
+                  <div className={cn('font-mono text-base font-bold', isViolated ? 'text-red-400' : 'text-gold')}>{Math.floor(elapsed / 60)}:{(elapsed % 60).toString().padStart(2, '0')}</div>
                 </div>
                 <div className="space-y-1 mt-2">
-                  <h3 className="text-base font-serif text-white">{task.type}</h3>
+                  <h3 className="text-base font-serif text-white font-bold tracking-wide">{task.type}</h3>
                   <p className={cn('text-[9px] uppercase tracking-widest font-bold', task.status === 'Pending' ? 'text-gold' : 'text-blue-400')}>{task.status}</p>
-                  {task.guestName && <p className="text-[8px] text-white/40">Guest: {task.guestName}</p>}
+                  {task.guestName && <p className="text-[9px] text-gold/80 font-bold">👤 Guest: {task.guestName}</p>}
                 </div>
                 {task.lineItems && task.lineItems.length > 0 && (
                   <div className="mt-2 bg-navy/30 p-2 border-l-2 border-gold/30">
-                    {task.lineItems.map((li: any, i: number) => <p key={i} className="text-[9px] text-white/70">{li.qty}x {li.name} — AED {li.total}</p>)}
+                    {task.lineItems.map((li: any, i: number) => <p key={i} className="text-[9px] text-white font-semibold">{li.qty}x {li.name} — <span className="text-gold">AED {li.total}</span></p>)}
                   </div>
                 )}
-                {task.message && <div className="bg-navy/30 p-2 border-l-2 border-gold/20 italic text-xs text-white/60 mt-2">📝 "{task.message}"</div>}
+                {task.message && <div className="bg-navy/50 p-2 border-l-2 border-gold mt-2"><p className="text-[9px] text-gold font-bold mb-0.5">📝 Note:</p><p className="text-xs text-white italic">"{task.message}"</p></div>}
                 <div className="mt-3 h-1 bg-navy/50 rounded-full overflow-hidden">
                   <div className={cn('h-full rounded-full', isViolated ? 'bg-red-500' : pct > 80 ? 'bg-orange-400' : 'bg-green-500')} style={{ width: `${pct}%` }} />
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-1 bg-navy/40 p-2 rounded">
+                  <div className="text-center">
+                    <p className="text-[7px] text-gold/60 uppercase font-bold">Submitted</p>
+                    <p className="text-[9px] text-white font-bold">{formatTime(task.timestamp)}</p>
+                  </div>
+                  <div className="text-center border-x border-gold/10">
+                    <p className="text-[7px] text-gold/60 uppercase font-bold">Accepted</p>
+                    <p className="text-[9px] text-white font-bold">{formatTime(task.acceptedAt)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[7px] text-gold/60 uppercase font-bold">Completed</p>
+                    <p className="text-[9px] text-white font-bold">{formatTime(task.completedAt)}</p>
+                  </div>
                 </div>
                 <div className="pt-3 space-y-2">
                   {task.status === 'Pending' ? (
@@ -1170,8 +1213,11 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     {req.line_items && req.line_items.map((li: any, i: number) => <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>)}
                     {req.late_reason && <p className="text-[9px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
                   </div>
-                  <div className="text-right ml-4 flex-shrink-0">
-                    <p className="text-[9px] text-white/40">{new Date(req.created_at).toLocaleTimeString()}</p>
+                  <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
+                    <p className="text-[8px] text-gold/60 font-bold">📥 {new Date(req.created_at.replace(' ','T')+'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
+                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T')+'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T')+'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    {req.closed_at && req.accepted_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
                     {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                     {over && <p className="text-red-400 text-xs font-bold">{getElapsedMin(req.created_at)}m elapsed</p>}
                   </div>
@@ -1753,8 +1799,11 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
                     <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to || 'Unassigned'}</p>
                     {req.line_items && req.line_items.map((li: any, i: number) => <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>)}
                   </div>
-                  <div className="text-right ml-4 flex-shrink-0">
-                    <p className="text-[9px] text-white/40">{new Date(req.created_at).toLocaleTimeString()}</p>
+                  <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
+                    <p className="text-[8px] text-gold/60 font-bold">📥 {new Date(req.created_at.replace(' ','T')+'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
+                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T')+'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T')+'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    {req.closed_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
                     {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                   </div>
                 </div>
