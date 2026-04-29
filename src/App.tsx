@@ -962,7 +962,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                     {task.lineItems.map((li: any, i: number) => <p key={i} className="text-[9px] text-white/70">{li.qty}x {li.name} — AED {li.total}</p>)}
                   </div>
                 )}
-                {task.message && !task.lineItems && <div className="bg-navy/30 p-2 border-l-2 border-gold/20 italic text-xs text-white/60 mt-2">"{task.message}"</div>}
+                {task.message && <div className="bg-navy/30 p-2 border-l-2 border-gold/20 italic text-xs text-white/60 mt-2">📝 "{task.message}"</div>}
                 <div className="mt-3 h-1 bg-navy/50 rounded-full overflow-hidden">
                   <div className={cn('h-full rounded-full', isViolated ? 'bg-red-500' : pct > 80 ? 'bg-orange-400' : 'bg-green-500')} style={{ width: `${pct}%` }} />
                 </div>
@@ -1912,7 +1912,7 @@ export default function App() {
         guest_name: profile.displayName,
         service: service.type || service.name,
         service_key: serviceKey,
-        notes: customData?.notes || message || dietaryRequirements,
+        notes: customData?.notes || [message, dietaryRequirements].filter(Boolean).join(' — ') || '',
         department, // ✅ Always correct department
         status: 'Pending',
         total_price: totalPrice > 0 ? totalPrice : null,
