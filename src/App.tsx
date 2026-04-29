@@ -775,9 +775,10 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   const getElapsed = (ts: any) => {
     if (!ts) return 0;
-    // Add 'Z' to ensure timestamp treated as UTC, matching Supabase storage
-    const tsWithZ = ts.endsWith('Z') ? ts : ts + 'Z';
-    const diff = Math.floor((Date.now() - new Date(tsWithZ).getTime()) / 1000);
+    // Supabase returns "2026-04-28 20:24:30.471" (space, no Z)
+    // Must convert to "2026-04-28T20:24:30.471Z" for correct UTC parsing
+    const utcTs = ts.replace(' ', 'T').replace(/Z?$/, 'Z');
+    const diff = Math.floor((Date.now() - new Date(utcTs).getTime()) / 1000);
     if (diff < 0) return 0;
     return diff;
   };
