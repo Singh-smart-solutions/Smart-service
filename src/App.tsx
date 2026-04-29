@@ -629,6 +629,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [walkInNotes, setWalkInNotes] = useState('');
   const [walkInLoading, setWalkInLoading] = useState(false);
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
+  const [lastWalkIn, setLastWalkIn] = useState<any | null>(null);
   // Reservation access controlled by occupation
 
   const isFBManager = profile.role === 'manager' && profile.department === 'F&B';
@@ -746,39 +747,21 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
       }).select().single();
       if (error) throw error;
 
-      showToast(`Walk-in booking created! Ref: ${ref}`, 'success');
+      showToast(`Walk-in booking confirmed! Ref: ${ref}`, 'success');
 
-      // Send WhatsApp if phone provided
-      if (walkInPhone) {
-        const msg = encodeURIComponent(
-          'Dear ' + walkInName + ',\n\nYour reservation at ' + (restaurant?.name || '') + ' has been confirmed!\n\n' +
-          'Booking Ref: ' + ref + '\nDate: ' + walkInDate + '\nTime: ' + walkInTime + '\nGuests: ' + walkInPax + '\n' +
-          (walkInNotes ? 'Notes: ' + walkInNotes + '\n' : '') +
-          '\nPlease arrive 5 minutes early. We look forward to welcoming you!\n\nSentinel Pro · Luxury Hotel'
-        );
-        window.open('https://wa.me/' + walkInPhone.replace(/\D/g,'') + '?text=' + msg, '_blank');
-      }
+      // Store booking info for sending confirmation
+      setLastWalkIn({
+        ref, name: walkInName.toUpperCase(),
+        phone: walkInPhone, email: walkInEmail,
+        restaurant: restaurant?.name || walkInRestaurant,
+        date: walkInDate, time: walkInTime, pax: walkInPax, notes: walkInNotes,
+        data,
+      });
 
-      // Send email if email provided
-      if (walkInEmail) {
-        const subject = encodeURIComponent(`Reservation Confirmed — ${restaurant?.name} — Ref: ${ref}`);
-        const body = encodeURIComponent(
-          'Dear ' + walkInName + ',\n\nYour reservation has been confirmed.\n\n' +
-          'Booking Reference: ' + ref + '\nRestaurant: ' + (restaurant?.name || '') + '\nDate: ' + walkInDate + '\nTime: ' + walkInTime + '\nGuests: ' + walkInPax + '\n' +
-          (walkInNotes ? 'Special Requests: ' + walkInNotes + '\n' : '') +
-          '\nPlease present this reference upon arrival.\nArrive 5 minutes before your reservation.\n\nFor any changes please contact reception.\n\nKind regards,\nSentinel Pro · Luxury Hotel'
-        );
-        window.open(`mailto:${walkInEmail}?subject=${subject}&body=${body}`, '_blank');
-      }
-
-      // Print ticket
-      if (data) setTimeout(() => printBookingTicket({ ...data, guest_name: walkInName.toUpperCase() }), 800);
-
-      // Reset form
+      // Reset form but stay on walkin tab to show send options
       setWalkInName(''); setWalkInPhone(''); setWalkInEmail('');
       setWalkInDate(''); setWalkInTime(''); setWalkInPax('2'); setWalkInNotes('');
       fetchBookings();
-      setActiveTab('manage');
     } catch (e: any) {
       showToast(e.message || 'Failed to create booking', 'error');
     } finally { setWalkInLoading(false); }
@@ -786,7 +769,15 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
 
   // ─── PDF REPORT ───────────────────────────────────────────────────────────
   const generatePDFReport = () => {
-    const filtered = bookings.filter(b => b.date === reportDate && b.status !== 'Cancelled');
+    // Supabase DATE returns "2026-04-29" format - normalize both sides
+    const filtered = bookings.filter(b => {
+      const bDate = b.date ? String(b.date).substring(0, 10) : '';
+      return bDate === reportDate && b.status !== 'Cancelled';
+    });
+    if (filtered.length === 0) {
+      showToast('No bookings found for ' + reportDate + '. Please check the date.', 'error');
+      return;
+    }
     const inHouse = filtered.filter(b => b.room_number !== 'WALK-IN');
     const walkIns = filtered.filter(b => b.room_number === 'WALK-IN');
     const totalPax = filtered.reduce((s, b) => s + (b.pax || 0), 0);
@@ -1335,6 +1326,81 @@ ${walkIns.length > 0 ? `
                 {walkInLoading ? 'Creating Booking...' : '✓ Confirm Walk-in Reservation'}
               </button>
             </div>
+
+            {/* Confirmation send panel — appears after booking created */}
+            {lastWalkIn && (
+              <div className="bg-green-900/20 border border-green-500 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                  <p className="text-green-400 font-bold text-sm">✅ Booking Confirmed — {lastWalkIn.ref}</p>
+                </div>
+                <p className="text-white/60 text-[9px]">{lastWalkIn.name} · {lastWalkIn.restaurant} · {lastWalkIn.date} at {lastWalkIn.time} · {lastWalkIn.pax} pax</p>
+                <p className="text-white/50 text-[9px] font-bold uppercase">Send Confirmation To Guest:</p>
+                <div className="grid grid-cols-1 gap-2">
+                  {lastWalkIn.phone && (
+                    <a href={'https://wa.me/' + lastWalkIn.phone.replace(/\D/g,'') + '?text=' + encodeURIComponent(
+                      'Dear ' + lastWalkIn.name + ', your reservation at ' + lastWalkIn.restaurant + ' is CONFIRMED!
+
+' +
+                      'Booking Ref: ' + lastWalkIn.ref + '
+Date: ' + lastWalkIn.date + '
+Time: ' + lastWalkIn.time + '
+Guests: ' + lastWalkIn.pax +
+                      (lastWalkIn.notes ? '
+Notes: ' + lastWalkIn.notes : '') +
+                      '
+
+Please arrive 5 minutes early.
+Sentinel Pro - Luxury Hotel'
+                    )} target="_blank" rel="noreferrer"
+                      className="flex items-center justify-center gap-2 bg-green-600 text-white py-3 text-[10px] font-bold uppercase">
+                      📱 Send WhatsApp to {lastWalkIn.phone}
+                    </a>
+                  )}
+                  {lastWalkIn.email && (
+                    <a href={'mailto:' + lastWalkIn.email +
+                      '?subject=' + encodeURIComponent('Reservation Confirmed — ' + lastWalkIn.restaurant + ' — Ref: ' + lastWalkIn.ref) +
+                      '&body=' + encodeURIComponent(
+                        'Dear ' + lastWalkIn.name + ',
+
+Your reservation has been confirmed.
+
+' +
+                        'Booking Reference: ' + lastWalkIn.ref + '
+Restaurant: ' + lastWalkIn.restaurant +
+                        '
+Date: ' + lastWalkIn.date + '
+Time: ' + lastWalkIn.time + '
+Guests: ' + lastWalkIn.pax +
+                        (lastWalkIn.notes ? '
+Special Requests: ' + lastWalkIn.notes : '') +
+                        '
+
+Please present this reference upon arrival.
+Arrive 5 minutes before your reservation.
+
+For changes contact reception.
+
+Kind regards,
+Sentinel Pro - Luxury Hotel'
+                      )}
+                      className="flex items-center justify-center gap-2 bg-blue-700 text-white py-3 text-[10px] font-bold uppercase">
+                      ✉️ Send Email to {lastWalkIn.email}
+                    </a>
+                  )}
+                  {lastWalkIn.data && (
+                    <button onClick={() => printBookingTicket(lastWalkIn.data)}
+                      className="flex items-center justify-center gap-2 bg-gold/20 text-gold border border-gold py-3 text-[10px] font-bold uppercase">
+                      🖨️ Print Booking Ticket
+                    </button>
+                  )}
+                  <button onClick={() => setLastWalkIn(null)}
+                    className="text-white/30 text-[9px] uppercase font-bold py-2">
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
