@@ -26,7 +26,7 @@ const DEPT_FROM_OCCUPATION: Record<string, Department> = {
   'Concierge Manager': 'Concierge', 'Security Manager': 'Security & Safety',
   'Front Office Manager': 'Front Office', 'Executive': 'None',
   'Housekeeping Attendant': 'Housekeeping', 'Housekeeping Supervisor': 'Housekeeping',
-  'F&B Waiter': 'F&B', 'F&B Supervisor': 'F&B', 'Chef': 'F&B',
+  'F&B Waiter': 'F&B', 'F&B Supervisor': 'F&B', 'Chef': 'F&B', 'Reservation Agent': 'F&B',
   'Concierge Agent': 'Concierge', 'Concierge Supervisor': 'Concierge',
   'Security Officer': 'Security & Safety', 'Security Supervisor': 'Security & Safety',
   'Front Office Agent': 'Front Office', 'Front Office Supervisor': 'Front Office',
@@ -616,11 +616,18 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [restaurantSettings, setRestaurantSettings] = useState<any[]>([]);
   const [newMenuItem, setNewMenuItem] = useState({ name: '', price: '', category: 'all_day', restaurant: 'turquoise' });
   const [restSettings, setRestSettings] = useState<any>({});
+  const [rejectModal, setRejectModal] = useState<any | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectAlt, setRejectAlt] = useState('');
+  // Reservation access controlled by occupation
 
   const isFBManager = profile.role === 'manager' && profile.department === 'F&B';
   const isExecutive = profile.role === 'manager' && profile.department === 'None';
   const isStaff = profile.role === 'staff' && profile.department === 'F&B';
   const isGuest = profile.role === 'guest';
+  // ✅ Reservation staff = F&B Manager, Executive, OR Reservation Agent occupation
+  const isReservationAgent = profile.occupation === 'Reservation Agent';
+  const isReservationStaff = isFBManager || isExecutive || isReservationAgent;
 
   const fetchBookings = useCallback(async () => {
     let q = supabase.from('restaurant_bookings').select('*').order('created_at', { ascending: false });
@@ -666,10 +673,10 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
         date, time,
         pax: Number(pax),
         notes,
-        status: 'Confirmed',
+        status: 'Pending',
       }).select().single();
       if (error) throw error;
-      showToast(`Booking confirmed! Reference: ${ref}`, 'success');
+      showToast(`Reservation submitted! Ref: ${ref} — Our team will confirm shortly.`, 'success');
       setDate(''); setTime(''); setPax('2'); setNotes('');
       fetchBookings();
       setActiveTab('mybookings');
@@ -697,9 +704,29 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
     else showToast('Failed to cancel booking', 'error');
   };
 
-  const confirmBooking = async (id: string) => {
-    await supabase.from('restaurant_bookings').update({ status: 'Confirmed' }).eq('id', id);
-    showToast('Booking confirmed!', 'success'); fetchBookings();
+  const confirmBooking = async (id: string, guestName: string, restaurant: string, date: string, time: string) => {
+    await supabase.from('restaurant_bookings').update({ 
+      status: 'Confirmed',
+      confirmed_by: profile.displayName,
+      confirmed_at: new Date().toISOString(),
+    }).eq('id', id);
+    showToast(`✅ Booking confirmed for ${guestName}`, 'success'); 
+    fetchBookings();
+  };
+
+  const rejectBooking = async () => {
+    if (!rejectModal || !rejectReason) { showToast('Please select a reason', 'error'); return; }
+    const message = rejectAlt 
+      ? `We regret that ${rejectModal.restaurant} is not available on ${rejectModal.date} at ${rejectModal.time}. ${rejectReason}. We would like to suggest ${rejectAlt} as an alternative — please let us know if this works for you.`
+      : `We regret that ${rejectModal.restaurant} is not available on ${rejectModal.date} at ${rejectModal.time}. ${rejectReason}. Please contact reception to explore other options.`;
+    await supabase.from('restaurant_bookings').update({ 
+      status: 'Rejected',
+      rejection_reason: message,
+      rejected_by: profile.displayName,
+    }).eq('id', rejectModal.id);
+    showToast('Booking rejected with alternative offered', 'info');
+    setRejectModal(null); setRejectReason(''); setRejectAlt('');
+    fetchBookings();
   };
 
   const exportBookings = () => {
@@ -739,20 +766,66 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const statusColor = (status: string) => {
     if (status === 'Confirmed') return 'text-green-400 border-green-400';
     if (status === 'Cancelled') return 'text-red-400 border-red-400';
+    if (status === 'Rejected') return 'text-red-500 border-red-500';
     if (status === 'Modified') return 'text-blue-400 border-blue-400';
+    if (status === 'Pending') return 'text-yellow-400 border-yellow-400';
     return 'text-gold border-gold';
   };
 
   const tabs = [
     ...(isGuest ? [{ key: 'book', label: '+ New Booking' }] : []),
     ...(isGuest ? [{ key: 'mybookings', label: 'My Bookings' }] : []),
-    ...(isStaff || isFBManager || isExecutive ? [{ key: 'manage', label: `All Bookings (${bookings.filter(b => b.status !== 'Cancelled').length})` }] : []),
+    ...(isReservationStaff ? [{ key: 'manage', label: `All Bookings (${bookings.filter(b => b.status !== 'Cancelled').length})` }] : []),
     ...(isFBManager || isExecutive ? [{ key: 'menu', label: '🍽 Menu' }] : []),
     ...(isFBManager || isExecutive ? [{ key: 'settings', label: '⚙ Settings' }] : []),
   ];
 
   return (
     <div className={cn('min-h-screen', isGuest ? 'bg-[#FCF9F2]' : 'bg-[#001529] text-white')}>
+      {/* Reject Modal */}
+      <AnimatePresence>
+        {rejectModal && (
+          <div className="fixed inset-0 z-[30000] flex items-center justify-center p-4 bg-navy/90 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#001c36] border border-red-500 w-full max-w-md p-6 shadow-2xl space-y-4">
+              <h3 className="text-lg font-serif text-white flex items-center gap-2"><AlertCircle size={18} className="text-red-400" /> Reject Booking</h3>
+              <div className="bg-navy/50 p-3 rounded">
+                <p className="text-gold font-bold text-sm">{RESTAURANTS.find(r => r.id === rejectModal.restaurant)?.name}</p>
+                <p className="text-white/60 text-[9px]">{rejectModal.guest_name} · Room {rejectModal.room_number} · {rejectModal.date} at {rejectModal.time} · {rejectModal.pax} pax</p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] text-white/50 uppercase font-bold block">Reason for Rejection</label>
+                <select value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full bg-white border border-red-400 p-2.5 text-sm text-navy outline-none">
+                  <option value="">-- Select reason --</option>
+                  <option value="Unfortunately, we are fully booked at this time">Fully booked at requested time</option>
+                  <option value="The restaurant is closed on this day">Restaurant closed on this day</option>
+                  <option value="The requested time is outside our operating hours">Outside operating hours</option>
+                  <option value="We are unable to accommodate this party size at the requested time">Cannot accommodate party size</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] text-white/50 uppercase font-bold block">Suggest Alternative (Optional)</label>
+                <select value={rejectAlt} onChange={e => setRejectAlt(e.target.value)} className="w-full bg-white border border-gold/30 p-2.5 text-sm text-navy outline-none">
+                  <option value="">-- No alternative --</option>
+                  {RESTAURANTS.filter(r => r.id !== rejectModal.restaurant).map(r => (
+                    <option key={r.id} value={r.name}>{r.emoji} {r.name} — {r.cuisine}</option>
+                  ))}
+                  <option value="an earlier time slot">An earlier time slot</option>
+                  <option value="a later time slot">A later time slot</option>
+                </select>
+              </div>
+              <div className="bg-navy/30 p-3 text-[9px] text-white/50 italic rounded">
+                <p className="text-gold/80 font-bold mb-1">Message to guest:</p>
+                <p>We regret that {rejectModal.restaurant} is not available on {rejectModal.date} at {rejectModal.time}. {rejectReason}{rejectAlt ? `. We suggest ${rejectAlt} as an alternative.` : '.'}</p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => { setRejectModal(null); setRejectReason(''); setRejectAlt(''); }} className="flex-1 py-2.5 border border-gold/20 text-gold text-[10px] font-bold uppercase">Cancel</button>
+                <button disabled={!rejectReason} onClick={rejectBooking} className="flex-1 py-2.5 bg-red-600 text-white text-[10px] font-bold uppercase disabled:opacity-40">Send Rejection</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Modify Modal */}
       <AnimatePresence>
         {modifyBooking && (
@@ -798,6 +871,21 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Access denied for regular F&B staff who are not Reservation Agents */}
+      {isStaff && !isReservationAgent && (
+        <div className="min-h-screen bg-[#001529] flex items-center justify-center p-6">
+          <div className="bg-[#001c36] border border-gold/20 p-8 w-full max-w-sm text-center space-y-4">
+            <div className="text-4xl">🚫</div>
+            <h2 className="text-xl font-serif text-gold">Access Restricted</h2>
+            <p className="text-white/50 text-sm">Restaurant reservations are managed by the Reservation Agent team only.</p>
+            <p className="text-white/30 text-[9px] uppercase tracking-widest">Contact your F&B Manager for assistance</p>
+          </div>
+        </div>
+      )}
+
+      {/* Show portal only if guest OR reservation staff */}
+      {(isGuest || isReservationStaff) && <>
 
       {/* Header */}
       <div className={cn('px-4 pt-4 pb-0', isGuest ? 'bg-navy' : 'bg-navy border-b border-gold/20')}>
@@ -897,7 +985,21 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                       ))}
                     </div>
                     {b.notes && <p className="text-[10px] text-navy/60 italic border-l-2 border-gold pl-2">📝 {b.notes}</p>}
-                    {b.status !== 'Cancelled' && (
+                    {b.status === 'Pending' && (
+                      <div className="bg-yellow-50 border border-yellow-200 p-2 rounded text-[10px] text-yellow-700">
+                        ⏳ Your reservation is pending confirmation from our restaurant team. You will be notified shortly.
+                      </div>
+                    )}
+                    {b.status === 'Rejected' && b.rejection_reason && (
+                      <div className="bg-red-50 border border-red-200 p-3 rounded space-y-1">
+                        <p className="text-[9px] text-red-600 font-bold">Message from our team:</p>
+                        <p className="text-[10px] text-red-700 italic">{b.rejection_reason}</p>
+                        <button onClick={() => setActiveTab('book')} className="mt-2 bg-navy text-white text-[9px] font-bold uppercase px-3 py-1.5 w-full">
+                          Make New Reservation
+                        </button>
+                      </div>
+                    )}
+                    {b.status !== 'Cancelled' && b.status !== 'Rejected' && (
                       <div className="flex gap-2 pt-1">
                         <button onClick={() => printBookingTicket(b)} className="flex-1 py-2 bg-navy text-white text-[9px] font-bold uppercase flex items-center justify-center gap-1">
                           <Download size={11} /> Download Ticket
@@ -955,7 +1057,24 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                         </div>
                       ))}
                     </div>
-                    {b.status !== 'Cancelled' && (isFBManager || isExecutive) && (
+                    {/* Show rejection reason to staff */}
+                    {b.rejection_reason && (
+                      <div className="bg-red-900/20 border border-red-500/30 p-2 mt-2 rounded">
+                        <p className="text-[8px] text-red-400 font-bold mb-0.5">Rejection Message Sent:</p>
+                        <p className="text-[8px] text-white/60 italic">{b.rejection_reason}</p>
+                      </div>
+                    )}
+                    {b.status === 'Pending' && isReservationStaff && (
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={() => confirmBooking(b.id, b.guest_name, b.restaurant, b.date, b.time)} className="flex-1 py-2 bg-green-600 text-white text-[8px] font-bold uppercase">
+                          ✓ Confirm Booking
+                        </button>
+                        <button onClick={() => { setRejectModal(b); setRejectReason(''); setRejectAlt(''); }} className="flex-1 py-2 bg-red-700 text-white text-[8px] font-bold uppercase">
+                          ✕ Reject
+                        </button>
+                      </div>
+                    )}
+                    {b.status === 'Confirmed' && isReservationStaff && (
                       <div className="flex gap-2 mt-2">
                         <button onClick={() => printBookingTicket(b)} className="flex-1 py-1.5 bg-gold/20 text-gold text-[8px] font-bold uppercase border border-gold/30">
                           🖨 Print Ticket
@@ -1078,6 +1197,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
           </div>
         )}
       </div>
+      </> /* end reservation staff check */}
     </div>
   );
 };
@@ -1256,7 +1376,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
                 <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Occupation / Role</label>
                 <select value={occupation} onChange={e => setOccupation(e.target.value)} className="login-input bg-white text-navy">
                   <optgroup label="── Housekeeping"><option>Housekeeping Attendant</option><option>Housekeeping Supervisor</option><option>Housekeeping Manager</option></optgroup>
-                  <optgroup label="── F&B"><option>F&B Waiter</option><option>F&B Supervisor</option><option>Chef</option><option>F&B Manager</option></optgroup>
+                  <optgroup label="── F&B"><option>F&B Waiter</option><option>F&B Supervisor</option><option>Chef</option><option>F&B Manager</option><option>Reservation Agent</option></optgroup>
                   <optgroup label="── Concierge"><option>Concierge Agent</option><option>Concierge Supervisor</option><option>Concierge Manager</option></optgroup>
                   <optgroup label="── Security"><option>Security Officer</option><option>Security Supervisor</option><option>Security Manager</option></optgroup>
                   <optgroup label="── Maintenance / Engineering"><option>Maintenance Technician</option><option>Maintenance Supervisor</option></optgroup>
@@ -1576,8 +1696,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
           <p className="text-white/60 text-[9px] uppercase tracking-widest">{userProfile.department} · {userProfile.occupation || 'Staff'}</p>
           {notifPermission === 'denied' && <p className="text-red-400 text-[8px] mt-0.5">⚠ Enable notifications in browser settings</p>}
           {notifPermission === 'granted' && <p className="text-green-400 text-[8px] mt-0.5">🔔 Notifications active</p>}
-          {userProfile.department === 'F&B' && (
-            <button onClick={() => setShowFBRestaurant(true)} className="text-[8px] text-gold font-bold uppercase mt-0.5">🍽 Restaurant Bookings →</button>
+          {userProfile.department === 'F&B' && userProfile.occupation === 'Reservation Agent' && (
+            <button onClick={() => setShowFBRestaurant(true)} className="text-[8px] text-gold font-bold uppercase mt-0.5">🍽 Restaurant Reservations →</button>
           )}
         </div>
         <div className="flex items-center gap-2">
