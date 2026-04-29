@@ -751,51 +751,22 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
       // Send WhatsApp if phone provided
       if (walkInPhone) {
         const msg = encodeURIComponent(
-          `Dear ${walkInName},
-
-Your reservation at ${restaurant?.name} has been confirmed!
-
-` +
-          `📋 Booking Ref: ${ref}
-📅 Date: ${walkInDate}
-🕐 Time: ${walkInTime}
-👥 Guests: ${walkInPax}
-` +
-          `${walkInNotes ? '📝 Notes: ' + walkInNotes + '
-' : ''}` +
-          `
-Please arrive 5 minutes early. We look forward to welcoming you!
-
-Sentinel Pro · Luxury Hotel`
+          'Dear ' + walkInName + ',\n\nYour reservation at ' + (restaurant?.name || '') + ' has been confirmed!\n\n' +
+          'Booking Ref: ' + ref + '\nDate: ' + walkInDate + '\nTime: ' + walkInTime + '\nGuests: ' + walkInPax + '\n' +
+          (walkInNotes ? 'Notes: ' + walkInNotes + '\n' : '') +
+          '\nPlease arrive 5 minutes early. We look forward to welcoming you!\n\nSentinel Pro · Luxury Hotel'
         );
-        window.open(`https://wa.me/${walkInPhone.replace(/\D/g,'')}?text=${msg}`, '_blank');
+        window.open('https://wa.me/' + walkInPhone.replace(/\D/g,'') + '?text=' + msg, '_blank');
       }
 
       // Send email if email provided
       if (walkInEmail) {
         const subject = encodeURIComponent(`Reservation Confirmed — ${restaurant?.name} — Ref: ${ref}`);
         const body = encodeURIComponent(
-          `Dear ${walkInName},
-
-Your reservation has been confirmed.
-
-` +
-          `Booking Reference: ${ref}
-Restaurant: ${restaurant?.name}
-Date: ${walkInDate}
-Time: ${walkInTime}
-Guests: ${walkInPax}
-` +
-          `${walkInNotes ? 'Special Requests: ' + walkInNotes + '
-' : ''}` +
-          `
-Please present this reference upon arrival.
-Arrive 5 minutes before your reservation.
-
-For any changes please contact reception.
-
-Kind regards,
-Sentinel Pro · Luxury Hotel`
+          'Dear ' + walkInName + ',\n\nYour reservation has been confirmed.\n\n' +
+          'Booking Reference: ' + ref + '\nRestaurant: ' + (restaurant?.name || '') + '\nDate: ' + walkInDate + '\nTime: ' + walkInTime + '\nGuests: ' + walkInPax + '\n' +
+          (walkInNotes ? 'Special Requests: ' + walkInNotes + '\n' : '') +
+          '\nPlease present this reference upon arrival.\nArrive 5 minutes before your reservation.\n\nFor any changes please contact reception.\n\nKind regards,\nSentinel Pro · Luxury Hotel'
         );
         window.open(`mailto:${walkInEmail}?subject=${subject}&body=${body}`, '_blank');
       }
