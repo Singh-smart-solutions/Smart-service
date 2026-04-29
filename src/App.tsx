@@ -850,7 +850,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
       : '';
 
     const html = '<!DOCTYPE html><html><head><title>Reservation Report ' + reportDate + '</title>' +
-      '<style>@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600&display=swap');' +
+      '<style>@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600&display=swap");' +
       '* { margin:0;padding:0;box-sizing:border-box; }' +
       'body { font-family:Inter,sans-serif;background:white;padding:20px;font-size:11px; }' +
       '@media print { body { padding:8px; } }</style></head><body>' +
