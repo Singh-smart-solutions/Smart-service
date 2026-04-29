@@ -1861,10 +1861,12 @@ export default function App() {
       }
     };
     fetchRequests();
+    // ✅ Poll every 3 seconds so guest sees status updates without manual refresh
+    const poll = setInterval(() => { fetchRequests(); }, 3000);
     const channel = supabase.channel(`guest-${profile.uid}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, fetchRequests)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase.removeChannel(channel); clearInterval(poll); };
   }, [profile]);
 
   const logout = () => { localStorage.clear(); setProfile(null); window.location.replace('/'); };
