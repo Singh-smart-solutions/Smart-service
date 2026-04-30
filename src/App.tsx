@@ -2180,7 +2180,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const [requests, setRequests] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [slaConfig, setSlaConfig] = useState<any>({});
-  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants'>('requests');
   const [now, setNow] = useState(Date.now());
   const [editSLA, setEditSLA] = useState<number>(5);
   const [showMgrRestaurant, setShowMgrRestaurant] = useState(false);
