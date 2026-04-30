@@ -3112,7 +3112,6 @@ export default function App() {
         total_price: totalPrice > 0 ? totalPrice : null,
         line_items: lineItems,
         language,
-        guest_language: language,
       });
       if (error) throw error;
       setShowRequestModal(false); setMessage(''); setSelectedService(null);
