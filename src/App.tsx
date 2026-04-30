@@ -1099,7 +1099,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
         )}
         <div className="flex gap-0.5 flex-wrap pb-0">
           {tabs.map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
+            <button key={tab.key} onClick={() => { setActiveTab(tab.key as any); if (tab.key === 'history') fetchTasks(); }}
               className={cn('px-3 py-2 text-[9px] font-bold uppercase tracking-wider border-b-2',
                 activeTab === tab.key ? 'border-gold text-gold' : 'border-transparent text-white/50')}>
               {tab.label}
@@ -1696,6 +1696,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
 
 // ─── STAFF PORTAL ─────────────────────────────────────────────────────────────
 const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) => {
+  const { t, language, translateUserText } = useLanguage();
   const [tasks, setTasks] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -1741,10 +1742,13 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   const mapRow = (row: any) => ({
     id: row.id, roomNumber: row.guest_room || '', type: row.service || '',
-    message: row.notes, department: row.department, status: row.status,
+    message: row.notes,
+    originalMessage: row.notes, // preserved original language
+    department: row.department, status: row.status,
     guestId: row.guest_id || '', guestName: row.guest_name, timestamp: row.created_at,
     acceptedAt: row.accepted_at, completedAt: row.closed_at,
     assignedStaffName: row.assigned_to, delayReason: row.late_reason, lineItems: row.line_items,
+    guestLanguage: row.guest_language || 'en',
   });
 
   const fetchTasks = useCallback(async () => {
@@ -1755,8 +1759,11 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     const { data } = await query;
     if (data) {
       const mapped = data.map(mapRow);
-      setTasks(mapped.filter((t: any) => t.status !== 'Completed'));
-      setHistory(mapped.filter((t: any) => t.status === 'Completed').slice(0, 30));
+      // ✅ Active tasks exclude completed
+      setTasks(mapped.filter((t: any) => t.status !== 'Completed' && t.status !== 'Cancelled'));
+      // ✅ History always loads all completed — persists across login sessions
+      const completed = mapped.filter((t: any) => t.status === 'Completed');
+      if (completed.length > 0) setHistory(completed.slice(0, 50));
     }
   }, [userProfile]);
 
@@ -1801,7 +1808,9 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   }, [fetchTasks, tasks, slaSettings, userProfile]);
 
   useEffect(() => {
-    fetchTasks(); fetchSLA();
+    // ✅ Always fetch fresh data on mount/login — ensures history loads
+    fetchTasks();
+    fetchSLA();
     if (isHousekeeping) fetchRooms();
     const channel = supabase.channel(`staff-${userProfile.uid}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, (payload) => {
@@ -1831,7 +1840,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     // Supabase returns "2026-04-28 20:24:30.471" (space, no Z)
     // Must convert to "2026-04-28T20:24:30.471Z" for correct UTC parsing
     const utcTs = ts.replace(' ', 'T').replace(/Z?$/, 'Z');
-    const diff = Math.floor((Date.now() - new Date(utcTs).getTime()) / 1000);
+    // ✅ Use `now` state (not Date.now()) so React re-renders every second
+    const diff = Math.floor((now - new Date(utcTs).getTime()) / 1000);
     if (diff < 0) return 0;
     return diff;
   };
@@ -1859,7 +1869,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     const elapsed = getElapsed(task.timestamp);
     const limit = getSLALimit(task.department);
     // ✅ ALWAYS enforce delay reason if SLA exceeded — no bypass possible
-    if (elapsed > limit) {
+    if (elapsed > limit || task.status === 'Violated') {
       setDelayModalTask(task);
       setDelayReason('');
       return;
@@ -1996,7 +2006,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         <div className="flex items-center gap-2">
           <div className="flex bg-navy/50 border border-gold/20 p-0.5 flex-wrap gap-0.5">
             {tabs.map(tab => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2.5 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
+              <button key={tab.key} onClick={() => { setActiveTab(tab.key as any); if (tab.key === 'history') fetchTasks(); }} className={cn('px-2.5 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
           <button onClick={staffLogout} className="flex items-center gap-1 border border-gold/30 text-gold px-3 py-1.5 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
@@ -2069,7 +2079,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       {/* HISTORY */}
       {activeTab === 'history' && (
         <div className="staff-grid p-4">
-          {history.length === 0 ? <div className="col-span-full py-20 text-center text-white/20 italic font-serif">No history yet.</div>
+          {history.length === 0 ? <div className="col-span-full py-20 text-center text-white/20 italic font-serif">No completed requests yet.</div>
             : history.map(task => (
               <div key={task.id} className="bg-[#001c36] border border-gold/10 p-4 opacity-80">
                 <div className="flex justify-between items-center mb-2">
@@ -2148,6 +2158,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
 // ─── DEPT MANAGER DASHBOARD ───────────────────────────────────────────────────
 const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => {
+  const { t, language } = useLanguage();
   const [requests, setRequests] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [slaConfig, setSlaConfig] = useState<any>({});
@@ -2236,7 +2247,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               { key: 'staff', label: `Staff${pendingStaff.length > 0 ? ` (${pendingStaff.length})` : ''}` },
               { key: 'settings', label: '⚙ Settings' },
             ].map(tab => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
+              <button key={tab.key} onClick={() => { setActiveTab(tab.key as any); if (tab.key === 'history') fetchTasks(); }} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
           <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
@@ -2689,7 +2700,7 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
               { key: 'qr', label: '📱 QR' },
               { key: 'restaurants', label: '🍽 Restaurants' },
             ].map(tab => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>{tab.label}</button>
+              <button key={tab.key} onClick={() => { setActiveTab(tab.key as any); if (tab.key === 'history') fetchTasks(); }} className={cn('px-2 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>{tab.label}</button>
             ))}
           </div>
           <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
@@ -2931,6 +2942,29 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
         </div>
       )}
 
+      {/* TRANSLATION SETTINGS */}
+      {activeTab === 'qr' && (
+        <div className="mt-4 bg-[#001c36] border border-gold/10 p-4">
+          <h3 className="text-sm font-serif text-gold mb-3">🌐 Google Translate API Key</h3>
+          <p className="text-[9px] text-white/40 mb-3">Enter your Google Cloud Translation API key to enable automatic translation of guest messages to staff language.</p>
+          <input
+            type="text"
+            defaultValue={localStorage.getItem('google_translate_key') || ''}
+            placeholder="AIza..."
+            className="w-full bg-white border border-gold p-2 text-sm text-navy outline-none mb-2"
+            id="google-api-key-input"
+          />
+          <button
+            onClick={() => {
+              const val = (document.getElementById('google-api-key-input') as HTMLInputElement)?.value;
+              if (val) { localStorage.setItem('google_translate_key', val); showToast('API key saved!', 'success'); }
+            }}
+            className="bg-gold text-navy px-4 py-2 text-[9px] font-bold uppercase"
+          >
+            Save API Key
+          </button>
+        </div>
+      )}
       {/* RESTAURANT PORTAL */}
       {activeTab === 'restaurants' && (
         <RestaurantPortal profile={profile} />
@@ -3040,6 +3074,7 @@ export default function App() {
         total_price: totalPrice > 0 ? totalPrice : null,
         line_items: lineItems,
         language,
+        guest_language: language,
       });
       if (error) throw error;
       setShowRequestModal(false); setMessage(''); setSelectedService(null);
