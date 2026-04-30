@@ -1838,11 +1838,9 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const getElapsed = (ts: any) => {
     if (!ts) return 0;
     try {
-      // Normalize ALL Supabase timestamp formats to valid UTC
-      // Possible formats: "2026-04-30 08:26:00.471" / "2026-04-30T08:26:00.471+00:00" / "2026-04-30T08:26:00Z"
-      let normalized = String(ts).trim().replace(' ', 'T');
-      // Strip ALL timezone variants: +00  +00:00  +0000  Z  (then re-add Z for UTC)
-      normalized = normalized.replace(/[+-]\d{2}:?\d{0,4}$/, '').replace(/Z$/, '') + 'Z';
+      // Replace space separator with T so JS Date can parse it
+      // Do NOT strip timezone — JS Date handles +04:00 correctly internally
+      const normalized = String(ts).trim().replace(' ', 'T');
       const created = new Date(normalized).getTime();
       if (isNaN(created)) return 0;
       // Use `now` state so React re-renders every second and timer ticks
@@ -1857,10 +1855,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const formatTime = (ts: any) => {
     if (!ts) return '—';
     try {
-      let normalized = String(ts).trim().replace(' ', 'T');
-      normalized = normalized.replace(/[+-]\d{2}:?\d{0,4}$/, '').replace(/Z$/, '') + 'Z';
-      return new Date(normalized).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch { return '—'; }
+      const normalized = String(ts).trim().replace(' ', 'T');
+          } catch { return '—'; }
   };
 
   const getDuration = (from: any, to: any) => {
@@ -2222,10 +2218,8 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const getElapsedMin = (ts: any) => {
     if (!ts) return 0;
     try {
-      let normalized = String(ts).trim().replace(' ', 'T');
-      normalized = normalized.replace(/[+-]\d{2}:?\d{0,4}$/, '').replace(/Z$/, '') + 'Z';
-      return Math.max(0, Math.floor((now - new Date(normalized).getTime()) / 60000));
-    } catch { return 0; }
+      const normalized = String(ts).trim().replace(' ', 'T');
+        } catch { return 0; }
   };
   const violations = requests.filter(r => getSLAExceeded(r));
   const pendingStaff = staffList.filter(s => !s.approved && !MANAGER_OCCUPATIONS.includes(s.occupation || ''));
@@ -2464,10 +2458,8 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const getElapsedMin = (ts: any) => {
     if (!ts) return 0;
     try {
-      let normalized = String(ts).trim().replace(' ', 'T');
-      normalized = normalized.replace(/[+-]\d{2}:?\d{0,4}$/, '').replace(/Z$/, '') + 'Z';
-      return Math.max(0, Math.floor((now - new Date(normalized).getTime()) / 60000));
-    } catch { return 0; }
+      const normalized = String(ts).trim().replace(' ', 'T');
+        } catch { return 0; }
   };
 
   const violations = requests.filter(r => getSLAExceeded(r));
