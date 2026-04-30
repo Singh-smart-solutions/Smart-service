@@ -1099,7 +1099,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
         )}
         <div className="flex gap-0.5 flex-wrap pb-0">
           {tabs.map(tab => (
-            <button key={tab.key} onClick={() => { setActiveTab(tab.key as any); if (tab.key === 'history') fetchTasks(); }}
+            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
               className={cn('px-3 py-2 text-[9px] font-bold uppercase tracking-wider border-b-2',
                 activeTab === tab.key ? 'border-gold text-gold' : 'border-transparent text-white/50')}>
               {tab.label}
@@ -1696,7 +1696,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
 
 // ─── STAFF PORTAL ─────────────────────────────────────────────────────────────
 const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) => {
-  const { t, language, translateUserText } = useLanguage();
+  const { t, language } = useLanguage();
   const [tasks, setTasks] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -2247,7 +2247,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               { key: 'staff', label: `Staff${pendingStaff.length > 0 ? ` (${pendingStaff.length})` : ''}` },
               { key: 'settings', label: '⚙ Settings' },
             ].map(tab => (
-              <button key={tab.key} onClick={() => { setActiveTab(tab.key as any); if (tab.key === 'history') fetchTasks(); }} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
+              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
           <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
@@ -2700,7 +2700,7 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
               { key: 'qr', label: '📱 QR' },
               { key: 'restaurants', label: '🍽 Restaurants' },
             ].map(tab => (
-              <button key={tab.key} onClick={() => { setActiveTab(tab.key as any); if (tab.key === 'history') fetchTasks(); }} className={cn('px-2 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>{tab.label}</button>
+              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>{tab.label}</button>
             ))}
           </div>
           <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
