@@ -2213,6 +2213,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const [slaConfig, setSlaConfig] = useState<any>({});
   const [rooms, setRooms] = useState<any[]>([]);
   const [roomSearch, setRoomSearch] = useState('');
+  const [repPeriod, setRepPeriod] = useState<'daily'|'weekly'|'monthly'>('daily');
   const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants' | 'rooms' | 'report'>('requests');
   const [now, setNow] = useState(Date.now());
   const [editSLA, setEditSLA] = useState<number>(5);
@@ -2457,7 +2458,6 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
       {/* ALL MANAGERS — Performance Report Tab */}
       {activeTab === 'report' && (() => {
         const now = new Date();
-        const [repPeriod, setRepPeriod] = React.useState<'daily'|'weekly'|'monthly'>('daily');
         const cutoff = new Date();
         if (repPeriod === 'weekly')  cutoff.setDate(now.getDate() - 7);
         if (repPeriod === 'monthly') cutoff.setMonth(now.getMonth() - 1);
@@ -2550,6 +2550,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
           <scr`+`ipt>setTimeout(()=>window.print(),500)</scr`+`ipt></body></html>`;
           const w = window.open('','_blank');
           if(w){w.document.open();w.document.write(html);w.document.close();}
+          else showToast('Allow popups to print report','error');
         };
         return (
           <div className="p-4 space-y-4">
@@ -2619,7 +2620,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         );
       })()}
 
-      {/* HK Manager — Rooms Tab */}
+            {/* HK Manager — Rooms Tab */}
       {activeTab === 'rooms' && profile.department === 'Housekeeping' && (
         <div className="p-4 space-y-4">
           <div className="flex items-center justify-between">
