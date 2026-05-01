@@ -2771,20 +2771,22 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
                     {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
                     {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected by: {room.assigned_to} at {new Date(room.inspected_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
-                    {!room.inspected_at && room.status === 'Clean' && (
-                      <button onClick={async () => {
+                    <select value={room.status} onChange={async e => {
+                        const newStatus = e.target.value;
                         const now = new Date().toISOString();
-                        await supabase.from('rooms').update({
-                          status: 'Inspected',
-                          inspected_at: now,
+                        const upd: any = {
+                          status: newStatus,
                           assigned_to: profile.displayName,
                           last_updated: now,
-                        }).eq('id', room.id);
+                        };
+                        if (newStatus === 'Cleaning')  upd.cleaning_at  = now;
+                        if (newStatus === 'Clean')     upd.cleaned_at   = now;
+                        if (newStatus === 'Inspected') upd.inspected_at = now;
+                        await supabase.from('rooms').update(upd).eq('id', room.id);
                         fetchRoomsMgr();
-                      }} className="w-full bg-orange-500 text-white text-[9px] font-bold py-1 mt-1">
-                        🟠 Mark Inspected
-                      </button>
-                    )}
+                      }} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none mt-1">
+                      {ROOM_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                    </select>
 
                   </div>
                 );
