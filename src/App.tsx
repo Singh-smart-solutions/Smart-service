@@ -1856,14 +1856,17 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     if (!ts) return '—';
     try {
       const normalized = String(ts).trim().replace(' ', 'T');
-          } catch { return '—'; }
+      const d = new Date(normalized);
+      if (isNaN(d.getTime())) return '—';
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    } catch { return '—'; }
   };
 
   const getDuration = (from: any, to: any) => {
     if (!from || !to) return null;
-    const fromZ = from.endsWith('Z') ? from : from.replace(' ', 'T') + 'Z';
-    const toZ = to.endsWith('Z') ? to : to.replace(' ', 'T') + 'Z';
-    const mins = Math.floor((new Date(toZ).getTime() - new Date(fromZ).getTime()) / 60000);
+    const fromParsed = from.replace(' ', 'T');
+    const toParsed = to.replace(' ', 'T');
+    const mins = Math.floor((new Date(toParsed).getTime() - new Date(fromParsed).getTime()) / 60000);
     return mins < 60 ? `${mins}m` : `${Math.floor(mins/60)}h ${mins%60}m`;
   };
 
@@ -2311,9 +2314,9 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     {req.late_reason && <p className="text-[9px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
                   </div>
                   <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
-                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T')+'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
-                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T')+'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
-                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T')+'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
+                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
                     {req.closed_at && req.accepted_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
                     {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                     {over && <p className="text-red-400 text-xs font-bold">{getElapsedMin(req.created_at)}m elapsed</p>}
@@ -2908,9 +2911,9 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
                     {req.line_items && req.line_items.map((li: any, i: number) => <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>)}
                   </div>
                   <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
-                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T')+'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
-                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T')+'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
-                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T')+'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
+                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
                     {req.closed_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
                     {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                   </div>
