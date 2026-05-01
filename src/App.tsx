@@ -17,7 +17,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const MANAGER_OCCUPATIONS = [
-  'Housekeeping Manager', 'F&B Manager', 'Concierge Manager',
+  'Housekeeping Manager', 'Housekeeping Supervisor',
+  'F&B Manager', 'Concierge Manager',
   'Security Manager', 'Front Office Manager', 'Executive',
 ];
 
@@ -2212,7 +2213,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const [slaConfig, setSlaConfig] = useState<any>({});
   const [rooms, setRooms] = useState<any[]>([]);
   const [roomSearch, setRoomSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants' | 'rooms'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants' | 'rooms' | 'report'>('requests');
   const [now, setNow] = useState(Date.now());
   const [editSLA, setEditSLA] = useState<number>(5);
   const [showMgrRestaurant, setShowMgrRestaurant] = useState(false);
@@ -2310,6 +2311,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               { key: 'sla', label: `SLA${violations.length > 0 ? ` (${violations.length})` : ''}` },
               { key: 'staff', label: `Staff${pendingStaff.length > 0 ? ` (${pendingStaff.length})` : ''}` },
               { key: 'settings', label: '⚙ Settings' },
+              { key: 'report', label: '📊 Report' },
               ...(profile.department === 'F&B' ? [{ key: 'restaurants', label: '🍽 Restaurants' }] : []),
               ...(profile.department === 'Housekeeping' ? [{ key: 'rooms', label: '🛏 Rooms' }] : []),
             ].map(tab => (
@@ -2452,6 +2454,171 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         </div>
       )}
 
+      {/* ALL MANAGERS — Performance Report Tab */}
+      {activeTab === 'report' && (() => {
+        const now = new Date();
+        const [repPeriod, setRepPeriod] = React.useState<'daily'|'weekly'|'monthly'>('daily');
+        const cutoff = new Date();
+        if (repPeriod === 'weekly')  cutoff.setDate(now.getDate() - 7);
+        if (repPeriod === 'monthly') cutoff.setMonth(now.getMonth() - 1);
+        if (repPeriod === 'daily')   cutoff.setHours(0,0,0,0);
+        const filtered = requests.filter(r =>
+          r.status === 'Completed' && r.closed_at && new Date(r.closed_at.replace(' ','T')) >= cutoff
+        );
+        const slaLimit = (slaConfig?.sla_minutes || 30) * 60 * 1000;
+        const staffPerf: Record<string,{name:string,done:number,onTime:number,late:number,avgMin:number,totalMs:number}> = {};
+        filtered.forEach(r => {
+          const staff = r.assigned_to || 'Unassigned';
+          if (!staffPerf[staff]) staffPerf[staff] = {name:staff,done:0,onTime:0,late:0,avgMin:0,totalMs:0};
+          staffPerf[staff].done++;
+          const created = new Date(r.created_at.replace(' ','T')).getTime();
+          const closed  = new Date(r.closed_at.replace(' ','T')).getTime();
+          const ms = closed - created;
+          staffPerf[staff].totalMs += ms;
+          if (ms <= slaLimit) staffPerf[staff].onTime++;
+          else staffPerf[staff].late++;
+        });
+        Object.values(staffPerf).forEach(s => { s.avgMin = s.done > 0 ? Math.round(s.totalMs/s.done/60000) : 0; });
+        const ranked = Object.values(staffPerf).sort((a,b) => b.onTime - a.onTime || a.avgMin - b.avgMin);
+        const medals = [
+          {title:'⭐ The Supernova',   bg:'#fef9c3',border:'#eab308',badge:'🥇'},
+          {title:'🌟 The North Star',  bg:'#f1f5f9',border:'#94a3b8',badge:'🥈'},
+          {title:'🚀 The Rising Comet',bg:'#fff7ed',border:'#f97316',badge:'🥉'},
+        ];
+        const generatePDF = () => {
+          const dateStr = now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+          const periodLabel = repPeriod === 'daily' ? 'Daily' : repPeriod === 'weekly' ? 'Weekly (Last 7 Days)' : 'Monthly (Last 30 Days)';
+          const podiumHtml = ranked.slice(0,3).map((s,i) =>
+            `<div style="background:${medals[i].bg};border:2px solid ${medals[i].border};padding:14px 20px;text-align:center;min-width:110px;border-radius:4px">
+              <div style="font-size:28px">${medals[i].badge}</div>
+              <div style="font-size:12px;font-weight:bold;color:#001529;margin:4px 0">${medals[i].title}</div>
+              <div style="font-size:14px;font-weight:bold;color:#001529">${s.name}</div>
+              <div style="font-size:9px;color:#666;margin-top:4px">${s.done} tasks · ${s.onTime} on-time · avg ${s.avgMin}m</div>
+            </div>`
+          ).join('');
+          const tableRows = ranked.map((s,i) => {
+            const rate = s.done > 0 ? Math.round(s.onTime/s.done*100) : 0;
+            const rateColor = rate>=90?'#166534':rate>=70?'#92400e':'#991b1b';
+            return `<tr style="background:${i%2===0?'#f9f8f5':'#fff'}">
+              <td style="padding:6px 8px;border-bottom:1px solid #eee;color:#C5A059;font-weight:bold">${i+1}</td>
+              <td style="padding:6px 8px;border-bottom:1px solid #eee;font-weight:bold">${s.name}</td>
+              <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center">${s.done}</td>
+              <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;color:#166534;font-weight:bold">${s.onTime}</td>
+              <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;color:#991b1b">${s.late}</td>
+              <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center">
+                <span style="background:${rateColor};color:#fff;padding:2px 8px;border-radius:9px;font-size:9px;font-weight:bold">${rate}%</span>
+              </td>
+              <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center">${s.avgMin}m</td>
+            </tr>`;
+          }).join('');
+          const html = `<!DOCTYPE html><html><head><title>${profile.department} Performance Report</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600&display=swap');
+            *{margin:0;padding:0;box-sizing:border-box}body{font-family:Inter,sans-serif;padding:20px;font-size:11px}
+            @media print{body{padding:6px}}
+          </style></head><body>
+          <div style="background:#001529;color:#fff;padding:16px 20px;margin-bottom:16px">
+            <div style="font-family:'Playfair Display',serif;font-size:22px;color:#C5A059;letter-spacing:3px">SENTINEL PRO</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:3px;letter-spacing:1px">${profile.department.toUpperCase()} DEPARTMENT · ${periodLabel.toUpperCase()} PERFORMANCE REPORT · ${dateStr}</div>
+            <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+              <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
+                <div style="font-size:20px;font-weight:bold;color:#C5A059">${filtered.length}</div>
+                <div style="font-size:8px;color:rgba(255,255,255,0.5)">TASKS COMPLETED</div></div>
+              <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
+                <div style="font-size:20px;font-weight:bold;color:#C5A059">${ranked.length}</div>
+                <div style="font-size:8px;color:rgba(255,255,255,0.5)">ACTIVE STAFF</div></div>
+              <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
+                <div style="font-size:20px;font-weight:bold;color:#C5A059">${filtered.length>0?Math.round(filtered.filter(r=>{const c=new Date(r.created_at.replace(' ','T')).getTime(),d=new Date(r.closed_at.replace(' ','T')).getTime();return d-c<=slaLimit}).length/filtered.length*100):0}%</div>
+                <div style="font-size:8px;color:rgba(255,255,255,0.5)">ON-TIME RATE</div></div>
+            </div>
+          </div>
+          ${ranked.length>=1?`<div style="margin-bottom:18px"><div style="font-size:13px;font-weight:bold;color:#001529;margin-bottom:10px;letter-spacing:1px">🏆 TOP PERFORMERS</div><div style="display:flex;gap:10px;flex-wrap:wrap">${podiumHtml}</div></div>`:''}
+          <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+            <thead><tr style="background:#f4f2ec">
+              <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">#</th>
+              <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Staff Name</th>
+              <th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Tasks Done</th>
+              <th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">On Time</th>
+              <th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Late</th>
+              <th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">On-Time %</th>
+              <th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Avg Time</th>
+            </tr></thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+          <div style="text-align:center;color:#999;font-size:8px;border-top:1px solid #eee;padding-top:8px">
+            SENTINEL PRO · ${profile.department} Department · Generated ${now.toLocaleString()}</div>
+          <scr`+`ipt>setTimeout(()=>window.print(),500)</scr`+`ipt></body></html>`;
+          const w = window.open('','_blank');
+          if(w){w.document.open();w.document.write(html);w.document.close();}
+        };
+        return (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-serif text-gold">📊 Performance Report</h2>
+              <button onClick={generatePDF} className="flex items-center gap-1 bg-gold text-navy text-[9px] font-bold px-3 py-1.5">
+                <Download size={11}/> Print PDF
+              </button>
+            </div>
+            <div className="flex gap-2">
+              {(['daily','weekly','monthly'] as const).map(p => (
+                <button key={p} onClick={() => setRepPeriod(p)}
+                  className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', repPeriod===p ? 'bg-gold text-navy' : 'bg-[#001c36] text-gold/60 border border-gold/20')}>
+                  {p === 'daily' ? 'Today' : p === 'weekly' ? 'This Week' : 'This Month'}
+                </button>
+              ))}
+            </div>
+            {ranked.length === 0 ? (
+              <p className="text-white/30 italic text-sm text-center py-10">No completed tasks in this period.</p>
+            ) : (
+              <>
+                <div className="flex gap-3 flex-wrap">
+                  {ranked.slice(0,3).map((s,i) => (
+                    <div key={s.name} className="bg-[#001c36] border border-gold/20 p-3 flex-1 min-w-[120px] text-center space-y-1">
+                      <div className="text-2xl">{medals[i].badge}</div>
+                      <p className="text-[9px] text-gold font-bold">{medals[i].title}</p>
+                      <p className="text-white font-bold text-sm">{s.name}</p>
+                      <p className="text-[8px] text-white/50">{s.done} tasks · {s.onTime} on-time</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="bg-[#001c36] border border-gold/10 overflow-hidden">
+                  <table className="w-full text-[9px]">
+                    <thead><tr className="bg-navy/80">
+                      <th className="p-2 text-left text-gold/60">#</th>
+                      <th className="p-2 text-left text-gold/60">Staff</th>
+                      <th className="p-2 text-center text-gold/60">Done</th>
+                      <th className="p-2 text-center text-gold/60">On Time</th>
+                      <th className="p-2 text-center text-gold/60">Late</th>
+                      <th className="p-2 text-center text-gold/60">Rate</th>
+                      <th className="p-2 text-center text-gold/60">Avg</th>
+                    </tr></thead>
+                    <tbody>
+                      {ranked.map((s,i) => {
+                        const rate = s.done > 0 ? Math.round(s.onTime/s.done*100) : 0;
+                        return (
+                          <tr key={s.name} className={i%2===0?'bg-[#001c36]':'bg-[#002440]'}>
+                            <td className="p-2 text-gold font-bold">{i+1}</td>
+                            <td className="p-2 text-white font-bold">{s.name}</td>
+                            <td className="p-2 text-center text-white">{s.done}</td>
+                            <td className="p-2 text-center text-green-400">{s.onTime}</td>
+                            <td className="p-2 text-center text-red-400">{s.late}</td>
+                            <td className="p-2 text-center">
+                              <span className={cn('px-2 py-0.5 rounded-full font-bold text-white text-[8px]',
+                                rate>=90?'bg-green-700':rate>=70?'bg-yellow-700':'bg-red-700')}>{rate}%</span>
+                            </td>
+                            <td className="p-2 text-center text-white/60">{s.avgMin}m</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
+
       {/* HK Manager — Rooms Tab */}
       {activeTab === 'rooms' && profile.department === 'Housekeeping' && (
         <div className="p-4 space-y-4">
@@ -2478,11 +2645,39 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${r.assigned_to||'—'}</td>
                     <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${t(r.cleaning_at)}</td>
                     <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${t(r.cleaned_at)}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${r.inspected_at ? (r.assigned_to||'—') : '—'}</td>
                     <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${t(r.inspected_at)}</td>
                   </tr>`).join('');
                 const totalClean = rooms.filter(r=>r.status==='Clean'||r.status==='Inspected').length;
                 const totalDirty = rooms.filter(r=>r.status==='Dirty').length;
                 const totalInspected = rooms.filter(r=>r.status==='Inspected').length;
+                // Build staff performance from rooms data
+                const staffMap: Record<string, {name:string,cleaned:number,inspected:number,lastSeen:string}> = {};
+                rooms.forEach(r => {
+                  if (r.assigned_to && r.cleaned_at) {
+                    if (!staffMap[r.assigned_to]) staffMap[r.assigned_to] = {name:r.assigned_to,cleaned:0,inspected:0,lastSeen:r.cleaned_at};
+                    staffMap[r.assigned_to].cleaned++;
+                    if (r.cleaned_at > staffMap[r.assigned_to].lastSeen) staffMap[r.assigned_to].lastSeen = r.cleaned_at;
+                  }
+                  if (r.assigned_to && r.inspected_at) {
+                    if (!staffMap[r.assigned_to]) staffMap[r.assigned_to] = {name:r.assigned_to,cleaned:0,inspected:0,lastSeen:r.inspected_at};
+                    staffMap[r.assigned_to].inspected++;
+                  }
+                });
+                const ranked = Object.values(staffMap).sort((a,b)=>(b.cleaned+b.inspected)-(a.cleaned+a.inspected));
+                const medals = [
+                  {title:'⭐ The Supernova',color:'#C5A059',bg:'rgba(197,160,89,0.15)',border:'#C5A059'},
+                  {title:'🌟 The North Star',color:'#94a3b8',bg:'rgba(148,163,184,0.15)',border:'#94a3b8'},
+                  {title:'🚀 The Rising Comet',color:'#cd7c2f',bg:'rgba(205,124,47,0.15)',border:'#cd7c2f'},
+                ];
+                const podiumHtml = ranked.slice(0,3).map((s,i)=>
+                  `<div style="background:${medals[i].bg};border:1px solid ${medals[i].border};padding:12px 18px;min-width:100px;text-align:center">
+                    <div style="font-size:22px;margin-bottom:4px">${i===0?'🥇':i===1?'🥈':'🥉'}</div>
+                    <div style="font-size:11px;font-weight:bold;color:${medals[i].color}">${medals[i].title}</div>
+                    <div style="font-size:13px;font-weight:bold;color:#001529;margin-top:4px">${s.name}</div>
+                    <div style="font-size:9px;color:#666;margin-top:2px">${s.cleaned} cleaned · ${s.inspected} inspected</div>
+                  </div>`
+                ).join('');
                 const html = `<!DOCTYPE html><html><head><title>Housekeeping Report ${today}</title>
                 <style>
                   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600&display=swap');
@@ -2493,7 +2688,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                 <div style="background:#001529;color:#fff;padding:16px 20px;margin-bottom:14px">
                   <div style="font-family:'Playfair Display',serif;font-size:22px;color:#C5A059;letter-spacing:3px">SENTINEL PRO</div>
                   <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:4px;letter-spacing:1px">HOUSEKEEPING PERFORMANCE REPORT · ${dateStr}</div>
-                  <div style="display:flex;gap:12px;margin-top:10px">
+                  <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
                     <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
                       <div style="font-size:20px;font-weight:bold;color:#C5A059">${rooms.length}</div>
                       <div style="font-size:8px;color:rgba(255,255,255,0.5)">TOTAL ROOMS</div></div>
@@ -2508,6 +2703,11 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                       <div style="font-size:8px;color:rgba(255,255,255,0.5)">DIRTY</div></div>
                   </div>
                 </div>
+                ${ranked.length > 0 ? `
+                <div style="margin-bottom:16px">
+                  <div style="font-size:13px;font-weight:bold;color:#001529;margin-bottom:8px;letter-spacing:1px">🏆 HEROES OF THE DAY</div>
+                  <div style="display:flex;gap:10px;flex-wrap:wrap">${podiumHtml}</div>
+                </div>` : ''}
                 <table style="width:100%;border-collapse:collapse">
                   <thead><tr style="background:#f4f2ec">
                     <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">S/No</th>
@@ -2517,6 +2717,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Staff</th>
                     <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Cleaning Started</th>
                     <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Cleaned At</th>
+                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Inspected By</th>
                     <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Inspected At</th>
                   </tr></thead>
                   <tbody>${rows}</tbody>
@@ -2584,7 +2785,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                         🟠 Mark Inspected
                       </button>
                     )}
-                    {room.status === 'Inspected' && <p className="text-[8px] text-orange-300 font-bold">✅ Ready for Check-in</p>}
+
                   </div>
                 );
               })}
