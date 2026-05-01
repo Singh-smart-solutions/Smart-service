@@ -1916,7 +1916,16 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   };
 
   const updateRoomStatus = async (roomId: string, status: string) => {
-    await supabase.from('rooms').update({ status, assigned_to: userProfile.displayName, last_updated: new Date().toISOString() }).eq('id', roomId);
+    const now = new Date().toISOString();
+    const update: any = {
+      status,
+      assigned_to: userProfile.displayName,
+      last_updated: now,
+    };
+    if (status === 'Cleaning')   update.cleaning_at  = now;
+    if (status === 'Clean')      update.cleaned_at   = now;
+    if (status === 'Inspected')  update.inspected_at = now;
+    await supabase.from('rooms').update(update).eq('id', roomId);
     fetchRooms();
   };
 
@@ -2147,6 +2156,9 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                     <span className={cn('text-[8px] font-bold px-2 py-0.5 text-white rounded-full', statusObj.color)}>{room.status}</span>
                   </div>
                   {room.assigned_to && <p className="text-[8px] text-green-400/80 italic">✏ {room.assigned_to}</p>}
+                  {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
+                  {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
+                  {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected at: {new Date(room.inspected_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
                   <select value={room.status} onChange={e => updateRoomStatus(room.id, e.target.value)} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none">
                     {ROOM_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
@@ -2445,7 +2457,28 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         <div className="p-4 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-serif text-gold flex items-center gap-2"><BedDouble size={18} /> Room Status Board</h2>
-            <button onClick={fetchRoomsMgr} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
+            <div className="flex gap-2 items-center">
+              <button onClick={() => {
+                const today = new Date().toLocaleDateString('en-GB');
+                const rows = rooms.map((r,i) =>
+                  [i+1, r.room_number, r.room_type||'', r.floor||'', r.status||'',
+                   r.assigned_to||'',
+                   r.cleaning_at ? new Date(r.cleaning_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '',
+                   r.cleaned_at  ? new Date(r.cleaned_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})  : '',
+                   r.inspected_at? new Date(r.inspected_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}): '',
+                  ].join(',')
+                ).join('\n');
+                const csv = 'S/No,Room,Type,Floor,Status,Staff,Cleaning Started,Cleaned At,Inspected At\n' + rows;
+                const blob = new Blob([csv], {type:'text/csv'});
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'HK-Report-'+today+'.csv';
+                a.click();
+              }} className="text-[8px] bg-gold text-navy font-bold px-2 py-1 flex items-center gap-1">
+                <Download size={10}/> Daily Report
+              </button>
+              <button onClick={fetchRoomsMgr} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
+            </div>
           </div>
           {/* Search bar */}
           <div className="relative">
@@ -2480,6 +2513,9 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     {room.assigned_to && (
                       <p className="text-[8px] text-white/60 italic">✏ {room.assigned_to}</p>
                     )}
+                    {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
+                    {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
+                    {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected at: {new Date(room.inspected_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
                     <p className="text-[8px] text-white/30 italic">View only — update from staff portal</p>
                   </div>
                 );
