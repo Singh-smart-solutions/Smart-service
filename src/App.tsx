@@ -9,7 +9,7 @@ import {
   User, ClipboardList, TrendingUp, Star, ShieldCheck,
   Car, MapPin, Briefcase, FileText, Mail, Download,
   Phone, ArrowRight, QrCode, Settings, Wrench, BedDouble,
-  Bell, RefreshCw
+  Bell, RefreshCw, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage, Language } from './contexts/TranslationContext';
