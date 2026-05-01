@@ -2222,7 +2222,10 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     if (!ts) return 0;
     try {
       const normalized = String(ts).trim().replace(' ', 'T');
-        } catch { return 0; }
+      const created = new Date(normalized).getTime();
+      if (isNaN(created)) return 0;
+      return Math.floor((Date.now() - created) / 60000);
+    } catch { return 0; }
   };
   const violations = requests.filter(r => getSLAExceeded(r));
   const pendingStaff = staffList.filter(s => !s.approved && !MANAGER_OCCUPATIONS.includes(s.occupation || ''));
@@ -2314,9 +2317,9 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     {req.late_reason && <p className="text-[9px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
                   </div>
                   <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
-                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
-                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
-                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
+                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
                     {req.closed_at && req.accepted_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
                     {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                     {over && <p className="text-red-400 text-xs font-bold">{getElapsedMin(req.created_at)}m elapsed</p>}
@@ -2462,7 +2465,10 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
     if (!ts) return 0;
     try {
       const normalized = String(ts).trim().replace(' ', 'T');
-        } catch { return 0; }
+      const created = new Date(normalized).getTime();
+      if (isNaN(created)) return 0;
+      return Math.floor((Date.now() - created) / 60000);
+    } catch { return 0; }
   };
 
   const violations = requests.filter(r => getSLAExceeded(r));
@@ -2911,9 +2917,9 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
                     {req.line_items && req.line_items.map((li: any, i: number) => <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>)}
                   </div>
                   <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
-                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
-                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
-                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
+                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
                     {req.closed_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
                     {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                   </div>
