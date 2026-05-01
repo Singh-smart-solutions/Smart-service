@@ -2160,7 +2160,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                   {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
                   {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected at: {new Date(room.inspected_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
                   <select value={room.status} onChange={e => updateRoomStatus(room.id, e.target.value)} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none">
-                    {ROOM_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                    {ROOM_STATUSES.filter(s => s.key !== 'Inspected').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
                 </div>
               );
@@ -2460,22 +2460,76 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
             <div className="flex gap-2 items-center">
               <button onClick={() => {
                 const today = new Date().toLocaleDateString('en-GB');
-                const rows = rooms.map((r,i) =>
-                  [i+1, r.room_number, r.room_type||'', r.floor||'', r.status||'',
-                   r.assigned_to||'',
-                   r.cleaning_at ? new Date(r.cleaning_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '',
-                   r.cleaned_at  ? new Date(r.cleaned_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})  : '',
-                   r.inspected_at? new Date(r.inspected_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}): '',
-                  ].join(',')
-                ).join('\n');
-                const csv = 'S/No,Room,Type,Floor,Status,Staff,Cleaning Started,Cleaned At,Inspected At\n' + rows;
-                const blob = new Blob([csv], {type:'text/csv'});
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = 'HK-Report-'+today+'.csv';
-                a.click();
+                const d = new Date();
+                const dateStr = d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+                const statusColor: Record<string,string> = {
+                  'Clean':'#166534','Dirty':'#991b1b','Cleaning':'#92400e',
+                  'Inspected':'#7c2d12','Do Not Disturb':'#4c1d95','Out of Order':'#374151','Checked Out':'#1e40af',
+                };
+                const t = (ts: string|null) => ts ? new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '—';
+                const rows = rooms.map((r,i) => `
+                  <tr style="background:${i%2===0?'#f9f8f5':'#fff'}">
+                    <td style="padding:5px 8px;border-bottom:1px solid #eee;color:#C5A059;font-weight:bold">${i+1}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-weight:bold">Room ${r.room_number}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${r.room_type||''} · Fl.${r.floor||''}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #eee">
+                      <span style="background:${statusColor[r.status]||'#374151'};color:#fff;padding:2px 8px;border-radius:9px;font-size:9px;font-weight:bold">${r.status||''}</span>
+                    </td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${r.assigned_to||'—'}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${t(r.cleaning_at)}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${t(r.cleaned_at)}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${t(r.inspected_at)}</td>
+                  </tr>`).join('');
+                const totalClean = rooms.filter(r=>r.status==='Clean'||r.status==='Inspected').length;
+                const totalDirty = rooms.filter(r=>r.status==='Dirty').length;
+                const totalInspected = rooms.filter(r=>r.status==='Inspected').length;
+                const html = `<!DOCTYPE html><html><head><title>Housekeeping Report ${today}</title>
+                <style>
+                  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600&display=swap');
+                  *{margin:0;padding:0;box-sizing:border-box}
+                  body{font-family:Inter,sans-serif;background:#fff;padding:20px;font-size:11px}
+                  @media print{body{padding:6px}}
+                </style></head><body>
+                <div style="background:#001529;color:#fff;padding:16px 20px;margin-bottom:14px">
+                  <div style="font-family:'Playfair Display',serif;font-size:22px;color:#C5A059;letter-spacing:3px">SENTINEL PRO</div>
+                  <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:4px;letter-spacing:1px">HOUSEKEEPING PERFORMANCE REPORT · ${dateStr}</div>
+                  <div style="display:flex;gap:12px;margin-top:10px">
+                    <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
+                      <div style="font-size:20px;font-weight:bold;color:#C5A059">${rooms.length}</div>
+                      <div style="font-size:8px;color:rgba(255,255,255,0.5)">TOTAL ROOMS</div></div>
+                    <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
+                      <div style="font-size:20px;font-weight:bold;color:#C5A059">${totalClean}</div>
+                      <div style="font-size:8px;color:rgba(255,255,255,0.5)">CLEAN / READY</div></div>
+                    <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
+                      <div style="font-size:20px;font-weight:bold;color:#C5A059">${totalInspected}</div>
+                      <div style="font-size:8px;color:rgba(255,255,255,0.5)">INSPECTED</div></div>
+                    <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
+                      <div style="font-size:20px;font-weight:bold;color:#C5A059">${totalDirty}</div>
+                      <div style="font-size:8px;color:rgba(255,255,255,0.5)">DIRTY</div></div>
+                  </div>
+                </div>
+                <table style="width:100%;border-collapse:collapse">
+                  <thead><tr style="background:#f4f2ec">
+                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">S/No</th>
+                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Room</th>
+                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Type / Floor</th>
+                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Status</th>
+                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Staff</th>
+                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Cleaning Started</th>
+                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Cleaned At</th>
+                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Inspected At</th>
+                  </tr></thead>
+                  <tbody>${rows}</tbody>
+                </table>
+                <div style="text-align:center;color:#999;font-size:8px;margin-top:16px;border-top:1px solid #eee;padding-top:8px">
+                  SENTINEL PRO · Housekeeping Report · Generated ${new Date().toLocaleString()}</div>
+                <scr` + `ipt>setTimeout(()=>window.print(),500)</scr` + `ipt>
+                </body></html>`;
+                const w = window.open('','_blank');
+                if(w){w.document.open();w.document.write(html);w.document.close();}
+                else showToast('Allow popups to print report','error');
               }} className="text-[8px] bg-gold text-navy font-bold px-2 py-1 flex items-center gap-1">
-                <Download size={10}/> Daily Report
+                <Download size={10}/> PDF Report
               </button>
               <button onClick={fetchRoomsMgr} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
             </div>
@@ -2515,8 +2569,22 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     )}
                     {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
                     {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
-                    {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected at: {new Date(room.inspected_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
-                    <p className="text-[8px] text-white/30 italic">View only — update from staff portal</p>
+                    {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected by: {room.assigned_to} at {new Date(room.inspected_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
+                    {!room.inspected_at && room.status === 'Clean' && (
+                      <button onClick={async () => {
+                        const now = new Date().toISOString();
+                        await supabase.from('rooms').update({
+                          status: 'Inspected',
+                          inspected_at: now,
+                          assigned_to: profile.displayName,
+                          last_updated: now,
+                        }).eq('id', room.id);
+                        fetchRoomsMgr();
+                      }} className="w-full bg-orange-500 text-white text-[9px] font-bold py-1 mt-1">
+                        🟠 Mark Inspected
+                      </button>
+                    )}
+                    {room.status === 'Inspected' && <p className="text-[8px] text-orange-300 font-bold">✅ Ready for Check-in</p>}
                   </div>
                 );
               })}
