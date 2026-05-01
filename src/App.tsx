@@ -1709,6 +1709,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const [forwardModalTask, setForwardModalTask] = useState<any | null>(null);
   const [forwardDept, setForwardDept] = useState<Department>('Housekeeping');
   const [maintenanceForm, setMaintenanceForm] = useState({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
+  const [roomSearch, setRoomSearch] = useState('');
   const [notifPermission, setNotifPermission] = useState('');
   const [showFBRestaurant, setShowFBRestaurant] = useState(false);
   const swRegistered = useRef(false);
@@ -2118,8 +2119,26 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
             <h2 className="text-lg font-serif text-gold flex items-center gap-2"><BedDouble size={18} /> Room Status Board</h2>
             <button onClick={fetchRooms} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
           </div>
+          {/* Search bar */}
+          <div className="relative">
+            <input
+              type="text"
+              value={roomSearch || ''}
+              onChange={e => setRoomSearch(e.target.value)}
+              placeholder="Search by room number or status (e.g. Clean, Dirty...)"
+              className="w-full bg-[#001c36] border border-gold/20 text-white text-[11px] p-2 pl-8 outline-none placeholder:text-white/30"
+            />
+            <Search size={13} className="absolute left-2.5 top-2.5 text-gold/40" />
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {rooms.map(room => {
+            {rooms
+              .filter(room => {
+                if (!roomSearch || !roomSearch.trim()) return true;
+                const q = (roomSearch || '').toLowerCase();
+                return room.room_number?.toString().toLowerCase().includes(q)
+                  || (room.status || '').toLowerCase().includes(q);
+              })
+              .map(room => {
               const statusObj = ROOM_STATUSES.find(s => s.key === room.status) || ROOM_STATUSES[0];
               return (
                 <div key={room.id} className="bg-[#001c36] border border-gold/10 p-3 space-y-2">
@@ -2127,7 +2146,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                     <div><p className="text-gold font-bold text-sm">Room {room.room_number}</p><p className="text-[8px] text-white/40">{room.room_type} · Floor {room.floor}</p></div>
                     <span className={cn('text-[8px] font-bold px-2 py-0.5 text-white rounded-full', statusObj.color)}>{room.status}</span>
                   </div>
-                  {room.assigned_to && <p className="text-[8px] text-white/40">By: {room.assigned_to}</p>}
+                  {room.assigned_to && <p className="text-[8px] text-green-400/80 italic">✏ {room.assigned_to}</p>}
                   <select value={room.status} onChange={e => updateRoomStatus(room.id, e.target.value)} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none">
                     {ROOM_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
@@ -2179,7 +2198,9 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const [requests, setRequests] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [slaConfig, setSlaConfig] = useState<any>({});
-  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants'>('requests');
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [roomSearch, setRoomSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants' | 'rooms'>('requests');
   const [now, setNow] = useState(Date.now());
   const [editSLA, setEditSLA] = useState<number>(5);
   const [showMgrRestaurant, setShowMgrRestaurant] = useState(false);
@@ -2205,8 +2226,14 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     if (slaData) { setSlaConfig(slaData); setEditSLA(slaData.sla_minutes); }
   };
 
+  const fetchRoomsMgr = useCallback(async () => {
+    const { data } = await supabase.from('rooms').select('*').order('room_number', { ascending: true });
+    if (data) setRooms(data);
+  }, []);
+
   useEffect(() => {
     fetchData();
+    fetchRoomsMgr();
     const channel = supabase.channel(`deptmgr-${profile.uid}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, fetchData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, fetchData)
@@ -2272,6 +2299,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               { key: 'staff', label: `Staff${pendingStaff.length > 0 ? ` (${pendingStaff.length})` : ''}` },
               { key: 'settings', label: '⚙ Settings' },
               ...(profile.department === 'F&B' ? [{ key: 'restaurants', label: '🍽 Restaurants' }] : []),
+              ...(profile.department === 'Housekeeping' ? [{ key: 'rooms', label: '🛏 Rooms' }] : []),
             ].map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
@@ -2408,6 +2436,54 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               <p className="text-white"><span className="text-gold font-bold text-2xl font-serif">{slaConfig.sla_minutes || 5}</span> minutes current SLA for {profile.department}</p>
               {slaConfig.updated_by && <p className="text-[9px] text-white/30 mt-1">Last updated by: {slaConfig.updated_by}</p>}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* HK Manager — Rooms Tab */}
+      {activeTab === 'rooms' && profile.department === 'Housekeeping' && (
+        <div className="p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-serif text-gold flex items-center gap-2"><BedDouble size={18} /> Room Status Board</h2>
+            <button onClick={fetchRoomsMgr} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
+          </div>
+          {/* Search bar */}
+          <div className="relative">
+            <input
+              type="text"
+              value={roomSearch}
+              onChange={e => setRoomSearch(e.target.value)}
+              placeholder="Search by room number or status (e.g. Clean, Dirty...)"
+              className="w-full bg-[#001c36] border border-gold/20 text-white text-[11px] p-2 pl-8 outline-none placeholder:text-white/30"
+            />
+            <Search size={13} className="absolute left-2.5 top-2.5 text-gold/40" />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {rooms
+              .filter(room => {
+                if (!roomSearch.trim()) return true;
+                const q = roomSearch.toLowerCase();
+                return room.room_number?.toString().toLowerCase().includes(q)
+                  || (room.status || '').toLowerCase().includes(q);
+              })
+              .map(room => {
+                const statusObj = ROOM_STATUSES.find(s => s.key === room.status) || ROOM_STATUSES[0];
+                return (
+                  <div key={room.id} className="bg-[#001c36] border border-gold/10 p-3 space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-gold font-bold text-sm">Room {room.room_number}</p>
+                        <p className="text-[8px] text-white/40">{room.room_type} · Floor {room.floor}</p>
+                      </div>
+                      <span className={cn('text-[8px] font-bold px-2 py-0.5 text-white rounded-full', statusObj.color)}>{room.status}</span>
+                    </div>
+                    {room.assigned_to && (
+                      <p className="text-[8px] text-white/60 italic">✏ {room.assigned_to}</p>
+                    )}
+                    <p className="text-[8px] text-white/30 italic">View only — update from staff portal</p>
+                  </div>
+                );
+              })}
           </div>
         </div>
       )}
