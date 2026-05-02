@@ -9,7 +9,7 @@ import {
   User, ClipboardList, TrendingUp, Star, ShieldCheck,
   Car, MapPin, Briefcase, FileText, Mail, Download,
   Phone, ArrowRight, QrCode, Settings, Wrench, BedDouble,
-  Bell, RefreshCw, Search
+  Bell, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage, Language } from './contexts/TranslationContext';
@@ -17,8 +17,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const MANAGER_OCCUPATIONS = [
-  'Housekeeping Manager', 'Housekeeping Supervisor',
-  'F&B Manager', 'Concierge Manager',
+  'Housekeeping Manager', 'F&B Manager', 'Concierge Manager',
   'Security Manager', 'Front Office Manager', 'Executive',
 ];
 
@@ -27,7 +26,7 @@ const DEPT_FROM_OCCUPATION: Record<string, Department> = {
   'Concierge Manager': 'Concierge', 'Security Manager': 'Security & Safety',
   'Front Office Manager': 'Front Office', 'Executive': 'None',
   'Housekeeping Attendant': 'Housekeeping', 'Housekeeping Supervisor': 'Housekeeping',
-  'F&B Waiter': 'F&B', 'F&B Supervisor': 'F&B', 'Chef': 'F&B', 'Reservation Agent': 'F&B',
+  'F&B Waiter': 'F&B', 'F&B Supervisor': 'F&B', 'Chef': 'F&B',
   'Concierge Agent': 'Concierge', 'Concierge Supervisor': 'Concierge',
   'Security Officer': 'Security & Safety', 'Security Supervisor': 'Security & Safety',
   'Front Office Agent': 'Front Office', 'Front Office Supervisor': 'Front Office',
@@ -86,7 +85,7 @@ const getDeviceId = () => {
 };
 
 const queryParams = new URLSearchParams(window.location.search);
-const roomNumberFromUrl = (queryParams.get('room') || '').trim();
+const roomNumberFromUrl = queryParams.get('room') || '';
 const isRoomLocked = !!roomNumberFromUrl;
 
 // ─── PUSH NOTIFICATION SYSTEM ─────────────────────────────────────────────────
@@ -117,6 +116,7 @@ const playNotificationSound = () => {
     // Vibrate phone — 3 sharp bursts
     if ('vibrate' in navigator) navigator.vibrate([400, 150, 400, 150, 400]);
   } catch (e) {
+    console.log('Audio error:', e);
   }
 };
 
@@ -139,6 +139,7 @@ const showBrowserNotification = (title: string, body: string) => {
       });
     }
   } catch (e) {
+    console.log('Notification error:', e);
   }
 };
 
@@ -149,6 +150,7 @@ const registerServiceWorker = async (staffId: string, department: string) => {
     // Request permission first
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
+      console.log('Notification permission denied');
       return;
     }
     const registration = await navigator.serviceWorker.register('/sw.js');
@@ -158,36 +160,10 @@ const registerServiceWorker = async (staffId: string, department: string) => {
     if (sw) {
       sw.postMessage({ type: 'STORE_STAFF_INFO', payload: { staffId, department } });
     }
+    console.log('✅ Service worker registered for', department);
   } catch (e) {
+    console.log('Service worker registration failed (non-critical):', e);
   }
-};
-
-// ─── TOAST NOTIFICATION SYSTEM ───────────────────────────────────────────────
-let toastTimeout: any = null;
-let setToastGlobal: ((msg: { text: string; type: 'success' | 'error' | 'info' }) => void) | null = null;
-
-const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
-  if (setToastGlobal) {
-    setToastGlobal({ text, type });
-    if (toastTimeout) clearTimeout(toastTimeout);
-    toastTimeout = setTimeout(() => { if (setToastGlobal) setToastGlobal({ text: '', type: 'info' }); }, 3500);
-  }
-};
-
-const ToastContainer: React.FC = () => {
-  const [toast, setToast] = useState<{ text: string; type: 'success' | 'error' | 'info' }>({ text: '', type: 'success' });
-  useEffect(() => { setToastGlobal = setToast; return () => { setToastGlobal = null; }; }, []);
-  if (!toast.text) return null;
-  const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-navy' };
-  const icons = { success: '✓', error: '✕', info: 'ℹ' };
-  return (
-    <motion.div initial={{ y: -80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -80, opacity: 0 }}
-      className={`fixed top-4 left-1/2 z-[99999] -translate-x-1/2 px-6 py-3 shadow-2xl flex items-center gap-3 min-w-[260px] max-w-[90vw] ${colors[toast.type]}`}
-      style={{ borderLeft: '4px solid #C5A059' }}>
-      <span className="text-white font-bold">{icons[toast.type]}</span>
-      <span className="text-white text-sm font-medium">{toast.text}</span>
-    </motion.div>
-  );
 };
 
 // ─── ERROR BOUNDARY ───────────────────────────────────────────────────────────
@@ -497,1010 +473,10 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubmit }) =>
   );
 };
 
-
-// ─── RESTAURANT BOOKING SYSTEM ───────────────────────────────────────────────
-
-const RESTAURANTS = [
-  { id: 'turquoise', name: 'Turquoise', cuisine: 'International Cuisine', emoji: '🌊' },
-  { id: 'mermaid', name: 'The Mermaid', cuisine: 'Mediterranean Cuisine', emoji: '🧜' },
-  { id: 'lolivo', name: "L'Olivo", cuisine: 'Italian Fine Dining', emoji: '🫒' },
-];
-
-const generateBookingRef = () => {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return 'SP-' + Array.from({length: 6}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-};
-
-const formatBookingDate = (date: string) => {
-  if (!date) return '';
-  return new Date(date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-};
-
-// ─── BOOKING TICKET ───────────────────────────────────────────────────────────
-const printBookingTicket = (booking: any) => {
-  const restaurant = RESTAURANTS.find(r => r.id === booking.restaurant);
-  const html = `<!DOCTYPE html><html><head><title>Booking Confirmation</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600&display=swap');
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Inter', sans-serif; background: #f8f6f0; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
-  .ticket { background: white; width: 380px; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
-  .ticket-header { background: #001529; padding: 30px; text-align: center; }
-  .hotel-name { font-family: 'Playfair Display', serif; font-size: 22px; color: #C5A059; letter-spacing: 4px; }
-  .ticket-title { font-size: 10px; color: rgba(255,255,255,0.5); letter-spacing: 3px; margin-top: 6px; text-transform: uppercase; }
-  .gold-line { width: 40px; height: 2px; background: #C5A059; margin: 12px auto; }
-  .restaurant-name { font-family: 'Playfair Display', serif; font-size: 20px; color: white; margin-top: 8px; }
-  .cuisine { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 4px; }
-  .ticket-body { padding: 24px; }
-  .booking-ref { text-align: center; background: #f8f6f0; border: 1px solid #C5A059; padding: 12px; margin-bottom: 20px; }
-  .ref-label { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: #999; }
-  .ref-number { font-family: 'Playfair Display', serif; font-size: 24px; color: #001529; font-weight: bold; letter-spacing: 3px; margin-top: 4px; }
-  .detail-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0ebe0; }
-  .detail-row:last-child { border: none; }
-  .detail-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #999; }
-  .detail-value { font-size: 13px; font-weight: 600; color: #001529; }
-  .notes-box { background: #f8f6f0; border-left: 3px solid #C5A059; padding: 10px 12px; margin-top: 16px; }
-  .notes-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #C5A059; margin-bottom: 4px; font-weight: 600; }
-  .notes-text { font-size: 11px; color: #555; font-style: italic; }
-  .ticket-footer { background: #001529; padding: 16px; text-align: center; }
-  .footer-text { font-size: 9px; color: rgba(255,255,255,0.4); letter-spacing: 1px; }
-  .status-badge { display: inline-block; background: #C5A059; color: #001529; font-size: 9px; font-weight: bold; padding: 4px 12px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 16px; }
-  .dashed { border-top: 2px dashed #e0d8cc; margin: 16px 0; }
-  @media print { body { background: white; } .ticket { box-shadow: none; } }
-</style></head><body>
-<div class="ticket">
-  <div class="ticket-header">
-    <div class="hotel-name">SENTINEL PRO</div>
-    <div class="ticket-title">Luxury Hotel & Residences</div>
-    <div class="gold-line"></div>
-    <div class="restaurant-name">${restaurant?.emoji} ${restaurant?.name}</div>
-    <div class="cuisine">${restaurant?.cuisine}</div>
-  </div>
-  <div class="ticket-body">
-    <div class="booking-ref">
-      <div class="ref-label">Booking Reference</div>
-      <div class="ref-number">${booking.booking_ref}</div>
-    </div>
-    <div style="text-align:center;margin-bottom:16px">
-      <span class="status-badge">${booking.status || 'Confirmed'}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Guest Name</span>
-      <span class="detail-value">${booking.guest_name}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Room Number</span>
-      <span class="detail-value">${booking.room_number}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Date</span>
-      <span class="detail-value">${formatBookingDate(booking.date)}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Time</span>
-      <span class="detail-value">${booking.time}</span>
-    </div>
-    <div class="detail-row">
-      <span class="detail-label">Guests</span>
-      <span class="detail-value">${booking.pax} ${booking.pax === 1 ? 'Guest' : 'Guests'}</span>
-    </div>
-    ${booking.notes ? `<div class="notes-box"><div class="notes-label">Special Requests</div><div class="notes-text">${booking.notes}</div></div>` : ''}
-    <div class="dashed"></div>
-    <div style="font-size:10px;color:#999;text-align:center;line-height:1.6">
-      Please arrive 5 minutes before your reservation.<br>
-      For changes, contact reception or dial 0.
-    </div>
-  </div>
-  <div class="ticket-footer">
-    <div class="footer-text">SENTINEL PRO · LUXURY HOTEL MANAGEMENT · ${new Date().toLocaleDateString()}</div>
-  </div>
-</div>
-<script>setTimeout(() => window.print(), 800);</script>
-</body></html>`;
-  const win = window.open('', '_blank');
-  if (win) { win.document.write(html); win.document.close(); }
-};
-
-// ─── RESTAURANT BOOKING PORTAL ───────────────────────────────────────────────
-const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
-  const [bookings, setBookings] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'book' | 'mybookings' | 'manage' | 'walkin' | 'menu' | 'settings'>('book');
-  const [selectedRestaurant, setSelectedRestaurant] = useState('turquoise');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-  const [pax, setPax] = useState('2');
-  const [notes, setNotes] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [modifyBooking, setModifyBooking] = useState<any | null>(null);
-  const [cancelConfirm, setCancelConfirm] = useState<any | null>(null);
-  const [menuItems, setMenuItems] = useState<any[]>([]);
-  const [restaurantSettings, setRestaurantSettings] = useState<any[]>([]);
-  const [newMenuItem, setNewMenuItem] = useState({ name: '', price: '', category: 'all_day', restaurant: 'turquoise' });
-  const [restSettings, setRestSettings] = useState<any>({});
-  const [rejectModal, setRejectModal] = useState<any | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const [rejectAlt, setRejectAlt] = useState('');
-  const [walkInName, setWalkInName] = useState('');
-  const [walkInPhone, setWalkInPhone] = useState('');
-  const [walkInEmail, setWalkInEmail] = useState('');
-  const [walkInRestaurant, setWalkInRestaurant] = useState('turquoise');
-  const [walkInDate, setWalkInDate] = useState('');
-  const [walkInTime, setWalkInTime] = useState('');
-  const [walkInPax, setWalkInPax] = useState('2');
-  const [walkInNotes, setWalkInNotes] = useState('');
-  const [walkInLoading, setWalkInLoading] = useState(false);
-  const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
-  const [lastWalkIn, setLastWalkIn] = useState<any | null>(null);
-  // Reservation access controlled by occupation
-
-  const isFBManager = profile.role === 'manager' && profile.department === 'F&B';
-  const isExecutive = profile.role === 'manager' && profile.department === 'None';
-  const isStaff = profile.role === 'staff' && profile.department === 'F&B';
-  const isGuest = profile.role === 'guest';
-  // ✅ Reservation staff = F&B Manager, Executive, OR Reservation Agent occupation
-  const isReservationAgent = profile.occupation === 'Reservation Agent';
-  const isReservationStaff = isFBManager || isExecutive || isReservationAgent;
-
-  const fetchBookings = useCallback(async () => {
-    let q = supabase.from('restaurant_bookings').select('*').order('created_at', { ascending: false });
-    if (isGuest) q = q.eq('guest_id', profile.uid);
-    const { data } = await q;
-    if (data) setBookings(data);
-  }, [profile, isGuest]);
-
-  const fetchMenuItems = useCallback(async () => {
-    const { data } = await supabase.from('menu_items').select('*').order('category');
-    if (data) setMenuItems(data);
-  }, []);
-
-  const fetchSettings = useCallback(async () => {
-    const { data } = await supabase.from('restaurant_settings').select('*');
-    if (data) {
-      const map: any = {};
-      data.forEach((s: any) => { map[s.restaurant] = s; });
-      setRestSettings(map);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchBookings();
-    if (isFBManager || isExecutive || isStaff) { fetchMenuItems(); fetchSettings(); }
-    // ✅ Unique channel per user to avoid conflicts
-    const channel = supabase.channel(`restaurant-bookings-${profile.uid}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurant_bookings' }, () => {
-        fetchBookings();
-      })
-      .subscribe();
-    // ✅ Polling fallback every 3 seconds
-    const poll = setInterval(() => { fetchBookings(); }, 3000);
-    return () => { supabase.removeChannel(channel); clearInterval(poll); };
-  }, [fetchBookings, fetchMenuItems, fetchSettings, isFBManager, isExecutive, isStaff]);
-
-  const submitBooking = async () => {
-    if (!date || !time || !pax) { showToast('Please fill in date, time and number of guests', 'error'); return; }
-    setLoading(true);
-    try {
-      const ref = generateBookingRef();
-      const { data, error } = await supabase.from('restaurant_bookings').insert({
-        booking_ref: ref,
-        guest_id: profile.uid,
-        guest_name: profile.displayName,
-        room_number: profile.roomNumber || '',
-        restaurant: selectedRestaurant,
-        date, time,
-        pax: Number(pax),
-        notes,
-        status: 'Pending',
-      }).select().single();
-      if (error) throw error;
-      showToast(`Reservation submitted! Ref: ${ref} — Our team will confirm shortly.`, 'success');
-      setDate(''); setTime(''); setPax('2'); setNotes('');
-      fetchBookings();
-      setActiveTab('mybookings');
-      setTimeout(() => { if (data) printBookingTicket(data); }, 1000);
-    } catch (e: any) { showToast(e.message || 'Booking failed', 'error'); }
-    finally { setLoading(false); }
-  };
-
-  const updateBooking = async () => {
-    if (!modifyBooking) return;
-    const { error } = await supabase.from('restaurant_bookings').update({
-      date: modifyBooking.date,
-      time: modifyBooking.time,
-      pax: modifyBooking.pax,
-      notes: modifyBooking.notes,
-      status: 'Modified',
-    }).eq('id', modifyBooking.id);
-    if (!error) { showToast('Booking updated successfully!', 'success'); setModifyBooking(null); fetchBookings(); }
-    else showToast('Failed to update booking', 'error');
-  };
-
-  const cancelBooking = async (id: string) => {
-    const { error } = await supabase.from('restaurant_bookings').update({ status: 'Cancelled' }).eq('id', id);
-    if (error) { showToast('Failed to cancel: ' + error.message, 'error'); return; }
-    showToast('Booking cancelled successfully', 'info'); 
-    setCancelConfirm(null); 
-    fetchBookings();
-  };
-
-  // ─── WALK-IN BOOKING ────────────────────────────────────────────────────────
-  const submitWalkIn = async () => {
-    if (!walkInName || !walkInDate || !walkInTime || !walkInPax) {
-      showToast('Please fill in guest name, date, time and guests', 'error'); return;
-    }
-    setWalkInLoading(true);
-    try {
-      const ref = generateBookingRef();
-      const restaurant = RESTAURANTS.find(r => r.id === walkInRestaurant);
-      const { data, error } = await supabase.from('restaurant_bookings').insert({
-        booking_ref: ref,
-        guest_id: 'WALKIN-' + Date.now(),
-        guest_name: walkInName.toUpperCase(),
-        room_number: 'WALK-IN',
-        restaurant: walkInRestaurant,
-        date: walkInDate,
-        time: walkInTime,
-        pax: Number(walkInPax),
-        notes: walkInNotes,
-        status: 'Confirmed',
-        confirmed_by: profile.displayName,
-        confirmed_at: new Date().toISOString(),
-      }).select().single();
-      if (error) throw error;
-
-      showToast(`Walk-in booking confirmed! Ref: ${ref}`, 'success');
-
-      // Store booking info for sending confirmation
-      setLastWalkIn({
-        ref, name: walkInName.toUpperCase(),
-        phone: walkInPhone, email: walkInEmail,
-        restaurant: restaurant?.name || walkInRestaurant,
-        date: walkInDate, time: walkInTime, pax: walkInPax, notes: walkInNotes,
-        data,
-      });
-
-      // Reset form but stay on walkin tab to show send options
-      setWalkInName(''); setWalkInPhone(''); setWalkInEmail('');
-      setWalkInDate(''); setWalkInTime(''); setWalkInPax('2'); setWalkInNotes('');
-      fetchBookings();
-    } catch (e: any) {
-      showToast(e.message || 'Failed to create booking', 'error');
-    } finally { setWalkInLoading(false); }
-  };
-
-  // ─── PDF REPORT ───────────────────────────────────────────────────────────
-  const generatePDFReport = async () => {
-    showToast('Fetching latest data...', 'info');
-    // Always fetch fresh data from Supabase before generating
-    const { data: freshData, error } = await supabase
-      .from('restaurant_bookings')
-      .select('*')
-      .order('time', { ascending: true });
-    if (error) { showToast('Failed to fetch data: ' + error.message, 'error'); return; }
-    const allBookings = freshData || [];
-    const filtered = allBookings.filter((b: any) => {
-      const bDate = b.date ? String(b.date).substring(0, 10) : '';
-      return bDate === reportDate && b.status !== 'Cancelled';
-    });
-    if (filtered.length === 0) {
-      showToast('No bookings found for ' + reportDate + '. Try a different date.', 'error');
-      return;
-    }
-
-    const inHouse = filtered.filter(b => b.room_number !== 'WALK-IN');
-    const walkIns = filtered.filter(b => b.room_number === 'WALK-IN');
-    const totalPax = filtered.reduce((s, b) => s + (Number(b.pax) || 0), 0);
-    const inHousePax = inHouse.reduce((s, b) => s + (Number(b.pax) || 0), 0);
-    const walkInPaxTotal = walkIns.reduce((s, b) => s + (Number(b.pax) || 0), 0);
-
-    // Pax breakdown
-    const paxGroups: Record<string, number> = {};
-    filtered.forEach(b => {
-      const k = Number(b.pax) >= 8 ? '8+ Pax' : Number(b.pax) + ' Pax';
-      paxGroups[k] = (paxGroups[k] || 0) + 1;
-    });
-
-    // Build rows using string concat — no nested backticks
-    const buildRow = (b: any, i: number) => {
-      const restName = RESTAURANTS.find((r: any) => r.id === b.restaurant)?.name || b.restaurant || '';
-      const roomDisplay = b.room_number === 'WALK-IN' ? '<span style="color:#7C3AED;font-weight:bold">OUTSIDE</span>' : b.room_number;
-      return '<tr style="background:' + (i % 2 === 0 ? '#ffffff' : '#f9f8f5') + '">' +
-        '<td style="padding:6px 8px;border-bottom:1px solid #eee;color:#C5A059;font-weight:bold">' + (i + 1) + '</td>' +
-        '<td style="padding:6px 8px;border-bottom:1px solid #eee">' + (b.date || '') + '</td>' +
-        '<td style="padding:6px 8px;border-bottom:1px solid #eee;font-weight:bold">' + restName + '</td>' +
-        '<td style="padding:6px 8px;border-bottom:1px solid #eee;font-weight:bold">' + (b.guest_name || '').toUpperCase() + '</td>' +
-        '<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center">' + roomDisplay + '</td>' +
-        '<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;font-weight:bold">' + (b.pax || '') + '</td>' +
-        '<td style="padding:6px 8px;border-bottom:1px solid #eee;color:#555;font-style:italic">' + (b.notes || '—') + '</td>' +
-        '<td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:9px;color:#999">' + (b.time || '') + '</td>' +
-        '</tr>';
-    };
-
-    const paxSummaryHtml = Object.entries(paxGroups).sort().map(([k, v]) =>
-      '<div style="background:#f8f6f0;border:1px solid #ddd;padding:8px 14px;text-align:center;min-width:80px">' +
-      '<div style="font-size:18px;font-weight:bold;color:#001529">' + v + '</div>' +
-      '<div style="font-size:8px;color:#999;text-transform:uppercase">' + k + '</div></div>'
-    ).join('');
-
-    const tableHeader = '<thead><tr style="background:#f4f2ec">' +
-      '<th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">S/No</th>' +
-      '<th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Date</th>' +
-      '<th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Restaurant</th>' +
-      '<th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Guest Name</th>' +
-      '<th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Room #</th>' +
-      '<th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Pax</th>' +
-      '<th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Guest Notes</th>' +
-      '<th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Time</th>' +
-      '</tr></thead>';
-
-    const inHouseRows = inHouse.map((b: any, i: number) => buildRow(b, i)).join('');
-    const walkInRows = walkIns.map((b: any, i: number) => buildRow(b, i)).join('');
-
-    const inHouseSection = inHouse.length > 0
-      ? '<div style="background:#001529;color:white;padding:7px 10px;font-weight:bold;font-size:10px;letter-spacing:1px;margin-bottom:0">IN-HOUSE GUESTS</div>' +
-        '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' + tableHeader + '<tbody>' + inHouseRows + '</tbody>' +
-        '<tfoot><tr><td colspan="8" style="padding:6px 8px;font-weight:bold;font-size:10px;background:#f4f2ec;border-top:2px solid #001529">' +
-        'Total In-House: ' + inHouse.length + ' bookings &nbsp;·&nbsp; ' + inHousePax + ' guests</td></tr></tfoot></table>'
-      : '';
-
-    const walkInSection = walkIns.length > 0
-      ? '<div style="background:#4A0000;color:white;padding:7px 10px;font-weight:bold;font-size:10px;letter-spacing:1px;margin-bottom:0">OUTSIDE / WALK-IN GUESTS</div>' +
-        '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' + tableHeader + '<tbody>' + walkInRows + '</tbody>' +
-        '<tfoot><tr><td colspan="8" style="padding:6px 8px;font-weight:bold;font-size:10px;background:#f4f2ec;border-top:2px solid #4A0000">' +
-        'Total Walk-in: ' + walkIns.length + ' bookings &nbsp;·&nbsp; ' + walkInPaxTotal + ' guests</td></tr></tfoot></table>'
-      : '';
-
-    const html = '<!DOCTYPE html><html><head><title>Reservation Report ' + reportDate + '</title>' +
-      '<style>@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600&display=swap");' +
-      '* { margin:0;padding:0;box-sizing:border-box; }' +
-      'body { font-family:Inter,sans-serif;background:white;padding:20px;font-size:11px; }' +
-      '@media print { body { padding:8px; } }</style></head><body>' +
-
-      // Header
-      '<div style="background:#001529;color:white;padding:16px 20px;margin-bottom:12px">' +
-      '<div style="font-family:Playfair Display,serif;font-size:22px;color:#C5A059;letter-spacing:3px">SENTINEL PRO</div>' +
-      '<div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:4px;letter-spacing:1px">RESTAURANT RESERVATIONS REPORT &nbsp;·&nbsp; ' + reportDate + '</div>' +
-      '<div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">' +
-      '<div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center"><div style="font-size:20px;font-weight:bold;color:#C5A059">' + filtered.length + '</div><div style="font-size:8px;color:rgba(255,255,255,0.5);text-transform:uppercase">Total Reservations</div></div>' +
-      '<div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center"><div style="font-size:20px;font-weight:bold;color:#C5A059">' + totalPax + '</div><div style="font-size:8px;color:rgba(255,255,255,0.5);text-transform:uppercase">Total People</div></div>' +
-      '<div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center"><div style="font-size:20px;font-weight:bold;color:#C5A059">' + inHouse.length + '</div><div style="font-size:8px;color:rgba(255,255,255,0.5);text-transform:uppercase">In-House</div></div>' +
-      '<div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center"><div style="font-size:20px;font-weight:bold;color:#C5A059">' + walkIns.length + '</div><div style="font-size:8px;color:rgba(255,255,255,0.5);text-transform:uppercase">Walk-in</div></div>' +
-      '</div></div>' +
-
-      // Pax breakdown
-      '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">' + paxSummaryHtml + '</div>' +
-
-      // Tables
-      inHouseSection +
-      walkInSection +
-
-      // Footer
-      '<div style="text-align:center;color:#999;font-size:8px;margin-top:16px;border-top:1px solid #eee;padding-top:8px">' +
-      'SENTINEL PRO &nbsp;·&nbsp; Luxury Hotel Management &nbsp;·&nbsp; Report generated ' + new Date().toLocaleString() + '</div>' +
-      '<script>setTimeout(function(){ window.print(); }, 600);</script>' +
-      '</body></html>';
-
-    const win = window.open('', '_blank');
-    if (win) {
-      win.document.open();
-      win.document.write(html);
-      win.document.close();
-    } else {
-      showToast('Popup blocked — please allow popups for this site', 'error');
-    }
-  };
-
-    const confirmBooking = async (id: string, guestName: string, restaurant: string, date: string, time: string) => {
-    const { error } = await supabase.from('restaurant_bookings').update({ 
-      status: 'Confirmed',
-    }).eq('id', id);
-    if (error) { showToast('Failed to confirm booking: ' + error.message, 'error'); return; }
-    showToast(`Booking confirmed for ${guestName}!`, 'success'); 
-    fetchBookings();
-  };
-
-  const rejectBooking = async () => {
-    if (!rejectModal || !rejectReason) { showToast('Please select a reason', 'error'); return; }
-    const message = rejectAlt 
-      ? `We regret that ${rejectModal.restaurant} is not available on ${rejectModal.date} at ${rejectModal.time}. ${rejectReason}. We would like to suggest ${rejectAlt} as an alternative — please let us know if this works for you.`
-      : `We regret that ${rejectModal.restaurant} is not available on ${rejectModal.date} at ${rejectModal.time}. ${rejectReason}. Please contact reception to explore other options.`;
-    const { error } = await supabase.from('restaurant_bookings').update({ 
-      status: 'Rejected',
-      rejection_reason: message,
-    }).eq('id', rejectModal.id);
-    if (error) { showToast('Failed to reject booking: ' + error.message, 'error'); return; }
-    showToast('Booking rejected — guest has been notified', 'info');
-    setRejectModal(null); setRejectReason(''); setRejectAlt('');
-    fetchBookings();
-  };
-
-  const exportBookings = () => {
-    const headers = 'Ref,Guest,Room,Restaurant,Date,Time,Pax,Notes,Status,Created\n';
-    const rows = bookings.map(b =>
-      `${b.booking_ref},${b.guest_name},${b.room_number},${b.restaurant},${b.date},${b.time},${b.pax},"${b.notes || ''}",${b.status},${b.created_at}`
-    ).join('\n');
-    const link = document.createElement('a');
-    link.setAttribute('href', encodeURI('data:text/csv;charset=utf-8,' + headers + rows));
-    link.setAttribute('download', `RestaurantBookings_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    showToast('Bookings exported to CSV!', 'success');
-  };
-
-  const addMenuItem = async () => {
-    if (!newMenuItem.name || !newMenuItem.price) { showToast('Please fill name and price', 'error'); return; }
-    const { error } = await supabase.from('menu_items').insert({
-      name: newMenuItem.name, price: Number(newMenuItem.price),
-      category: newMenuItem.category, restaurant: newMenuItem.restaurant,
-    });
-    if (!error) { showToast('Menu item added!', 'success'); fetchMenuItems(); setNewMenuItem({ name: '', price: '', category: 'all_day', restaurant: 'turquoise' }); }
-  };
-
-  const deleteMenuItem = async (id: string) => {
-    await supabase.from('menu_items').delete().eq('id', id);
-    showToast('Item removed', 'info'); fetchMenuItems();
-  };
-
-  const saveRestaurantSettings = async (restaurantId: string, settings: any) => {
-    await supabase.from('restaurant_settings').upsert(
-      { restaurant: restaurantId, ...settings },
-      { onConflict: 'restaurant' }
-    );
-    showToast('Settings saved!', 'success'); fetchSettings();
-  };
-
-  const statusColor = (status: string) => {
-    if (status === 'Confirmed') return 'text-green-400 border-green-400';
-    if (status === 'Cancelled') return 'text-red-400 border-red-400';
-    if (status === 'Rejected') return 'text-red-500 border-red-500';
-    if (status === 'Modified') return 'text-blue-400 border-blue-400';
-    if (status === 'Pending') return 'text-yellow-400 border-yellow-400';
-    return 'text-gold border-gold';
-  };
-
-  const tabs = [
-    ...(isGuest ? [{ key: 'book', label: '+ New Booking' }] : []),
-    ...(isGuest ? [{ key: 'mybookings', label: 'My Bookings' }] : []),
-    ...(isReservationStaff ? [{ key: 'manage', label: `All Bookings (${bookings.filter(b => b.status !== 'Cancelled').length})` }] : []),
-    ...(isReservationStaff ? [{ key: 'walkin', label: '🚶 Walk-in / Outside' }] : []),
-    ...(isFBManager || isExecutive ? [{ key: 'menu', label: '🍽 Menu' }] : []),
-    ...(isFBManager || isExecutive ? [{ key: 'settings', label: '⚙ Settings' }] : []),
-  ];
-
-  return (
-    <div className={cn('min-h-screen', isGuest ? 'bg-[#FCF9F2]' : 'bg-[#001529] text-white')}>
-      {/* Reject Modal */}
-      <AnimatePresence>
-        {rejectModal && (
-          <div className="fixed inset-0 z-[30000] flex items-center justify-center p-4 bg-navy/90 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#001c36] border border-red-500 w-full max-w-md p-6 shadow-2xl space-y-4">
-              <h3 className="text-lg font-serif text-white flex items-center gap-2"><AlertCircle size={18} className="text-red-400" /> Reject Booking</h3>
-              <div className="bg-navy/50 p-3 rounded">
-                <p className="text-gold font-bold text-sm">{RESTAURANTS.find(r => r.id === rejectModal.restaurant)?.name}</p>
-                <p className="text-white/60 text-[9px]">{rejectModal.guest_name} · Room {rejectModal.room_number} · {rejectModal.date} at {rejectModal.time} · {rejectModal.pax} pax</p>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] text-white/50 uppercase font-bold block">Reason for Rejection</label>
-                <select value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full bg-white border border-red-400 p-2.5 text-sm text-navy outline-none">
-                  <option value="">-- Select reason --</option>
-                  <option value="Unfortunately, we are fully booked at this time">Fully booked at requested time</option>
-                  <option value="The restaurant is closed on this day">Restaurant closed on this day</option>
-                  <option value="The requested time is outside our operating hours">Outside operating hours</option>
-                  <option value="We are unable to accommodate this party size at the requested time">Cannot accommodate party size</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] text-white/50 uppercase font-bold block">Suggest Alternative (Optional)</label>
-                <select value={rejectAlt} onChange={e => setRejectAlt(e.target.value)} className="w-full bg-white border border-gold/30 p-2.5 text-sm text-navy outline-none">
-                  <option value="">-- No alternative --</option>
-                  {RESTAURANTS.filter(r => r.id !== rejectModal.restaurant).map(r => (
-                    <option key={r.id} value={r.name}>{r.emoji} {r.name} — {r.cuisine}</option>
-                  ))}
-                  <option value="an earlier time slot">An earlier time slot</option>
-                  <option value="a later time slot">A later time slot</option>
-                </select>
-              </div>
-              <div className="bg-navy/30 p-3 text-[9px] text-white/50 italic rounded">
-                <p className="text-gold/80 font-bold mb-1">Message to guest:</p>
-                <p>We regret that {rejectModal.restaurant} is not available on {rejectModal.date} at {rejectModal.time}. {rejectReason}{rejectAlt ? `. We suggest ${rejectAlt} as an alternative.` : '.'}</p>
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => { setRejectModal(null); setRejectReason(''); setRejectAlt(''); }} className="flex-1 py-2.5 border border-gold/20 text-gold text-[10px] font-bold uppercase">Cancel</button>
-                <button disabled={!rejectReason} onClick={rejectBooking} className="flex-1 py-2.5 bg-red-600 text-white text-[10px] font-bold uppercase disabled:opacity-40">Send Rejection</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Modify Modal */}
-      <AnimatePresence>
-        {modifyBooking && (
-          <div className="fixed inset-0 z-[30000] flex items-center justify-center p-4 bg-navy/80 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white w-full max-w-md p-6 shadow-2xl border border-gold">
-              <h3 className="text-lg font-serif text-navy mb-4">Modify Booking {modifyBooking.booking_ref}</h3>
-              <div className="space-y-3">
-                {[{ label: 'Date', key: 'date', type: 'date' }, { label: 'Time', key: 'time', type: 'time' }, { label: 'Guests', key: 'pax', type: 'number' }].map(f => (
-                  <div key={f.key}>
-                    <label className="text-[9px] uppercase tracking-widest text-gold font-bold block mb-1">{f.label}</label>
-                    <input type={f.type} value={modifyBooking[f.key]} onChange={e => setModifyBooking({ ...modifyBooking, [f.key]: e.target.value })}
-                      className="w-full border border-gold p-2.5 text-sm text-navy outline-none" />
-                  </div>
-                ))}
-                <div>
-                  <label className="text-[9px] uppercase tracking-widest text-gold font-bold block mb-1">Special Requests</label>
-                  <textarea value={modifyBooking.notes || ''} onChange={e => setModifyBooking({ ...modifyBooking, notes: e.target.value })}
-                    className="w-full border border-gold p-2.5 text-sm text-navy outline-none h-16 resize-none" />
-                </div>
-              </div>
-              <div className="flex gap-3 mt-4">
-                <button onClick={() => setModifyBooking(null)} className="flex-1 py-2.5 border border-navy/20 text-navy text-[10px] font-bold uppercase">Cancel</button>
-                <button onClick={updateBooking} className="flex-1 py-2.5 bg-navy text-white text-[10px] font-bold uppercase">Save Changes</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Cancel Confirm Modal */}
-      <AnimatePresence>
-        {cancelConfirm && (
-          <div className="fixed inset-0 z-[30000] flex items-center justify-center p-4 bg-navy/80 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white w-full max-w-sm p-6 shadow-2xl border-t-4 border-red-500">
-              <h3 className="text-lg font-serif text-navy mb-2">Cancel Booking?</h3>
-              <p className="text-sm text-gray-500 mb-2">Booking Reference: <strong>{cancelConfirm.booking_ref}</strong></p>
-              <p className="text-sm text-gray-500 mb-4">{RESTAURANTS.find(r => r.id === cancelConfirm.restaurant)?.name} · {cancelConfirm.date} at {cancelConfirm.time}</p>
-              <div className="flex gap-3">
-                <button onClick={() => setCancelConfirm(null)} className="flex-1 py-2.5 border border-navy/20 text-navy text-[10px] font-bold uppercase">Keep Booking</button>
-                <button onClick={() => cancelBooking(cancelConfirm.id)} className="flex-1 py-2.5 bg-red-600 text-white text-[10px] font-bold uppercase">Yes, Cancel</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Access denied for regular F&B staff who are not Reservation Agents */}
-      {isStaff && !isReservationAgent && (
-        <div className="min-h-screen bg-[#001529] flex items-center justify-center p-6">
-          <div className="bg-[#001c36] border border-gold/20 p-8 w-full max-w-sm text-center space-y-4">
-            <div className="text-4xl">🚫</div>
-            <h2 className="text-xl font-serif text-gold">Access Restricted</h2>
-            <p className="text-white/50 text-sm">Restaurant reservations are managed by the Reservation Agent team only.</p>
-            <p className="text-white/30 text-[9px] uppercase tracking-widest">Contact your F&B Manager for assistance</p>
-          </div>
-        </div>
-      )}
-
-      {/* Show portal only if guest OR reservation staff */}
-      {(isGuest || isReservationStaff) && <>
-
-      {/* Header */}
-      <div className={cn('px-4 pt-4 pb-0', isGuest ? 'bg-navy' : 'bg-navy border-b border-gold/20')}>
-        <div className="flex justify-between items-center mb-3">
-          <div>
-            <h1 className="text-xl font-serif text-gold">Restaurant Reservations</h1>
-            <p className="text-[9px] text-white/50 uppercase tracking-widest">{isGuest ? `Room ${profile.roomNumber}` : `${profile.displayName} · ${profile.department || 'Executive'}`}</p>
-          </div>
-          {(isFBManager || isExecutive || isStaff) && (
-            <div className="flex gap-2">
-            <button onClick={() => generatePDFReport()} className="flex items-center gap-1 bg-gold text-navy px-3 py-1.5 text-[9px] font-bold uppercase">
-              📄 PDF Report
-            </button>
-            <button onClick={exportBookings} className="flex items-center gap-1 border border-gold/30 text-gold px-3 py-1.5 text-[9px] font-bold uppercase">
-              <Download size={11} /> CSV
-            </button>
-          </div>
-          )}
-        </div>
-        {isReservationStaff && (
-          <div className="flex items-center gap-2 px-1 pb-1">
-            <span className="text-[8px] text-white/40 uppercase">Report Date:</span>
-            <input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)}
-              className="bg-white/10 text-white text-[9px] px-2 py-1 border border-gold/20 outline-none" />
-          </div>
-        )}
-        <div className="flex gap-0.5 flex-wrap pb-0">
-          {tabs.map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
-              className={cn('px-3 py-2 text-[9px] font-bold uppercase tracking-wider border-b-2',
-                activeTab === tab.key ? 'border-gold text-gold' : 'border-transparent text-white/50')}>
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="p-4 space-y-4">
-        {/* NEW BOOKING */}
-        {activeTab === 'book' && isGuest && (
-          <div className="space-y-4">
-            <p className="text-[9px] uppercase tracking-widest text-gold font-bold">Select Restaurant</p>
-            <div className="space-y-2">
-              {RESTAURANTS.map(r => (
-                <button key={r.id} onClick={() => setSelectedRestaurant(r.id)}
-                  className={cn('w-full p-4 border text-left flex items-center gap-3', selectedRestaurant === r.id ? 'border-gold bg-gold/5' : 'border-navy/10 bg-white')}>
-                  <span className="text-2xl">{r.emoji}</span>
-                  <div>
-                    <p className="text-navy font-bold font-serif">{r.name}</p>
-                    <p className="text-[10px] text-navy/60 italic">{r.cuisine}</p>
-                    {restSettings[r.id] && <p className="text-[9px] text-gold font-bold mt-0.5">{restSettings[r.id].opening_time} – {restSettings[r.id].closing_time}</p>}
-                  </div>
-                  {selectedRestaurant === r.id && <Check size={18} className="text-gold ml-auto" />}
-                </button>
-              ))}
-            </div>
-            <div className="bg-white p-4 border border-gold/20 space-y-3">
-              {[{ label: 'Date', key: 'date', type: 'date', val: date, set: setDate },
-                { label: 'Time', key: 'time', type: 'time', val: time, set: setTime },
-                { label: 'Number of Guests', key: 'pax', type: 'number', val: pax, set: setPax }].map(f => (
-                <div key={f.key}>
-                  <label className="text-[9px] uppercase tracking-widest text-gold font-bold block mb-1">{f.label}</label>
-                  <input type={f.type} value={f.val} onChange={e => f.set(e.target.value)} min={f.type === 'number' ? '1' : undefined}
-                    className="w-full border border-gold/30 p-3 text-sm text-navy outline-none focus:border-gold" />
-                </div>
-              ))}
-              <div>
-                <label className="text-[9px] uppercase tracking-widest text-gold font-bold block mb-1">Special Requests / Dietary Requirements</label>
-                <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Allergies, anniversary, special setup..."
-                  className="w-full border border-gold/30 p-3 text-sm text-navy outline-none h-20 resize-none focus:border-gold" />
-              </div>
-              <button onClick={submitBooking} disabled={loading}
-                className="w-full bg-navy text-white py-4 text-[10px] font-bold uppercase tracking-widest hover:bg-navy/80">
-                {loading ? 'Confirming...' : 'Confirm Reservation'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* MY BOOKINGS */}
-        {activeTab === 'mybookings' && isGuest && (
-          <div className="space-y-3">
-            {bookings.length === 0 ? (
-              <div className="py-16 text-center">
-                <p className="text-2xl mb-2">🍽️</p>
-                <p className="text-navy/40 font-serif italic">No reservations yet</p>
-                <button onClick={() => setActiveTab('book')} className="mt-4 bg-navy text-white px-6 py-2 text-[10px] font-bold uppercase">Make a Reservation</button>
-              </div>
-            ) : bookings.map(b => {
-              const restaurant = RESTAURANTS.find(r => r.id === b.restaurant);
-              return (
-                <div key={b.id} className="bg-white border border-navy/10 shadow-sm overflow-hidden">
-                  <div className="bg-navy px-4 py-3 flex justify-between items-center">
-                    <div>
-                      <p className="text-gold font-serif text-sm">{restaurant?.emoji} {restaurant?.name}</p>
-                      <p className="text-white/50 text-[9px]">Ref: {b.booking_ref}</p>
-                    </div>
-                    <span className={cn('text-[9px] font-bold px-2 py-1 border', statusColor(b.status))}>{b.status}</span>
-                  </div>
-                  <div className="p-4 space-y-2">
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      {[{ label: 'Date', val: formatBookingDate(b.date).split(',')[0] + ', ' + b.date.split('-').reverse().slice(0,2).join('/') },
-                        { label: 'Time', val: b.time },
-                        { label: 'Guests', val: `${b.pax} pax` }].map(d => (
-                        <div key={d.label} className="bg-gray-50 p-2">
-                          <p className="text-[8px] text-gray-400 uppercase font-bold">{d.label}</p>
-                          <p className="text-navy font-bold text-sm mt-0.5">{d.val}</p>
-                        </div>
-                      ))}
-                    </div>
-                    {b.notes && <p className="text-[10px] text-navy/60 italic border-l-2 border-gold pl-2">📝 {b.notes}</p>}
-                    {b.status === 'Pending' && (
-                      <div className="bg-yellow-50 border border-yellow-200 p-2 rounded text-[10px] text-yellow-700">
-                        ⏳ Your reservation is pending confirmation from our restaurant team. You will be notified shortly.
-                      </div>
-                    )}
-                    {b.status === 'Rejected' && b.rejection_reason && (
-                      <div className="bg-red-50 border border-red-200 p-3 rounded space-y-1">
-                        <p className="text-[9px] text-red-600 font-bold">Message from our team:</p>
-                        <p className="text-[10px] text-red-700 italic">{b.rejection_reason}</p>
-                        <button onClick={() => setActiveTab('book')} className="mt-2 bg-navy text-white text-[9px] font-bold uppercase px-3 py-1.5 w-full">
-                          Make New Reservation
-                        </button>
-                      </div>
-                    )}
-                    {b.status !== 'Cancelled' && b.status !== 'Rejected' && (
-                      <div className="flex gap-2 pt-1">
-                        <button onClick={() => printBookingTicket(b)} className="flex-1 py-2 bg-navy text-white text-[9px] font-bold uppercase flex items-center justify-center gap-1">
-                          <Download size={11} /> Download Ticket
-                        </button>
-                        <button onClick={() => setModifyBooking(b)} className="flex-1 py-2 border border-gold text-navy text-[9px] font-bold uppercase">
-                          Modify
-                        </button>
-                        <button onClick={() => setCancelConfirm(b)} className="py-2 px-3 border border-red-300 text-red-500 text-[9px] font-bold uppercase">
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* MANAGE BOOKINGS — Staff/Manager/Executive */}
-        {activeTab === 'manage' && (isStaff || isFBManager || isExecutive) && (
-          <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-2 text-center mb-2">
-              {[{ label: 'Total', val: bookings.length, color: 'text-gold' },
-                { label: 'Confirmed', val: bookings.filter(b => b.status === 'Confirmed').length, color: 'text-green-400' },
-                { label: 'Cancelled', val: bookings.filter(b => b.status === 'Cancelled').length, color: 'text-red-400' }].map(s => (
-                <div key={s.label} className="bg-[#001c36] border border-gold/10 p-3">
-                  <p className={cn('text-xl font-serif font-bold', s.color)}>{s.val}</p>
-                  <p className="text-[8px] text-white/40 uppercase">{s.label}</p>
-                </div>
-              ))}
-            </div>
-            {bookings.length === 0 ? <p className="text-white/20 italic text-center py-12">No bookings yet</p>
-              : bookings.map(b => {
-                const restaurant = RESTAURANTS.find(r => r.id === b.restaurant);
-                return (
-                  <div key={b.id} className={cn('border p-4', b.status === 'Cancelled' ? 'border-red-500/30 bg-red-900/5 opacity-60' : 'border-gold/10 bg-[#001c36]')}>
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="text-white font-bold font-serif">{restaurant?.emoji} {restaurant?.name}</p>
-                        <p className="text-[9px] text-gold font-bold">Ref: {b.booking_ref}</p>
-                      </div>
-                      <span className={cn('text-[9px] font-bold px-2 py-1 border', statusColor(b.status))}>{b.status}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 mb-2">
-                      {[{ l: '👤 Guest', v: b.guest_name },
-                        { l: '🏠 Room', v: b.room_number },
-                        { l: '📅 Date', v: b.date },
-                        { l: '🕐 Time', v: b.time },
-                        { l: '👥 Guests', v: `${b.pax} pax` },
-                        { l: '📝 Notes', v: b.notes || '—' }].map(d => (
-                        <div key={d.l}>
-                          <span className="text-[8px] text-white/40 uppercase">{d.l}: </span>
-                          <span className="text-[9px] text-white font-bold">{d.v}</span>
-                        </div>
-                      ))}
-                    </div>
-                    {/* Show rejection reason to staff */}
-                    {b.rejection_reason && (
-                      <div className="bg-red-900/20 border border-red-500/30 p-2 mt-2 rounded">
-                        <p className="text-[8px] text-red-400 font-bold mb-0.5">Rejection Message Sent:</p>
-                        <p className="text-[8px] text-white/60 italic">{b.rejection_reason}</p>
-                      </div>
-                    )}
-                    {b.status === 'Pending' && isReservationStaff && (
-                      <div className="flex gap-2 mt-2">
-                        <button onClick={() => confirmBooking(b.id, b.guest_name, b.restaurant, b.date, b.time)} className="flex-1 py-2 bg-green-600 text-white text-[8px] font-bold uppercase">
-                          ✓ Confirm Booking
-                        </button>
-                        <button onClick={() => { setRejectModal(b); setRejectReason(''); setRejectAlt(''); }} className="flex-1 py-2 bg-red-700 text-white text-[8px] font-bold uppercase">
-                          ✕ Reject
-                        </button>
-                      </div>
-                    )}
-                    {b.status === 'Confirmed' && isReservationStaff && (
-                      <div className="flex gap-2 mt-2">
-                        <button onClick={() => printBookingTicket(b)} className="flex-1 py-1.5 bg-gold/20 text-gold text-[8px] font-bold uppercase border border-gold/30">
-                          🖨 Print Ticket
-                        </button>
-                        <button onClick={() => cancelBooking(b.id)} className="py-1.5 px-3 bg-red-800 text-white text-[8px] font-bold uppercase">
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-          </div>
-        )}
-
-        {/* WALK-IN BOOKING TAB */}
-        {activeTab === 'walkin' && isReservationStaff && (
-          <div className="space-y-4">
-            <div className="bg-[#4A0000]/40 border border-[#7C3AED]/30 p-3 rounded">
-              <p className="text-[10px] text-white font-bold">🚶 Walk-in / Outside Guest Reservation</p>
-              <p className="text-[9px] text-white/50 mt-0.5">For guests who call or walk in directly — not hotel room guests. Booking is auto-confirmed.</p>
-            </div>
-            <div className="bg-[#001c36] border border-gold/10 p-4 space-y-3">
-              {[
-                { label: 'Guest Full Name *', key: 'name', type: 'text', val: walkInName, set: setWalkInName, placeholder: 'e.g. John Smith' },
-                { label: 'WhatsApp Number (optional)', key: 'phone', type: 'tel', val: walkInPhone, set: setWalkInPhone, placeholder: '+971XXXXXXXXX' },
-                { label: 'Email Address (optional)', key: 'email', type: 'email', val: walkInEmail, set: setWalkInEmail, placeholder: 'guest@email.com' },
-              ].map(f => (
-                <div key={f.key}>
-                  <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">{f.label}</label>
-                  <input type={f.type} value={f.val} onChange={e => f.set(e.target.value)} placeholder={f.placeholder}
-                    className="w-full bg-white border border-gold/30 p-2.5 text-sm text-navy outline-none focus:border-gold" />
-                </div>
-              ))}
-              <div>
-                <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Restaurant *</label>
-                <select value={walkInRestaurant} onChange={e => setWalkInRestaurant(e.target.value)}
-                  className="w-full bg-white border border-gold p-2.5 text-sm text-navy outline-none">
-                  {RESTAURANTS.map(r => <option key={r.id} value={r.id}>{r.emoji} {r.name}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { label: 'Date *', type: 'date', val: walkInDate, set: setWalkInDate },
-                  { label: 'Time *', type: 'time', val: walkInTime, set: setWalkInTime },
-                  { label: 'Guests *', type: 'number', val: walkInPax, set: setWalkInPax },
-                ].map((f, i) => (
-                  <div key={i}>
-                    <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">{f.label}</label>
-                    <input type={f.type} value={f.val} onChange={e => f.set(e.target.value)} min={f.type === 'number' ? '1' : undefined}
-                      className="w-full bg-white border border-gold/30 p-2.5 text-sm text-navy outline-none" />
-                  </div>
-                ))}
-              </div>
-              <div>
-                <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Special Requests / Notes</label>
-                <textarea value={walkInNotes} onChange={e => setWalkInNotes(e.target.value)}
-                  placeholder="Dietary requirements, occasion, table preference..."
-                  className="w-full bg-white border border-gold/30 p-2.5 text-sm text-navy outline-none h-16 resize-none focus:border-gold" />
-              </div>
-              <div className="bg-navy/30 p-3 text-[9px] text-white/50 space-y-1">
-                <p className="text-gold font-bold text-[10px]">What happens after confirming:</p>
-                <p>✅ Booking created immediately as Confirmed</p>
-                {walkInPhone && <p>📱 WhatsApp confirmation message sent to {walkInPhone}</p>}
-                {walkInEmail && <p>✉️ Email confirmation sent to {walkInEmail}</p>}
-                <p>🖨️ Booking ticket opens for printing</p>
-              </div>
-              <button onClick={submitWalkIn} disabled={walkInLoading}
-                className="w-full bg-gold text-navy py-4 text-[10px] font-bold uppercase tracking-widest hover:bg-gold/80 disabled:opacity-50">
-                {walkInLoading ? 'Creating Booking...' : '✓ Confirm Walk-in Reservation'}
-              </button>
-            </div>
-
-            {/* Confirmation send panel — appears after booking created */}
-            {lastWalkIn && (
-              <div className="bg-green-900/20 border border-green-500 p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                  <p className="text-green-400 font-bold text-sm">✅ Booking Confirmed — {lastWalkIn.ref}</p>
-                </div>
-                <p className="text-white/60 text-[9px]">{lastWalkIn.name} · {lastWalkIn.restaurant} · {lastWalkIn.date} at {lastWalkIn.time} · {lastWalkIn.pax} pax</p>
-                <p className="text-white/50 text-[9px] font-bold uppercase">Send Confirmation To Guest:</p>
-                <div className="grid grid-cols-1 gap-2">
-                  {lastWalkIn.phone && (
-                    <a href={'https://wa.me/' + lastWalkIn.phone.replace(/\D/g,'') + '?text=' + encodeURIComponent('Dear ' + lastWalkIn.name + ', your reservation at ' + lastWalkIn.restaurant + ' is CONFIRMED! Booking Ref: ' + lastWalkIn.ref + ' Date: ' + lastWalkIn.date + ' Time: ' + lastWalkIn.time + ' Guests: ' + lastWalkIn.pax + (lastWalkIn.notes ? ' Notes: ' + lastWalkIn.notes : '') + ' Please arrive 5 minutes early. Sentinel Pro - Luxury Hotel')} target="_blank" rel="noreferrer"
-                      className="flex items-center justify-center gap-2 bg-green-600 text-white py-3 text-[10px] font-bold uppercase">
-                      📱 Send WhatsApp to {lastWalkIn.phone}
-                    </a>
-                  )}
-                  {lastWalkIn.email && (
-                    <a href={'mailto:' + lastWalkIn.email + '?subject=' + encodeURIComponent('Reservation Confirmed - ' + lastWalkIn.restaurant + ' - Ref: ' + lastWalkIn.ref) + '&body=' + encodeURIComponent('Dear ' + lastWalkIn.name + ', Your reservation has been confirmed. Booking Reference: ' + lastWalkIn.ref + ' Restaurant: ' + lastWalkIn.restaurant + ' Date: ' + lastWalkIn.date + ' Time: ' + lastWalkIn.time + ' Guests: ' + lastWalkIn.pax + (lastWalkIn.notes ? ' Special Requests: ' + lastWalkIn.notes : '') + ' Please present this reference upon arrival. Arrive 5 minutes early. Kind regards, Sentinel Pro - Luxury Hotel')}
-                      className="flex items-center justify-center gap-2 bg-blue-700 text-white py-3 text-[10px] font-bold uppercase">
-                      ✉️ Send Email to {lastWalkIn.email}
-                    </a>
-                  )}
-                  {lastWalkIn.data && (
-                    <button onClick={() => printBookingTicket(lastWalkIn.data)}
-                      className="flex items-center justify-center gap-2 bg-gold/20 text-gold border border-gold py-3 text-[10px] font-bold uppercase">
-                      🖨️ Print Booking Ticket
-                    </button>
-                  )}
-                  <button onClick={() => setLastWalkIn(null)}
-                    className="text-white/30 text-[9px] uppercase font-bold py-2">
-                    Dismiss
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* MENU MANAGEMENT */}
-        {activeTab === 'menu' && (isFBManager || isExecutive) && (
-          <div className="space-y-4">
-            <div className="bg-[#001c36] border border-gold/10 p-4 space-y-3">
-              <h3 className="text-base font-serif text-gold">Add Menu Item</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Restaurant</label>
-                  <select value={newMenuItem.restaurant} onChange={e => setNewMenuItem({ ...newMenuItem, restaurant: e.target.value })}
-                    className="w-full bg-white border border-gold p-2 text-sm text-navy outline-none">
-                    {RESTAURANTS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Category</label>
-                  <select value={newMenuItem.category} onChange={e => setNewMenuItem({ ...newMenuItem, category: e.target.value })}
-                    className="w-full bg-white border border-gold p-2 text-sm text-navy outline-none">
-                    <option value="breakfast">Breakfast</option>
-                    <option value="all_day">All Day</option>
-                    <option value="beverages">Beverages</option>
-                    <option value="desserts">Desserts</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Item Name</label>
-                  <input value={newMenuItem.name} onChange={e => setNewMenuItem({ ...newMenuItem, name: e.target.value })}
-                    placeholder="e.g. Wagyu Steak" className="w-full bg-white border border-gold p-2 text-sm text-navy outline-none" />
-                </div>
-                <div>
-                  <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Price (AED)</label>
-                  <input type="number" value={newMenuItem.price} onChange={e => setNewMenuItem({ ...newMenuItem, price: e.target.value })}
-                    placeholder="e.g. 185" className="w-full bg-white border border-gold p-2 text-sm text-navy outline-none" />
-                </div>
-              </div>
-              <button onClick={addMenuItem} className="gold-button m-0 w-full">+ Add to Menu</button>
-            </div>
-            <h3 className="text-sm font-serif text-gold">Current Menu Items</h3>
-            {menuItems.length === 0 ? <p className="text-white/20 italic text-center py-8">No menu items yet</p>
-              : menuItems.map(item => (
-                <div key={item.id} className="bg-[#001c36] border border-gold/10 p-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-white font-bold text-sm">{item.name}</p>
-                    <p className="text-[8px] text-white/40 uppercase">{item.restaurant} · {item.category}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-gold font-bold text-sm">AED {item.price}</span>
-                    <button onClick={() => deleteMenuItem(item.id)} className="text-red-400 text-[8px] font-bold uppercase border border-red-400/30 px-2 py-1">Remove</button>
-                  </div>
-                </div>
-              ))}
-          </div>
-        )}
-
-        {/* RESTAURANT SETTINGS */}
-        {activeTab === 'settings' && (isFBManager || isExecutive) && (
-          <div className="space-y-4">
-            {RESTAURANTS.map(r => {
-              const s = restSettings[r.id] || {};
-              return (
-                <div key={r.id} className="bg-[#001c36] border border-gold/10 p-4 space-y-3">
-                  <h3 className="text-base font-serif text-gold">{r.emoji} {r.name}</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Opening Time</label>
-                      <input type="time" defaultValue={s.opening_time || '12:00'}
-                        id={`open-${r.id}`} className="w-full bg-white border border-gold p-2 text-sm text-navy outline-none" />
-                    </div>
-                    <div>
-                      <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Closing Time</label>
-                      <input type="time" defaultValue={s.closing_time || '23:00'}
-                        id={`close-${r.id}`} className="w-full bg-white border border-gold p-2 text-sm text-navy outline-none" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[8px] text-white/50 uppercase font-bold block mb-2">Closed Days</label>
-                    <div className="flex flex-wrap gap-2">
-                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => {
-                        const closed = (s.closed_days || []).includes(day);
-                        return (
-                          <button key={day}
-                            onClick={async () => {
-                              const days = s.closed_days || [];
-                              const newDays = closed ? days.filter((d: string) => d !== day) : [...days, day];
-                              await saveRestaurantSettings(r.id, {
-                                opening_time: (document.getElementById(`open-${r.id}`) as HTMLInputElement)?.value || '12:00',
-                                closing_time: (document.getElementById(`close-${r.id}`) as HTMLInputElement)?.value || '23:00',
-                                closed_days: newDays,
-                              });
-                            }}
-                            className={cn('px-3 py-1.5 text-[9px] font-bold uppercase border', closed ? 'bg-red-600 text-white border-red-600' : 'border-gold/30 text-gold/60')}>
-                            {day}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <button onClick={() => saveRestaurantSettings(r.id, {
-                    opening_time: (document.getElementById(`open-${r.id}`) as HTMLInputElement)?.value || '12:00',
-                    closing_time: (document.getElementById(`close-${r.id}`) as HTMLInputElement)?.value || '23:00',
-                    closed_days: s.closed_days || [],
-                  })} className="gold-button m-0 w-full">Save {r.name} Settings</button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      </> /* end reservation staff check */}
-    </div>
-  );
-};
-
 // ─── GUEST AUTH ───────────────────────────────────────────────────────────────
 const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRoom?: string; isLocked?: boolean; onNavigateToStaff: () => void }> = ({ onLoginSuccess, initialRoom, isLocked, onNavigateToStaff }) => {
   const { t } = useLanguage();
   const [fullName, setFullName] = useState('');
-  const [qrOnlyMode, setQrOnlyMode] = useState(false);
   const [roomNumber, setRoomNumber] = useState(initialRoom || '');
   const [loading, setLoading] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
@@ -1509,11 +485,6 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
   const [failCount, setFailCount] = useState(0);
 
   useEffect(() => { if (initialRoom) setRoomNumber(initialRoom); }, [initialRoom]);
-
-  useEffect(() => {
-    supabase.from('app_settings').select('value').eq('key', 'access_mode').single()
-      .then(({ data }) => { if (data?.value === 'qr_only') setQrOnlyMode(true); });
-  }, []);
 
   const handleGuestLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1526,7 +497,7 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
       const profile: UserProfile = { uid: guestId, email: 'guest@hotel.com', displayName: fullName || `Guest ${roomNumber}`, role: 'guest', department: 'None', roomNumber, status: 'Approved' };
       localStorage.setItem('sentinel_local_session', JSON.stringify(profile));
       onLoginSuccess(profile);
-    } catch (err: any) { showToast(err.message || 'An error occurred. Please try again.', 'error'); } finally { setLoading(false); }
+    } catch (err: any) { alert(err.message); } finally { setLoading(false); }
   };
 
   const handleManagerAuth = async (e: React.FormEvent) => {
@@ -1543,8 +514,8 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
       onLoginSuccess(mp); return;
     }
     const newCount = failCount + 1; setFailCount(newCount);
-    if (newCount >= 3) { showToast('Too many failed attempts. Please try again later.', 'error'); setShowManagerLock(false); setShowSecret(false); setFailCount(0); setManagerPassword(''); }
-    else showToast(`Incorrect password. Attempt ${newCount} of 3.`, 'error');
+    if (newCount >= 3) { alert('Too many failed attempts.'); setShowManagerLock(false); setShowSecret(false); setFailCount(0); setManagerPassword(''); }
+    else alert(`Invalid password. Attempt ${newCount} of 3.`);
   };
 
   return (
@@ -1570,17 +541,6 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
             <button onClick={() => setShowManagerLock(true)} className="gold-button w-full flex items-center justify-center gap-3"><ShieldCheck size={16} /> Executive Dashboard</button>
             <button onClick={onNavigateToStaff} className="navy-button w-full border border-gold/30 flex items-center justify-center gap-3"><User size={16} /> Staff Portal</button>
             <button onClick={() => setShowSecret(false)} className="text-[10px] text-white/40 uppercase tracking-widest w-full text-center">{t('cancel')}</button>
-          </div>
-        ) : qrOnlyMode && !isLocked ? (
-          <div className="space-y-5 text-center">
-            <div className="text-5xl">📱</div>
-            <p className="text-gold font-serif text-lg">QR Access Only</p>
-            <p className="text-white/60 text-[11px] leading-relaxed">
-              Please scan the QR code placed in your room to access the guest portal.
-            </p>
-            <p className="text-white/30 text-[9px]">
-              Find the Sentinel Pro card on your room desk.
-            </p>
           </div>
         ) : (
           <form onSubmit={handleGuestLogin} className="space-y-4 w-full">
@@ -1622,7 +582,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
     try {
       if (mode === 'register') {
         const { data: existing } = await supabase.from('staff').select('id').eq('email', email).single();
-        if (existing) { showToast('A profile with this email already exists. Please login.', 'info'); setMode('login'); setLoading(false); return; }
+        if (existing) { alert('Profile already exists. Please login.'); setMode('login'); setLoading(false); return; }
         const { error } = await supabase.from('staff').insert({
           name: fullName, staff_id: staffIdNumber, email, password,
           department: derivedDept, occupation, approved: false,
@@ -1634,17 +594,19 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         setShowPending(true);
       } else {
         const { data: staffData, error } = await supabase.from('staff').select('*').eq('email', email).single();
-        if (error || !staffData) { showToast('Invalid email or password. Please try again.', 'error'); setLoading(false); return; }
-        if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) { showToast(`Account is locked until ${new Date(staffData.locked_until).toLocaleTimeString()}. Please try again later.`, 'error'); setLoading(false); return; }
+        if (error || !staffData) { alert('Invalid credentials.'); setLoading(false); return; }
+        if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) { alert(`Account locked until ${new Date(staffData.locked_until).toLocaleTimeString()}.`); setLoading(false); return; }
         if (staffData.password !== password) {
           const attempts = (staffData.failed_attempts || 0) + 1;
           const lockUntil = attempts >= 5 ? new Date(Date.now() + 30 * 60000).toISOString() : null;
           await supabase.from('staff').update({ failed_attempts: attempts, ...(lockUntil ? { locked_until: lockUntil } : {}) }).eq('id', staffData.id);
-          showToast(attempts >= 5 ? 'Account locked for 30 minutes due to too many failed attempts.' : `Incorrect password. ${5 - attempts} attempts remaining.`, 'error');
+          alert(attempts >= 5 ? 'Account locked for 30 minutes.' : `Invalid password. ${5 - attempts} attempts remaining.`);
           setLoading(false); return;
         }
-        if (!staffData.approved) { showToast('Your account is pending manager approval. Please wait.', 'info'); setLoading(false); return; }
-        await supabase.from('staff').update({ logged_in: true, failed_attempts: 0, locked_until: null, device_id: null }).eq('id', staffData.id);
+        if (!staffData.approved) { alert('ACCESS DENIED: Your account is pending approval.'); setLoading(false); return; }
+        const deviceId = getDeviceId();
+        if (staffData.device_id && staffData.device_id !== deviceId) { alert('ACCESS DENIED: Account active on another device.'); setLoading(false); return; }
+        await supabase.from('staff').update({ device_id: deviceId, logged_in: true, failed_attempts: 0, locked_until: null }).eq('id', staffData.id);
         const isManager = MANAGER_OCCUPATIONS.includes(staffData.occupation || '');
         const profile: UserProfile = {
           uid: staffData.id, email: staffData.email, displayName: staffData.name,
@@ -1655,7 +617,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         localStorage.setItem('sentinel_local_session', JSON.stringify(profile));
         onLoginSuccess(profile);
       }
-    } catch (err: any) { showToast(err.message || 'An error occurred. Please try again.', 'error'); } finally { setLoading(false); }
+    } catch (err: any) { alert(err.message); } finally { setLoading(false); }
   };
 
   return (
@@ -1687,7 +649,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
                 <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Occupation / Role</label>
                 <select value={occupation} onChange={e => setOccupation(e.target.value)} className="login-input bg-white text-navy">
                   <optgroup label="── Housekeeping"><option>Housekeeping Attendant</option><option>Housekeeping Supervisor</option><option>Housekeeping Manager</option></optgroup>
-                  <optgroup label="── F&B"><option>F&B Waiter</option><option>F&B Supervisor</option><option>Chef</option><option>F&B Manager</option><option>Reservation Agent</option></optgroup>
+                  <optgroup label="── F&B"><option>F&B Waiter</option><option>F&B Supervisor</option><option>Chef</option><option>F&B Manager</option></optgroup>
                   <optgroup label="── Concierge"><option>Concierge Agent</option><option>Concierge Supervisor</option><option>Concierge Manager</option></optgroup>
                   <optgroup label="── Security"><option>Security Officer</option><option>Security Supervisor</option><option>Security Manager</option></optgroup>
                   <optgroup label="── Maintenance / Engineering"><option>Maintenance Technician</option><option>Maintenance Supervisor</option></optgroup>
@@ -1714,7 +676,6 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
 
 // ─── STAFF PORTAL ─────────────────────────────────────────────────────────────
 const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) => {
-  const { t, language } = useLanguage();
   const [tasks, setTasks] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -1727,9 +688,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const [forwardModalTask, setForwardModalTask] = useState<any | null>(null);
   const [forwardDept, setForwardDept] = useState<Department>('Housekeeping');
   const [maintenanceForm, setMaintenanceForm] = useState({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
-  const [roomSearch, setRoomSearch] = useState('');
   const [notifPermission, setNotifPermission] = useState('');
-  const [showFBRestaurant, setShowFBRestaurant] = useState(false);
   const swRegistered = useRef(false);
 
   const isHousekeeping = userProfile.department === 'Housekeeping';
@@ -1761,13 +720,9 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   const mapRow = (row: any) => ({
     id: row.id, roomNumber: row.guest_room || '', type: row.service || '',
-    message: row.notes,
-    originalMessage: row.notes, // preserved original language
-    department: row.department, status: row.status,
+    message: row.notes, department: row.department, status: row.status,
     guestId: row.guest_id || '', guestName: row.guest_name, timestamp: row.created_at,
-    acceptedAt: row.accepted_at, completedAt: row.closed_at,
     assignedStaffName: row.assigned_to, delayReason: row.late_reason, lineItems: row.line_items,
-    guestLanguage: row.guest_language || 'en',
   });
 
   const fetchTasks = useCallback(async () => {
@@ -1778,11 +733,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     const { data } = await query;
     if (data) {
       const mapped = data.map(mapRow);
-      // ✅ Active tasks exclude completed
-      setTasks(mapped.filter((t: any) => t.status !== 'Completed' && t.status !== 'Cancelled'));
-      // ✅ History always loads all completed — persists across login sessions
-      const completed = mapped.filter((t: any) => t.status === 'Completed');
-      if (completed.length > 0) setHistory(completed.slice(0, 50));
+      setTasks(mapped.filter((t: any) => t.status !== 'Completed'));
+      setHistory(mapped.filter((t: any) => t.status === 'Completed').slice(0, 30));
     }
   }, [userProfile]);
 
@@ -1791,124 +743,46 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     if (data) setRooms(data);
   }, []);
 
-  // ✅ 5-second polling fallback + SLA escalation notifications
-  const slaWarned = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const poll = setInterval(() => {
-      fetchTasks();
-      // SLA Escalation — warn staff before it expires
-      tasks.forEach(task => {
-        if (task.status === 'Completed') return;
-        const dept = userProfile.department;
-        const slaLimit = (slaSettings[dept] || 5) * 60;
-        const elapsed = getElapsed(task.timestamp);
-        const pct = (elapsed / slaLimit) * 100;
-        const warnKey80 = `${task.id}-80`;
-        const warnKey100 = `${task.id}-100`;
-        // Level 1: 80% SLA used → warn staff
-        if (pct >= 80 && pct < 100 && !slaWarned.current.has(warnKey80)) {
-          slaWarned.current.add(warnKey80);
-          playNotificationSound();
-          showBrowserNotification('⚠️ SLA Warning — Act Now!', `Room #${task.roomNumber} · ${Math.floor((slaLimit - elapsed)/60)} minutes remaining!`);
-          setNewOrderAlert(`⚠️ SLA WARNING — Room #${task.roomNumber} · Only ${Math.floor((slaLimit - elapsed)/60)}m left!`);
-          setTimeout(() => setNewOrderAlert(null), 10000);
-        }
-        // Level 2: SLA exceeded → red alert to staff
-        if (pct >= 100 && !slaWarned.current.has(warnKey100)) {
-          slaWarned.current.add(warnKey100);
-          playNotificationSound();
-          showBrowserNotification('🚨 SLA EXCEEDED!', `Room #${task.roomNumber} · ${task.type} · Reason required to close!`);
-          setNewOrderAlert(`🚨 SLA EXCEEDED — Room #${task.roomNumber} · Reason required!`);
-          setTimeout(() => setNewOrderAlert(null), 15000);
-        }
-      });
-    }, 5000);
-    return () => clearInterval(poll);
-  }, [fetchTasks, tasks, slaSettings, userProfile]);
-
-  useEffect(() => {
-    // ✅ Always fetch fresh data on mount/login — ensures history loads
-    fetchTasks();
-    fetchSLA();
+    fetchTasks(); fetchSLA();
     if (isHousekeeping) fetchRooms();
     const channel = supabase.channel(`staff-${userProfile.uid}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, (payload) => {
-        // ✅ Only alert on INSERT (new guest request), fetch on ALL events (INSERT + UPDATE + DELETE)
-        if (payload.eventType === 'INSERT') {
-          const newReq = payload.new as any;
-          const reqDept = newReq.department;
-          const myDept = userProfile.department;
-          const deptMatch = reqDept === myDept ||
-            (myDept === 'Security & Safety' && (reqDept === 'Security & Safety' || reqDept === 'Security'));
-          if (deptMatch) {
-            const msg = `Room #${newReq.guest_room} — ${newReq.service}`;
-            setNewOrderAlert(`🔔 New Request: ${msg}`);
-            playNotificationSound();
-            showBrowserNotification('🔔 Sentinel Pro — New Guest Request', msg);
-            setTimeout(() => setNewOrderAlert(null), 15000);
-          }
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'requests' }, (payload) => {
+        const newReq = payload.new as any;
+        const reqDept = newReq.department;
+        const myDept = userProfile.department;
+        const deptMatch = reqDept === myDept ||
+          (myDept === 'Security & Safety' && (reqDept === 'Security & Safety' || reqDept === 'Security'));
+        if (deptMatch) {
+          const msg = `Room #${newReq.guest_room} — ${newReq.service}`;
+          setNewOrderAlert(`🔔 New Request: ${msg}`);
+          // ✅ Play hotel bell sound
+          playNotificationSound();
+          // ✅ Show browser/OS notification
+          showBrowserNotification('🔔 Sentinel Pro — New Guest Request', msg);
+          setTimeout(() => setNewOrderAlert(null), 15000);
         }
         fetchTasks();
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'requests' }, fetchTasks)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [userProfile, fetchTasks, fetchRooms, isHousekeeping]);
 
-  const getElapsed = (ts: any) => {
-    if (!ts) return 0;
-    try {
-      // Replace space separator with T so JS Date can parse it
-      // Do NOT strip timezone — JS Date handles +04:00 correctly internally
-      const normalized = String(ts).trim().replace(' ', 'T');
-      const created = new Date(normalized).getTime();
-      if (isNaN(created)) return 0;
-      // Use `now` state so React re-renders every second and timer ticks
-      const diff = Math.floor((now - created) / 1000);
-      return diff < 0 ? 0 : diff;
-    } catch {
-      return 0;
-    }
-  };
-  const getSLALimit = (dept: string) => (slaSettings[dept] || 30) * 60; // Default 30 min if not configured
-
-  const formatTime = (ts: any) => {
-    if (!ts) return '—';
-    try {
-      const normalized = String(ts).trim().replace(' ', 'T');
-      const d = new Date(normalized);
-      if (isNaN(d.getTime())) return '—';
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-    } catch { return '—'; }
-  };
-
-  const getDuration = (from: any, to: any) => {
-    if (!from || !to) return null;
-    const fromParsed = from.replace(' ', 'T');
-    const toParsed = to.replace(' ', 'T');
-    const mins = Math.floor((new Date(toParsed).getTime() - new Date(fromParsed).getTime()) / 60000);
-    return mins < 60 ? `${mins}m` : `${Math.floor(mins/60)}h ${mins%60}m`;
-  };
+  const getElapsed = (ts: any) => { if (!ts) return 0; return Math.floor((now - new Date(ts).getTime()) / 1000); };
+  const getSLALimit = (dept: string) => (slaSettings[dept] || 5) * 60;
 
   const handleAccept = async (id: string) => {
     await supabase.from('requests').update({ status: 'In Progress', accepted_at: new Date().toISOString(), assigned_to: userProfile.displayName, assigned_to_email: userProfile.email }).eq('id', id);
-    // ✅ Immediately refresh so button switches from Accept to Complete
-    await fetchTasks();
   };
 
   const handleComplete = async (task: any) => {
     const elapsed = getElapsed(task.timestamp);
     const limit = getSLALimit(task.department);
-    // ✅ ALWAYS enforce delay reason if SLA exceeded — no bypass possible
-    if (elapsed > limit || task.status === 'Violated') {
-      setDelayModalTask(task);
-      setDelayReason('');
-      return;
-    }
+    if (elapsed > limit) { setDelayModalTask(task); return; }
     await supabase.from('requests').update({ status: 'Completed', closed_at: new Date().toISOString() }).eq('id', task.id);
     const { data: sr } = await supabase.from('staff').select('tasks_completed,tasks_on_time').eq('id', userProfile.uid).single();
     if (sr) await supabase.from('staff').update({ tasks_completed: (sr.tasks_completed || 0) + 1, tasks_on_time: (sr.tasks_on_time || 0) + 1 }).eq('id', userProfile.uid);
-    // ✅ Refresh immediately — completed task disappears from active, appears in history
-    await fetchTasks();
   };
 
   const handleCompleteWithReason = async () => {
@@ -1917,8 +791,6 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     const { data: sr } = await supabase.from('staff').select('tasks_completed,violations').eq('id', userProfile.uid).single();
     if (sr) await supabase.from('staff').update({ tasks_completed: (sr.tasks_completed || 0) + 1, violations: (sr.violations || 0) + 1 }).eq('id', userProfile.uid);
     setDelayModalTask(null); setDelayReason('');
-    // ✅ Refresh — completed task moves to history immediately
-    await fetchTasks();
   };
 
   const handleForward = async () => {
@@ -1927,42 +799,31 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       department: forwardDept, status: 'Pending', assigned_to: null, assigned_to_email: null, accepted_at: null,
       notes: (forwardModalTask.message || '') + ` [Forwarded from ${userProfile.department} by ${userProfile.displayName}]`
     }).eq('id', forwardModalTask.id);
-    showToast(`Request forwarded to ${forwardDept} department`, 'success');
+    alert(`✅ Request forwarded to ${forwardDept} department.`);
     setForwardModalTask(null);
-    // ✅ Refresh so forwarded task disappears from this staff's queue
-    await fetchTasks();
   };
 
   const updateRoomStatus = async (roomId: string, status: string) => {
-    const now = new Date().toISOString();
-    const update: any = {
-      status,
-      assigned_to: userProfile.displayName,
-      last_updated: now,
-    };
-    if (status === 'Cleaning')   update.cleaning_at  = now;
-    if (status === 'Clean')      update.cleaned_at   = now;
-    if (status === 'Inspected')  update.inspected_at = now;
-    await supabase.from('rooms').update(update).eq('id', roomId);
+    await supabase.from('rooms').update({ status, assigned_to: userProfile.displayName, last_updated: new Date().toISOString() }).eq('id', roomId);
     fetchRooms();
   };
 
   const submitMaintenanceRequest = async () => {
-    if (!maintenanceForm.room || !maintenanceForm.description) { showToast('Please fill in both room/location and description fields.', 'error'); return; }
+    if (!maintenanceForm.room || !maintenanceForm.description) { alert('Please fill in room/location and description.'); return; }
     await supabase.from('requests').insert({
       guest_room: maintenanceForm.room, guest_id: 'maintenance', guest_name: userProfile.displayName,
       service: `Maintenance: ${maintenanceForm.category}`,
       notes: `${maintenanceForm.description} [Priority: ${maintenanceForm.priority}]`,
-      department: 'Maintenance', status: 'Pending',
+      department: 'Maintenance', status: 'Pending', created_at: new Date().toISOString(),
     });
-    showToast('Maintenance request submitted successfully!', 'success');
+    alert('✅ Maintenance request submitted.');
     setMaintenanceForm({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
   };
 
   const staffLogout = async () => {
-  await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid);
-  localStorage.clear(); window.location.replace('/');
-};
+    await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid);
+    localStorage.clear(); window.location.replace('/');
+  };
 
   const tabs = [
     { key: 'active', label: `Active (${tasks.length})` },
@@ -1973,22 +834,6 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   return (
     <div className="w-full pb-24 bg-[#001529] min-h-screen text-white">
-      {/* Restaurant Portal for F&B Staff */}
-      <AnimatePresence>
-        {showFBRestaurant && (
-          <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
-            transition={{ type: 'tween', duration: 0.3 }}
-            className="fixed inset-0 z-[25000] overflow-y-auto">
-            <div className="sticky top-0 z-10 bg-navy px-4 py-3 flex items-center gap-3 border-b border-gold/20">
-              <button onClick={() => setShowFBRestaurant(false)} className="text-gold hover:text-white">
-                <ArrowRight size={20} className="rotate-180" />
-              </button>
-              <h2 className="text-gold font-serif text-lg">Restaurant Bookings</h2>
-            </div>
-            <RestaurantPortal profile={userProfile} />
-          </motion.div>
-        )}
-      </AnimatePresence>
       {/* Delay Modal */}
       <AnimatePresence>
         {delayModalTask && (
@@ -2044,14 +889,11 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
           <p className="text-white/60 text-[9px] uppercase tracking-widest">{userProfile.department} · {userProfile.occupation || 'Staff'}</p>
           {notifPermission === 'denied' && <p className="text-red-400 text-[8px] mt-0.5">⚠ Enable notifications in browser settings</p>}
           {notifPermission === 'granted' && <p className="text-green-400 text-[8px] mt-0.5">🔔 Notifications active</p>}
-          {userProfile.department === 'F&B' && (userProfile.occupation === 'Reservation Agent' || userProfile.occupation === 'F&B Manager' || userProfile.occupation === 'Food & Beverage Manager') && (
-            <button onClick={() => setShowFBRestaurant(true)} className="text-[8px] text-gold font-bold uppercase mt-0.5">🍽 Restaurant Reservations →</button>
-          )}
         </div>
         <div className="flex items-center gap-2">
           <div className="flex bg-navy/50 border border-gold/20 p-0.5 flex-wrap gap-0.5">
             {tabs.map(tab => (
-              <button key={tab.key} onClick={() => { setActiveTab(tab.key as any); if (tab.key === 'history') fetchTasks(); }} className={cn('px-2.5 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
+              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2.5 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
           <button onClick={staffLogout} className="flex items-center gap-1 border border-gold/30 text-gold px-3 py-1.5 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
@@ -2072,36 +914,22 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
               <motion.div key={task.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={cn('staff-task-card bg-[#001c36] relative', isViolated ? 'border-red-500 bg-red-900/10' : 'border-gold/10')}>
                 {isViolated && <div className="w-full py-2 px-3 bg-red-600 text-white text-[9px] font-bold uppercase flex items-center gap-2 mb-2"><AlertCircle size={12} /> SLA EXCEEDED by {Math.floor((elapsed - limit) / 60)}m</div>}
                 <div className="flex justify-between items-start">
-                  <div className="bg-gold/20 px-3 py-1.5 text-gold text-[10px] font-bold border border-gold/50 tracking-widest">ROOM #{task.roomNumber}</div>
-                  <div className={cn('font-mono text-base font-bold', isViolated ? 'text-red-400' : 'text-gold')}>{Math.floor(elapsed / 60)}:{(elapsed % 60).toString().padStart(2, '0')}</div>
+                  <div className="bg-navy/50 px-2 py-1 text-gold text-[9px] font-bold border border-gold/20">ROOM #{task.roomNumber}</div>
+                  <div className={cn('font-mono text-base font-bold', isViolated ? 'text-red-400' : 'text-white')}>{Math.floor(elapsed / 60)}:{(elapsed % 60).toString().padStart(2, '0')}</div>
                 </div>
                 <div className="space-y-1 mt-2">
-                  <h3 className="text-base font-serif text-white font-bold tracking-wide">{task.type}</h3>
+                  <h3 className="text-base font-serif text-white">{task.type}</h3>
                   <p className={cn('text-[9px] uppercase tracking-widest font-bold', task.status === 'Pending' ? 'text-gold' : 'text-blue-400')}>{task.status}</p>
-                  {task.guestName && <p className="text-[9px] text-gold/80 font-bold">👤 Guest: {task.guestName}</p>}
+                  {task.guestName && <p className="text-[8px] text-white/40">Guest: {task.guestName}</p>}
                 </div>
                 {task.lineItems && task.lineItems.length > 0 && (
                   <div className="mt-2 bg-navy/30 p-2 border-l-2 border-gold/30">
-                    {task.lineItems.map((li: any, i: number) => <p key={i} className="text-[9px] text-white font-semibold">{li.qty}x {li.name} — <span className="text-gold">AED {li.total}</span></p>)}
+                    {task.lineItems.map((li: any, i: number) => <p key={i} className="text-[9px] text-white/70">{li.qty}x {li.name} — AED {li.total}</p>)}
                   </div>
                 )}
-                {task.message && <div className="bg-navy/50 p-2 border-l-2 border-gold mt-2"><p className="text-[9px] text-gold font-bold mb-0.5">📝 Note:</p><p className="text-xs text-white italic">"{task.message}"</p></div>}
+                {task.message && !task.lineItems && <div className="bg-navy/30 p-2 border-l-2 border-gold/20 italic text-xs text-white/60 mt-2">"{task.message}"</div>}
                 <div className="mt-3 h-1 bg-navy/50 rounded-full overflow-hidden">
                   <div className={cn('h-full rounded-full', isViolated ? 'bg-red-500' : pct > 80 ? 'bg-orange-400' : 'bg-green-500')} style={{ width: `${pct}%` }} />
-                </div>
-                <div className="mt-2 grid grid-cols-3 gap-1 bg-navy/60 p-2 rounded border border-gold/10">
-                  <div className="text-center">
-                    <p className="text-[7px] text-white/50 uppercase font-bold tracking-wider">Submitted</p>
-                    <p className="text-[9px] text-white font-bold">{formatTime(task.timestamp)}</p>
-                  </div>
-                  <div className="text-center border-x border-white/10">
-                    <p className="text-[7px] text-white/50 uppercase font-bold tracking-wider">Accepted</p>
-                    <p className="text-[9px] text-blue-300 font-bold">{formatTime(task.acceptedAt)}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-[7px] text-white/50 uppercase font-bold tracking-wider">Completed</p>
-                    <p className="text-[9px] text-green-400 font-bold">{formatTime(task.completedAt)}</p>
-                  </div>
                 </div>
                 <div className="pt-3 space-y-2">
                   {task.status === 'Pending' ? (
@@ -2124,7 +952,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       {/* HISTORY */}
       {activeTab === 'history' && (
         <div className="staff-grid p-4">
-          {history.length === 0 ? <div className="col-span-full py-20 text-center text-white/20 italic font-serif">No completed requests yet.</div>
+          {history.length === 0 ? <div className="col-span-full py-20 text-center text-white/20 italic font-serif">No history yet.</div>
             : history.map(task => (
               <div key={task.id} className="bg-[#001c36] border border-gold/10 p-4 opacity-80">
                 <div className="flex justify-between items-center mb-2">
@@ -2146,26 +974,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
             <h2 className="text-lg font-serif text-gold flex items-center gap-2"><BedDouble size={18} /> Room Status Board</h2>
             <button onClick={fetchRooms} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
           </div>
-          {/* Search bar */}
-          <div className="relative">
-            <input
-              type="text"
-              value={roomSearch || ''}
-              onChange={e => setRoomSearch(e.target.value)}
-              placeholder="Search by room number or status (e.g. Clean, Dirty...)"
-              className="w-full bg-[#001c36] border border-gold/20 text-white text-[11px] p-2 pl-8 outline-none placeholder:text-white/30"
-            />
-            <Search size={13} className="absolute left-2.5 top-2.5 text-gold/40" />
-          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {rooms
-              .filter(room => {
-                if (!roomSearch || !roomSearch.trim()) return true;
-                const q = (roomSearch || '').toLowerCase();
-                return room.room_number?.toString().toLowerCase().includes(q)
-                  || (room.status || '').toLowerCase().includes(q);
-              })
-              .map(room => {
+            {rooms.map(room => {
               const statusObj = ROOM_STATUSES.find(s => s.key === room.status) || ROOM_STATUSES[0];
               return (
                 <div key={room.id} className="bg-[#001c36] border border-gold/10 p-3 space-y-2">
@@ -2173,12 +983,9 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                     <div><p className="text-gold font-bold text-sm">Room {room.room_number}</p><p className="text-[8px] text-white/40">{room.room_type} · Floor {room.floor}</p></div>
                     <span className={cn('text-[8px] font-bold px-2 py-0.5 text-white rounded-full', statusObj.color)}>{room.status}</span>
                   </div>
-                  {room.assigned_to && <p className="text-[8px] text-green-400/80 italic">✏ {room.assigned_to}</p>}
-                  {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
-                  {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
-                  {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected at: {new Date(room.inspected_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
+                  {room.assigned_to && <p className="text-[8px] text-white/40">By: {room.assigned_to}</p>}
                   <select value={room.status} onChange={e => updateRoomStatus(room.id, e.target.value)} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none">
-                    {ROOM_STATUSES.filter(s => s.key !== 'Inspected').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                    {ROOM_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
                 </div>
               );
@@ -2224,25 +1031,14 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
 // ─── DEPT MANAGER DASHBOARD ───────────────────────────────────────────────────
 const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => {
-  const { t, language } = useLanguage();
   const [requests, setRequests] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [slaConfig, setSlaConfig] = useState<any>({});
-  const [rooms, setRooms] = useState<any[]>([]);
-  const [roomSearch, setRoomSearch] = useState('');
-  const [repPeriod, setRepPeriod] = useState<'daily'|'weekly'|'monthly'>('daily');
-  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants' | 'rooms' | 'report'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings'>('requests');
   const [now, setNow] = useState(Date.now());
   const [editSLA, setEditSLA] = useState<number>(5);
-  const [showMgrRestaurant, setShowMgrRestaurant] = useState(false);
 
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
-
-  // ✅ 5-second polling fallback — ensures updates even if real-time fails
-  useEffect(() => {
-    const poll = setInterval(() => { fetchData(); }, 5000);
-    return () => clearInterval(poll);
-  }, []);
 
   const fetchData = async () => {
     const dept = profile.department;
@@ -2257,14 +1053,8 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     if (slaData) { setSlaConfig(slaData); setEditSLA(slaData.sla_minutes); }
   };
 
-  const fetchRoomsMgr = useCallback(async () => {
-    const { data } = await supabase.from('rooms').select('*').order('room_number', { ascending: true });
-    if (data) setRooms(data);
-  }, []);
-
   useEffect(() => {
     fetchData();
-    fetchRoomsMgr();
     const channel = supabase.channel(`deptmgr-${profile.uid}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, fetchData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, fetchData)
@@ -2276,47 +1066,23 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     if (!req.created_at || req.status === 'Completed') return false;
     return (now - new Date(req.created_at).getTime()) / 1000 > (slaConfig.sla_minutes || 5) * 60;
   };
-  const getElapsedMin = (ts: any) => {
-    if (!ts) return 0;
-    try {
-      const normalized = String(ts).trim().replace(' ', 'T');
-      const created = new Date(normalized).getTime();
-      if (isNaN(created)) return 0;
-      return Math.floor((Date.now() - created) / 60000);
-    } catch { return 0; }
-  };
+  const getElapsedMin = (ts: any) => Math.floor((now - new Date(ts).getTime()) / 60000);
   const violations = requests.filter(r => getSLAExceeded(r));
   const pendingStaff = staffList.filter(s => !s.approved && !MANAGER_OCCUPATIONS.includes(s.occupation || ''));
   const approvedStaff = staffList.filter(s => s.approved);
 
   const approveStaff = async (id: string) => { await supabase.from('staff').update({ approved: true }).eq('id', id); };
-  const rejectStaff = async (id: string) => { if (window.confirm('Are you sure you want to reject and delete this profile?')) { await supabase.from('staff').delete().eq('id', id); showToast('Staff profile rejected and deleted', 'info'); } };
+  const rejectStaff = async (id: string) => { if (window.confirm('Reject and delete?')) await supabase.from('staff').delete().eq('id', id); };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
-  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); showToast('Staff member logged out successfully', 'success'); };
+  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); alert('Staff logged out.'); };
   const saveSLA = async () => {
     await supabase.from('sla_settings').upsert({ department: profile.department, sla_minutes: editSLA, updated_by: profile.displayName, updated_at: new Date().toISOString() }, { onConflict: 'department' });
-    showToast(`SLA updated to ${editSLA} minutes`, 'success');
+    alert(`✅ SLA updated to ${editSLA} minutes`);
     fetchData();
   };
 
   return (
     <div className="min-h-screen bg-[#001529] text-white p-4 sm:p-6 space-y-5">
-      {/* Restaurant Portal Overlay */}
-      <AnimatePresence>
-        {showMgrRestaurant && (
-          <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
-            transition={{ type: 'tween', duration: 0.3 }}
-            className="fixed inset-0 z-[25000] overflow-y-auto">
-            <div className="sticky top-0 z-10 bg-navy px-4 py-3 flex items-center gap-3 border-b border-gold/20">
-              <button onClick={() => setShowMgrRestaurant(false)} className="text-gold hover:text-white">
-                <ArrowRight size={20} className="rotate-180" />
-              </button>
-              <h2 className="text-gold font-serif text-lg">Restaurant Reservations</h2>
-            </div>
-            <RestaurantPortal profile={profile} />
-          </motion.div>
-        )}
-      </AnimatePresence>
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-gold/20 pb-4">
         <div>
           <h1 className="text-2xl font-serif text-gold">{profile.department} Manager</h1>
@@ -2329,9 +1095,6 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               { key: 'sla', label: `SLA${violations.length > 0 ? ` (${violations.length})` : ''}` },
               { key: 'staff', label: `Staff${pendingStaff.length > 0 ? ` (${pendingStaff.length})` : ''}` },
               { key: 'settings', label: '⚙ Settings' },
-              { key: 'report', label: '📊 Report' },
-              ...(profile.department === 'F&B' ? [{ key: 'restaurants', label: '🍽 Restaurants' }] : []),
-              ...(profile.department === 'Housekeeping' ? [{ key: 'rooms', label: '🛏 Rooms' }] : []),
             ].map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
@@ -2344,16 +1107,6 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         <div className="border border-red-600 p-3 flex items-center gap-3" style={{ background: 'rgba(220,38,38,0.1)' }}>
           <AlertCircle className="text-red-500 flex-shrink-0" size={20} />
           <h3 className="text-red-500 font-bold uppercase text-sm">⚠ {violations.length} SLA VIOLATION{violations.length > 1 ? 'S' : ''}</h3>
-        </div>
-      )}
-
-      {profile.department === 'F&B' && (
-        <div className="bg-[#001c36] border border-gold/20 p-4 flex items-center justify-between">
-          <div>
-            <p className="text-gold font-bold text-sm">🍽 Restaurant Reservations Portal</p>
-            <p className="text-white/40 text-[9px]">Manage bookings, menus and restaurant settings</p>
-          </div>
-          <button onClick={() => setShowMgrRestaurant(true)} className="bg-gold text-navy px-4 py-2 text-[9px] font-bold uppercase">Open Portal</button>
         </div>
       )}
 
@@ -2376,11 +1129,8 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     {req.line_items && req.line_items.map((li: any, i: number) => <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>)}
                     {req.late_reason && <p className="text-[9px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
                   </div>
-                  <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
-                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
-                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
-                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
-                    {req.closed_at && req.accepted_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
+                  <div className="text-right ml-4 flex-shrink-0">
+                    <p className="text-[9px] text-white/40">{new Date(req.created_at).toLocaleTimeString()}</p>
                     {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                     {over && <p className="text-red-400 text-xs font-bold">{getElapsedMin(req.created_at)}m elapsed</p>}
                   </div>
@@ -2437,7 +1187,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     {staff.logged_in && <span className="text-[8px] text-green-400 font-bold">● Online</span>}
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => forceLogout(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Force Logout</button>
+                    {staff.logged_in && <button onClick={() => forceLogout(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Force Logout</button>}
                     <button onClick={() => terminateStaff(staff.id)} className="px-2 py-1 bg-red-800 text-white text-[8px] font-bold uppercase">Terminate</button>
                   </div>
                 </div>
@@ -2471,352 +1221,6 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
           </div>
         </div>
       )}
-
-      {/* ALL MANAGERS — Performance Report Tab */}
-      {activeTab === 'report' && (() => {
-        const now = new Date();
-        const cutoff = new Date();
-        if (repPeriod === 'weekly')  cutoff.setDate(now.getDate() - 7);
-        if (repPeriod === 'monthly') cutoff.setMonth(now.getMonth() - 1);
-        if (repPeriod === 'daily')   cutoff.setHours(0,0,0,0);
-        const filtered = requests.filter(r =>
-          r.status === 'Completed' && r.closed_at && new Date(r.closed_at.replace(' ','T')) >= cutoff
-        );
-        const slaLimit = (slaConfig?.sla_minutes || 30) * 60 * 1000;
-        const staffPerf: Record<string,{name:string,done:number,onTime:number,late:number,avgMin:number,totalMs:number}> = {};
-        filtered.forEach(r => {
-          const staff = r.assigned_to || 'Unassigned';
-          if (!staffPerf[staff]) staffPerf[staff] = {name:staff,done:0,onTime:0,late:0,avgMin:0,totalMs:0};
-          staffPerf[staff].done++;
-          const created = new Date(r.created_at.replace(' ','T')).getTime();
-          const closed  = new Date(r.closed_at.replace(' ','T')).getTime();
-          const ms = closed - created;
-          staffPerf[staff].totalMs += ms;
-          if (ms <= slaLimit) staffPerf[staff].onTime++;
-          else staffPerf[staff].late++;
-        });
-        Object.values(staffPerf).forEach(s => { s.avgMin = s.done > 0 ? Math.round(s.totalMs/s.done/60000) : 0; });
-        const ranked = Object.values(staffPerf).sort((a,b) => b.onTime - a.onTime || a.avgMin - b.avgMin);
-        const medals = [
-          {title:'⭐ The Supernova',   bg:'#fef9c3',border:'#eab308',badge:'🥇'},
-          {title:'🌟 The North Star',  bg:'#f1f5f9',border:'#94a3b8',badge:'🥈'},
-          {title:'🚀 The Rising Comet',bg:'#fff7ed',border:'#f97316',badge:'🥉'},
-        ];
-        const generatePDF = () => {
-          const dateStr = now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-          const periodLabel = repPeriod === 'daily' ? 'Daily' : repPeriod === 'weekly' ? 'Weekly (Last 7 Days)' : 'Monthly (Last 30 Days)';
-          const podiumHtml = ranked.slice(0,3).map((s,i) =>
-            `<div style="background:${medals[i].bg};border:2px solid ${medals[i].border};padding:14px 20px;text-align:center;min-width:110px;border-radius:4px">
-              <div style="font-size:28px">${medals[i].badge}</div>
-              <div style="font-size:12px;font-weight:bold;color:#001529;margin:4px 0">${medals[i].title}</div>
-              <div style="font-size:14px;font-weight:bold;color:#001529">${s.name}</div>
-              <div style="font-size:9px;color:#666;margin-top:4px">${s.done} tasks · ${s.onTime} on-time · avg ${s.avgMin}m</div>
-            </div>`
-          ).join('');
-          const tableRows = ranked.map((s,i) => {
-            const rate = s.done > 0 ? Math.round(s.onTime/s.done*100) : 0;
-            const rateColor = rate>=90?'#166534':rate>=70?'#92400e':'#991b1b';
-            return `<tr style="background:${i%2===0?'#f9f8f5':'#fff'}">
-              <td style="padding:6px 8px;border-bottom:1px solid #eee;color:#C5A059;font-weight:bold">${i+1}</td>
-              <td style="padding:6px 8px;border-bottom:1px solid #eee;font-weight:bold">${s.name}</td>
-              <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center">${s.done}</td>
-              <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;color:#166534;font-weight:bold">${s.onTime}</td>
-              <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;color:#991b1b">${s.late}</td>
-              <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center">
-                <span style="background:${rateColor};color:#fff;padding:2px 8px;border-radius:9px;font-size:9px;font-weight:bold">${rate}%</span>
-              </td>
-              <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center">${s.avgMin}m</td>
-            </tr>`;
-          }).join('');
-          const html = `<!DOCTYPE html><html><head><title>${profile.department} Performance Report</title>
-          <style>
-            @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600&display=swap');
-            *{margin:0;padding:0;box-sizing:border-box}body{font-family:Inter,sans-serif;padding:20px;font-size:11px}
-            @media print{body{padding:6px}}
-          </style></head><body>
-          <div style="background:#001529;color:#fff;padding:16px 20px;margin-bottom:16px">
-            <div style="font-family:'Playfair Display',serif;font-size:22px;color:#C5A059;letter-spacing:3px">SENTINEL PRO</div>
-            <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:3px;letter-spacing:1px">${profile.department.toUpperCase()} DEPARTMENT · ${periodLabel.toUpperCase()} PERFORMANCE REPORT · ${dateStr}</div>
-            <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
-              <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
-                <div style="font-size:20px;font-weight:bold;color:#C5A059">${filtered.length}</div>
-                <div style="font-size:8px;color:rgba(255,255,255,0.5)">TASKS COMPLETED</div></div>
-              <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
-                <div style="font-size:20px;font-weight:bold;color:#C5A059">${ranked.length}</div>
-                <div style="font-size:8px;color:rgba(255,255,255,0.5)">ACTIVE STAFF</div></div>
-              <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
-                <div style="font-size:20px;font-weight:bold;color:#C5A059">${filtered.length>0?Math.round(filtered.filter(r=>{const c=new Date(r.created_at.replace(' ','T')).getTime(),d=new Date(r.closed_at.replace(' ','T')).getTime();return d-c<=slaLimit}).length/filtered.length*100):0}%</div>
-                <div style="font-size:8px;color:rgba(255,255,255,0.5)">ON-TIME RATE</div></div>
-            </div>
-          </div>
-          ${ranked.length>=1?`<div style="margin-bottom:18px"><div style="font-size:13px;font-weight:bold;color:#001529;margin-bottom:10px;letter-spacing:1px">🏆 TOP PERFORMERS</div><div style="display:flex;gap:10px;flex-wrap:wrap">${podiumHtml}</div></div>`:''}
-          <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
-            <thead><tr style="background:#f4f2ec">
-              <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">#</th>
-              <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Staff Name</th>
-              <th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Tasks Done</th>
-              <th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">On Time</th>
-              <th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Late</th>
-              <th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">On-Time %</th>
-              <th style="padding:6px 8px;text-align:center;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Avg Time</th>
-            </tr></thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-          <div style="text-align:center;color:#999;font-size:8px;border-top:1px solid #eee;padding-top:8px">
-            SENTINEL PRO · ${profile.department} Department · Generated ${now.toLocaleString()}</div>
-          <scr`+`ipt>setTimeout(()=>window.print(),500)</scr`+`ipt></body></html>`;
-          const w = window.open('','_blank');
-          if(w){w.document.open();w.document.write(html);w.document.close();}
-          else showToast('Allow popups to print report','error');
-        };
-        return (
-          <div className="p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-serif text-gold">📊 Performance Report</h2>
-              <button onClick={generatePDF} className="flex items-center gap-1 bg-gold text-navy text-[9px] font-bold px-3 py-1.5">
-                <Download size={11}/> Print PDF
-              </button>
-            </div>
-            <div className="flex gap-2">
-              {(['daily','weekly','monthly'] as const).map(p => (
-                <button key={p} onClick={() => setRepPeriod(p)}
-                  className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', repPeriod===p ? 'bg-gold text-navy' : 'bg-[#001c36] text-gold/60 border border-gold/20')}>
-                  {p === 'daily' ? 'Today' : p === 'weekly' ? 'This Week' : 'This Month'}
-                </button>
-              ))}
-            </div>
-            {ranked.length === 0 ? (
-              <p className="text-white/30 italic text-sm text-center py-10">No completed tasks in this period.</p>
-            ) : (
-              <>
-                <div className="flex gap-3 flex-wrap">
-                  {ranked.slice(0,3).map((s,i) => (
-                    <div key={s.name} className="bg-[#001c36] border border-gold/20 p-3 flex-1 min-w-[120px] text-center space-y-1">
-                      <div className="text-2xl">{medals[i].badge}</div>
-                      <p className="text-[9px] text-gold font-bold">{medals[i].title}</p>
-                      <p className="text-white font-bold text-sm">{s.name}</p>
-                      <p className="text-[8px] text-white/50">{s.done} tasks · {s.onTime} on-time</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="bg-[#001c36] border border-gold/10 overflow-hidden">
-                  <table className="w-full text-[9px]">
-                    <thead><tr className="bg-navy/80">
-                      <th className="p-2 text-left text-gold/60">#</th>
-                      <th className="p-2 text-left text-gold/60">Staff</th>
-                      <th className="p-2 text-center text-gold/60">Done</th>
-                      <th className="p-2 text-center text-gold/60">On Time</th>
-                      <th className="p-2 text-center text-gold/60">Late</th>
-                      <th className="p-2 text-center text-gold/60">Rate</th>
-                      <th className="p-2 text-center text-gold/60">Avg</th>
-                    </tr></thead>
-                    <tbody>
-                      {ranked.map((s,i) => {
-                        const rate = s.done > 0 ? Math.round(s.onTime/s.done*100) : 0;
-                        return (
-                          <tr key={s.name} className={i%2===0?'bg-[#001c36]':'bg-[#002440]'}>
-                            <td className="p-2 text-gold font-bold">{i+1}</td>
-                            <td className="p-2 text-white font-bold">{s.name}</td>
-                            <td className="p-2 text-center text-white">{s.done}</td>
-                            <td className="p-2 text-center text-green-400">{s.onTime}</td>
-                            <td className="p-2 text-center text-red-400">{s.late}</td>
-                            <td className="p-2 text-center">
-                              <span className={cn('px-2 py-0.5 rounded-full font-bold text-white text-[8px]',
-                                rate>=90?'bg-green-700':rate>=70?'bg-yellow-700':'bg-red-700')}>{rate}%</span>
-                            </td>
-                            <td className="p-2 text-center text-white/60">{s.avgMin}m</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </div>
-        );
-      })()}
-
-            {/* HK Manager — Rooms Tab */}
-      {activeTab === 'rooms' && profile.department === 'Housekeeping' && (
-        <div className="p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-serif text-gold flex items-center gap-2"><BedDouble size={18} /> Room Status Board</h2>
-            <div className="flex gap-2 items-center">
-              <button onClick={() => {
-                const today = new Date().toLocaleDateString('en-GB');
-                const d = new Date();
-                const dateStr = d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-                const statusColor: Record<string,string> = {
-                  'Clean':'#166534','Dirty':'#991b1b','Cleaning':'#92400e',
-                  'Inspected':'#7c2d12','Do Not Disturb':'#4c1d95','Out of Order':'#374151','Checked Out':'#1e40af',
-                };
-                const t = (ts: string|null) => ts ? new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '—';
-                const rows = rooms.map((r,i) => `
-                  <tr style="background:${i%2===0?'#f9f8f5':'#fff'}">
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;color:#C5A059;font-weight:bold">${i+1}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-weight:bold">Room ${r.room_number}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${r.room_type||''} · Fl.${r.floor||''}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee">
-                      <span style="background:${statusColor[r.status]||'#374151'};color:#fff;padding:2px 8px;border-radius:9px;font-size:9px;font-weight:bold">${r.status||''}</span>
-                    </td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${r.assigned_to||'—'}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${t(r.cleaning_at)}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${t(r.cleaned_at)}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${r.inspected_at ? (r.assigned_to||'—') : '—'}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${t(r.inspected_at)}</td>
-                  </tr>`).join('');
-                const totalClean = rooms.filter(r=>r.status==='Clean'||r.status==='Inspected').length;
-                const totalDirty = rooms.filter(r=>r.status==='Dirty').length;
-                const totalInspected = rooms.filter(r=>r.status==='Inspected').length;
-                // Build staff performance from rooms data
-                const staffMap: Record<string, {name:string,cleaned:number,inspected:number,lastSeen:string}> = {};
-                rooms.forEach(r => {
-                  if (r.assigned_to && r.cleaned_at) {
-                    if (!staffMap[r.assigned_to]) staffMap[r.assigned_to] = {name:r.assigned_to,cleaned:0,inspected:0,lastSeen:r.cleaned_at};
-                    staffMap[r.assigned_to].cleaned++;
-                    if (r.cleaned_at > staffMap[r.assigned_to].lastSeen) staffMap[r.assigned_to].lastSeen = r.cleaned_at;
-                  }
-                  if (r.assigned_to && r.inspected_at) {
-                    if (!staffMap[r.assigned_to]) staffMap[r.assigned_to] = {name:r.assigned_to,cleaned:0,inspected:0,lastSeen:r.inspected_at};
-                    staffMap[r.assigned_to].inspected++;
-                  }
-                });
-                const ranked = Object.values(staffMap).sort((a,b)=>(b.cleaned+b.inspected)-(a.cleaned+a.inspected));
-                const medals = [
-                  {title:'⭐ The Supernova',color:'#C5A059',bg:'rgba(197,160,89,0.15)',border:'#C5A059'},
-                  {title:'🌟 The North Star',color:'#94a3b8',bg:'rgba(148,163,184,0.15)',border:'#94a3b8'},
-                  {title:'🚀 The Rising Comet',color:'#cd7c2f',bg:'rgba(205,124,47,0.15)',border:'#cd7c2f'},
-                ];
-                const podiumHtml = ranked.slice(0,3).map((s,i)=>
-                  `<div style="background:${medals[i].bg};border:1px solid ${medals[i].border};padding:12px 18px;min-width:100px;text-align:center">
-                    <div style="font-size:22px;margin-bottom:4px">${i===0?'🥇':i===1?'🥈':'🥉'}</div>
-                    <div style="font-size:11px;font-weight:bold;color:${medals[i].color}">${medals[i].title}</div>
-                    <div style="font-size:13px;font-weight:bold;color:#001529;margin-top:4px">${s.name}</div>
-                    <div style="font-size:9px;color:#666;margin-top:2px">${s.cleaned} cleaned · ${s.inspected} inspected</div>
-                  </div>`
-                ).join('');
-                const html = `<!DOCTYPE html><html><head><title>Housekeeping Report ${today}</title>
-                <style>
-                  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600&display=swap');
-                  *{margin:0;padding:0;box-sizing:border-box}
-                  body{font-family:Inter,sans-serif;background:#fff;padding:20px;font-size:11px}
-                  @media print{body{padding:6px}}
-                </style></head><body>
-                <div style="background:#001529;color:#fff;padding:16px 20px;margin-bottom:14px">
-                  <div style="font-family:'Playfair Display',serif;font-size:22px;color:#C5A059;letter-spacing:3px">SENTINEL PRO</div>
-                  <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:4px;letter-spacing:1px">HOUSEKEEPING PERFORMANCE REPORT · ${dateStr}</div>
-                  <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
-                    <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
-                      <div style="font-size:20px;font-weight:bold;color:#C5A059">${rooms.length}</div>
-                      <div style="font-size:8px;color:rgba(255,255,255,0.5)">TOTAL ROOMS</div></div>
-                    <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
-                      <div style="font-size:20px;font-weight:bold;color:#C5A059">${totalClean}</div>
-                      <div style="font-size:8px;color:rgba(255,255,255,0.5)">CLEAN / READY</div></div>
-                    <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
-                      <div style="font-size:20px;font-weight:bold;color:#C5A059">${totalInspected}</div>
-                      <div style="font-size:8px;color:rgba(255,255,255,0.5)">INSPECTED</div></div>
-                    <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
-                      <div style="font-size:20px;font-weight:bold;color:#C5A059">${totalDirty}</div>
-                      <div style="font-size:8px;color:rgba(255,255,255,0.5)">DIRTY</div></div>
-                  </div>
-                </div>
-                ${ranked.length > 0 ? `
-                <div style="margin-bottom:16px">
-                  <div style="font-size:13px;font-weight:bold;color:#001529;margin-bottom:8px;letter-spacing:1px">🏆 HEROES OF THE DAY</div>
-                  <div style="display:flex;gap:10px;flex-wrap:wrap">${podiumHtml}</div>
-                </div>` : ''}
-                <table style="width:100%;border-collapse:collapse">
-                  <thead><tr style="background:#f4f2ec">
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">S/No</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Room</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Type / Floor</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Status</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Staff</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Cleaning Started</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Cleaned At</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Inspected By</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Inspected At</th>
-                  </tr></thead>
-                  <tbody>${rows}</tbody>
-                </table>
-                <div style="text-align:center;color:#999;font-size:8px;margin-top:16px;border-top:1px solid #eee;padding-top:8px">
-                  SENTINEL PRO · Housekeeping Report · Generated ${new Date().toLocaleString()}</div>
-                <scr` + `ipt>setTimeout(()=>window.print(),500)</scr` + `ipt>
-                </body></html>`;
-                const w = window.open('','_blank');
-                if(w){w.document.open();w.document.write(html);w.document.close();}
-                else showToast('Allow popups to print report','error');
-              }} className="text-[8px] bg-gold text-navy font-bold px-2 py-1 flex items-center gap-1">
-                <Download size={10}/> PDF Report
-              </button>
-              <button onClick={fetchRoomsMgr} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
-            </div>
-          </div>
-          {/* Search bar */}
-          <div className="relative">
-            <input
-              type="text"
-              value={roomSearch}
-              onChange={e => setRoomSearch(e.target.value)}
-              placeholder="Search by room number or status (e.g. Clean, Dirty...)"
-              className="w-full bg-[#001c36] border border-gold/20 text-white text-[11px] p-2 pl-8 outline-none placeholder:text-white/30"
-            />
-            <Search size={13} className="absolute left-2.5 top-2.5 text-gold/40" />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {rooms
-              .filter(room => {
-                if (!roomSearch.trim()) return true;
-                const q = roomSearch.toLowerCase();
-                return room.room_number?.toString().toLowerCase().includes(q)
-                  || (room.status || '').toLowerCase().includes(q);
-              })
-              .map(room => {
-                const statusObj = ROOM_STATUSES.find(s => s.key === room.status) || ROOM_STATUSES[0];
-                return (
-                  <div key={room.id} className="bg-[#001c36] border border-gold/10 p-3 space-y-2">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="text-gold font-bold text-sm">Room {room.room_number}</p>
-                        <p className="text-[8px] text-white/40">{room.room_type} · Floor {room.floor}</p>
-                      </div>
-                      <span className={cn('text-[8px] font-bold px-2 py-0.5 text-white rounded-full', statusObj.color)}>{room.status}</span>
-                    </div>
-                    {room.assigned_to && (
-                      <p className="text-[8px] text-white/60 italic">✏ {room.assigned_to}</p>
-                    )}
-                    {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
-                    {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
-                    {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected by: {room.assigned_to} at {new Date(room.inspected_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
-                    <select value={room.status} onChange={async e => {
-                        const newStatus = e.target.value;
-                        const now = new Date().toISOString();
-                        const upd: any = {
-                          status: newStatus,
-                          assigned_to: profile.displayName,
-                          last_updated: now,
-                        };
-                        if (newStatus === 'Cleaning')  upd.cleaning_at  = now;
-                        if (newStatus === 'Clean')     upd.cleaned_at   = now;
-                        if (newStatus === 'Inspected') upd.inspected_at = now;
-                        await supabase.from('rooms').update(upd).eq('id', room.id);
-                        fetchRoomsMgr();
-                      }} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none mt-1">
-                      {ROOM_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-                    </select>
-
-                  </div>
-                );
-              })}
-          </div>
-        </div>
-      )}
-
-      {/* F&B Manager — Restaurants Tab */}
-      {activeTab === 'restaurants' && profile.department === 'F&B' && (
-        <RestaurantPortal profile={profile} />
-      )}
     </div>
   );
 };
@@ -2827,18 +1231,12 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const [staffList, setStaffList] = useState<any[]>([]);
   const [slaSettings, setSlaSettings] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'analytics' | 'requests' | 'sla' | 'leaderboard' | 'staff' | 'qr' | 'restaurants'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'requests' | 'sla' | 'leaderboard' | 'staff' | 'qr'>('analytics');
   const [reportPeriod, setReportPeriod] = useState<'weekly' | 'monthly'>('weekly');
   const [reportMenuOpen, setReportMenuOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
-
-  // ✅ 5-second polling fallback — ensures updates even if real-time fails
-  useEffect(() => {
-    const poll = setInterval(() => { fetchData(); }, 5000);
-    return () => clearInterval(poll);
-  }, []);
 
   const fetchData = async () => {
     const { data: reqData } = await supabase.from('requests').select('*').order('created_at', { ascending: false });
@@ -2862,15 +1260,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
 
   const getSLALimit = (dept: string) => { const s = slaSettings.find((x: any) => x.department === dept); return (s?.sla_minutes || 5) * 60; };
   const getSLAExceeded = (req: any) => { if (!req.created_at || req.status === 'Completed') return false; return (now - new Date(req.created_at).getTime()) / 1000 > getSLALimit(req.department); };
-  const getElapsedMin = (ts: any) => {
-    if (!ts) return 0;
-    try {
-      const normalized = String(ts).trim().replace(' ', 'T');
-      const created = new Date(normalized).getTime();
-      if (isNaN(created)) return 0;
-      return Math.floor((Date.now() - created) / 60000);
-    } catch { return 0; }
-  };
+  const getElapsedMin = (ts: any) => Math.floor((now - new Date(ts).getTime()) / 60000);
 
   const violations = requests.filter(r => getSLAExceeded(r));
   const completed = requests.filter(r => r.status === 'Completed').length;
@@ -2895,9 +1285,9 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const slaViolators = staffList.filter(s => (s.violations || 0) > 0).sort((a, b) => (b.violations || 0) - (a.violations || 0));
 
   const approveStaff = async (id: string) => { await supabase.from('staff').update({ approved: true }).eq('id', id); };
-  const deleteStaff = async (id: string) => { if (window.confirm('Are you sure you want to permanently delete this staff member?')) { await supabase.from('staff').delete().eq('id', id); showToast('Staff member deleted', 'info'); } };
+  const deleteStaff = async (id: string) => { if (window.confirm('Delete?')) await supabase.from('staff').delete().eq('id', id); };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
-  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); showToast('Account logged out successfully', 'success'); };
+  const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); alert('Account logged out.'); };
 
   const generateQRCodes = () => {
     const baseUrl = window.location.origin;
@@ -2927,7 +1317,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
       link.setAttribute('download', `SentinelPro_${reportPeriod}_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link); link.click(); document.body.removeChild(link); return;
     }
-    if (type === 'email') { showToast(`${reportPeriod} report sent to all department managers`, 'success'); return; }
+    if (type === 'email') { alert(`✅ ${reportPeriod} report sent to all department managers.`); return; }
 
     // ✅ FULL PROFESSIONAL PDF REPORT
     const deptBreakdown = ['Housekeeping', 'F&B', 'Concierge', 'Security & Safety', 'Front Office', 'Maintenance'].map(dept => {
@@ -3138,7 +1528,6 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
               { key: 'requests', label: 'Requests' },
               { key: 'staff', label: `Staff${allPendingCount > 0 ? `(${allPendingCount})` : ''}` },
               { key: 'qr', label: '📱 QR' },
-              { key: 'restaurants', label: '🍽 Restaurants' },
             ].map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>{tab.label}</button>
             ))}
@@ -3317,11 +1706,8 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
                     <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to || 'Unassigned'}</p>
                     {req.line_items && req.line_items.map((li: any, i: number) => <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>)}
                   </div>
-                  <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
-                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
-                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
-                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
-                    {req.closed_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
+                  <div className="text-right ml-4 flex-shrink-0">
+                    <p className="text-[9px] text-white/40">{new Date(req.created_at).toLocaleTimeString()}</p>
                     {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                   </div>
                 </div>
@@ -3382,35 +1768,6 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
         </div>
       )}
 
-      {/* TRANSLATION SETTINGS */}
-      {activeTab === 'qr' && (
-        <div className="mt-4 space-y-4">
-          <div className="bg-[#001c36] border border-gold/10 p-4">
-          <h3 className="text-sm font-serif text-gold mb-3">🌐 Google Translate API Key</h3>
-          <p className="text-[9px] text-white/40 mb-3">Enter your Google Cloud Translation API key to enable automatic translation of guest messages to staff language.</p>
-          <input
-            type="text"
-            defaultValue={localStorage.getItem('google_translate_key') || ''}
-            placeholder="AIza..."
-            className="w-full bg-white border border-gold p-2 text-sm text-navy outline-none mb-2"
-            id="google-api-key-input"
-          />
-          <button
-            onClick={() => {
-              const val = (document.getElementById('google-api-key-input') as HTMLInputElement)?.value;
-              if (val) { localStorage.setItem('google_translate_key', val); showToast('API key saved!', 'success'); }
-            }}
-            className="bg-gold text-navy px-4 py-2 text-[9px] font-bold uppercase"
-          >
-            Save API Key
-          </button>
-        </div>
-      )}
-      {/* RESTAURANT PORTAL */}
-      {activeTab === 'restaurants' && (
-        <RestaurantPortal profile={profile} />
-      )}
-
       {/* QR CODES */}
       {activeTab === 'qr' && (
         <div className="bg-[#001c36] border border-gold/10 p-5 space-y-5">
@@ -3439,7 +1796,6 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [guestTab, setGuestTab] = useState<'services' | 'room-service' | 'restaurant-bookings' | 'concierge'>('services');
-  const [showRestaurantPortal, setShowRestaurantPortal] = useState(false);
   const [requests, setRequests] = useState<any[]>([]);
   const [cart, setCart] = useState<{ [itemId: string]: number }>({});
   const [showRequestModal, setShowRequestModal] = useState(false);
@@ -3447,7 +1803,7 @@ export default function App() {
   const [message, setMessage] = useState('');
   const [dietaryRequirements, setDietaryRequirements] = useState('');
   const [feedbackRequest, setFeedbackRequest] = useState<any | null>(null);
-  const [roomNumber] = useState(roomNumberFromUrl || '');
+  const [roomNumber] = useState(roomNumberFromUrl || '402');
   const [pathname, setPathname] = useState(window.location.pathname);
   const { language, t, isRTL } = useLanguage();
 
@@ -3481,20 +1837,17 @@ export default function App() {
       }
     };
     fetchRequests();
-    // ✅ Poll every 3 seconds so guest sees status updates without manual refresh
-    const poll = setInterval(() => { fetchRequests(); }, 3000);
     const channel = supabase.channel(`guest-${profile.uid}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, fetchRequests)
       .subscribe();
-    return () => { supabase.removeChannel(channel); clearInterval(poll); };
+    return () => { supabase.removeChannel(channel); };
   }, [profile]);
 
   const logout = () => { localStorage.clear(); setProfile(null); window.location.replace('/'); };
 
   // ✅ CORRECT DEPARTMENT ROUTING — Room Service = F&B, Concierge = Concierge etc
   const submitRequest = async (customData?: any) => {
-    const activeRoom = profile?.roomNumber || roomNumber;
-    if (!profile || !activeRoom) { showToast('Room number is required', 'error'); return; }
+    if (!profile || !roomNumber) return;
     const service = customData?.type ? customData : selectedService;
     if (!service) return;
     const lineItems = customData?.lineItems || null;
@@ -3504,23 +1857,24 @@ export default function App() {
     const department = getDepartmentFromServiceKey(serviceKey, service.dept || customData?.dept);
     try {
       const { error } = await supabase.from('requests').insert({
-        guest_room: activeRoom,
+        guest_room: roomNumber,
         guest_id: profile.uid,
         guest_name: profile.displayName,
         service: service.type || service.name,
         service_key: serviceKey,
-        notes: customData?.notes || [message, dietaryRequirements].filter(Boolean).join(' — ') || '',
+        notes: customData?.notes || message || dietaryRequirements,
         department, // ✅ Always correct department
         status: 'Pending',
         total_price: totalPrice > 0 ? totalPrice : null,
         line_items: lineItems,
         language,
+        created_at: new Date().toISOString(),
       });
       if (error) throw error;
       setShowRequestModal(false); setMessage(''); setSelectedService(null);
       setCart({}); setDietaryRequirements(''); setGuestTab('services');
-      showToast('Your request has been submitted successfully!', 'success');
-    } catch (e: any) { showToast(e.message || 'An error occurred. Please try again.', 'error'); }
+      alert('✅ Your request has been submitted!');
+    } catch (e: any) { alert(e.message); }
   };
 
   const submitFeedback = async (rating: number, comment: string) => {
@@ -3538,7 +1892,7 @@ export default function App() {
   const guestServices = [
     { name: t('housekeeping'), icon: Sparkles, dept: 'Housekeeping', serviceKey: 'housekeeping', options: [t('room_cleaning'), t('laundry'), t('extra_blanket'), 'Extra Pillow', 'Extra Towels', 'Turn Down Service'] },
     { name: t('room_service'), icon: Coffee, dept: 'F&B', serviceKey: 'room_service' }, // ✅ Goes to F&B
-    { name: 'Restaurant Reservations', icon: UtensilsCrossed, dept: 'F&B', serviceKey: 'restaurant_portal', isPortal: true }, // ✅ Opens dedicated portal
+    { name: t('restaurant_bookings'), icon: UtensilsCrossed, dept: 'F&B', serviceKey: 'restaurant_bookings' }, // ✅ Goes to F&B
     { name: t('concierge_services'), icon: Key, dept: 'Concierge', serviceKey: 'concierge_services' }, // ✅ Goes to Concierge
     { name: t('security'), icon: Shield, dept: 'Security & Safety', serviceKey: 'security', options: [t('emergency'), t('safe_box'), t('medical'), t('escort'), 'Lost & Found', 'Other'] },
     { name: 'Maintenance', icon: Wrench, dept: 'Maintenance', serviceKey: 'maintenance', options: ['AC / Heating Issue', 'Plumbing Issue', 'Electrical Issue', 'TV / Electronics', 'Door / Lock Issue', 'Lighting Issue', 'Bathroom Issue', 'Other'] }, // ✅ Goes to Maintenance
@@ -3547,8 +1901,6 @@ export default function App() {
   if (loading) return <div className="min-h-screen bg-navy flex items-center justify-center"><div className="text-gold font-serif text-2xl animate-pulse">Loading...</div></div>;
 
   return (
-    <>
-    <ToastContainer />
     <div className={cn('main-content', isRTL && 'rtl', profile?.role === 'manager' && 'manager-dark-mode')}>
       <GlobalLanguageSelector />
       {profile && profile.role === 'guest' && (
@@ -3592,7 +1944,7 @@ export default function App() {
                       {guestServices.map(service => (
                         <button key={service.name} onClick={() => {
                           if (service.serviceKey === 'room_service') setGuestTab('room-service');
-                          else if (service.serviceKey === 'restaurant_portal') setShowRestaurantPortal(true);
+                          else if (service.serviceKey === 'restaurant_bookings') setGuestTab('restaurant-bookings');
                           else if (service.serviceKey === 'concierge_services') setGuestTab('concierge');
                           else { setSelectedService(service); if (service.options) setMessage(service.options[0]); setShowRequestModal(true); }
                         }} className="premium-card">
@@ -3633,30 +1985,13 @@ export default function App() {
                 {guestTab === 'room-service' && (
                   <RoomService cart={cart} updateCart={(id, delta) => setCart(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }))} onSubmit={(notes, items) => submitRequest({ type: t('room_service'), serviceKey: 'room_service', dept: 'F&B', notes, lineItems: items })} />
                 )}
-                {/* restaurant-bookings moved to dedicated RestaurantPortal */}
+                {guestTab === 'restaurant-bookings' && <RestaurantBooking onSubmit={data => submitRequest({ ...data, serviceKey: 'restaurant_bookings', dept: 'F&B' })} />}
                 {guestTab === 'concierge' && <Concierge onSubmit={data => submitRequest({ ...data, serviceKey: 'concierge_services', dept: 'Concierge' })} />}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </main>
-
-      {/* Restaurant Portal Overlay */}
-      <AnimatePresence>
-        {showRestaurantPortal && (
-          <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
-            transition={{ type: 'tween', duration: 0.3 }}
-            className="fixed inset-0 z-[25000] bg-[#FCF9F2] overflow-y-auto">
-            <div className="sticky top-0 z-10 bg-navy px-4 py-3 flex items-center gap-3 border-b border-gold/20">
-              <button onClick={() => setShowRestaurantPortal(false)} className="text-gold hover:text-white">
-                <ArrowRight size={20} className="rotate-180" />
-              </button>
-              <h2 className="text-gold font-serif text-lg">Restaurant Reservations</h2>
-            </div>
-            {profile && <RestaurantPortal profile={profile} />}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {feedbackRequest && (
@@ -3689,6 +2024,5 @@ export default function App() {
         )}
       </AnimatePresence>
     </div>
-  </>
   );
 }
