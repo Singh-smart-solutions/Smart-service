@@ -4,7 +4,6 @@ export type Department =
   | 'Concierge'
   | 'Security & Safety'
   | 'Front Office'
-  | 'Maintenance'
   | 'None';
 
 export type UserRole = 'guest' | 'staff' | 'manager';
@@ -21,6 +20,9 @@ export interface UserProfile {
   staffIdNumber?: string;
   occupation?: string;
   status?: string;
+  hotelId?: string;       // ✅ Hotel isolation
+  hotelName?: string;     // ✅ Display name
+  entryCode?: string;     // ✅ The code used to enter
 }
 
 export interface ServiceRequest {
