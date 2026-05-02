@@ -1500,6 +1500,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
 const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRoom?: string; isLocked?: boolean; onNavigateToStaff: () => void }> = ({ onLoginSuccess, initialRoom, isLocked, onNavigateToStaff }) => {
   const { t } = useLanguage();
   const [fullName, setFullName] = useState('');
+  const [qrOnlyMode, setQrOnlyMode] = useState(false);
   const [roomNumber, setRoomNumber] = useState(initialRoom || '');
   const [loading, setLoading] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
@@ -1508,6 +1509,11 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
   const [failCount, setFailCount] = useState(0);
 
   useEffect(() => { if (initialRoom) setRoomNumber(initialRoom); }, [initialRoom]);
+
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key', 'access_mode').single()
+      .then(({ data }) => { if (data?.value === 'qr_only') setQrOnlyMode(true); });
+  }, []);
 
   const handleGuestLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1564,6 +1570,17 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
             <button onClick={() => setShowManagerLock(true)} className="gold-button w-full flex items-center justify-center gap-3"><ShieldCheck size={16} /> Executive Dashboard</button>
             <button onClick={onNavigateToStaff} className="navy-button w-full border border-gold/30 flex items-center justify-center gap-3"><User size={16} /> Staff Portal</button>
             <button onClick={() => setShowSecret(false)} className="text-[10px] text-white/40 uppercase tracking-widest w-full text-center">{t('cancel')}</button>
+          </div>
+        ) : qrOnlyMode && !isLocked ? (
+          <div className="space-y-5 text-center">
+            <div className="text-5xl">📱</div>
+            <p className="text-gold font-serif text-lg">QR Access Only</p>
+            <p className="text-white/60 text-[11px] leading-relaxed">
+              Please scan the QR code placed in your room to access the guest portal.
+            </p>
+            <p className="text-white/30 text-[9px]">
+              Find the Sentinel Pro card on your room desk.
+            </p>
           </div>
         ) : (
           <form onSubmit={handleGuestLogin} className="space-y-4 w-full">
@@ -3367,7 +3384,8 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
 
       {/* TRANSLATION SETTINGS */}
       {activeTab === 'qr' && (
-        <div className="mt-4 bg-[#001c36] border border-gold/10 p-4">
+        <div className="mt-4 space-y-4">
+          <div className="bg-[#001c36] border border-gold/10 p-4">
           <h3 className="text-sm font-serif text-gold mb-3">🌐 Google Translate API Key</h3>
           <p className="text-[9px] text-white/40 mb-3">Enter your Google Cloud Translation API key to enable automatic translation of guest messages to staff language.</p>
           <input
