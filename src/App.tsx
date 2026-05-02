@@ -775,6 +775,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
     const { data: freshData, error } = await supabase
       .from('restaurant_bookings')
       .select('*')
+      .eq('hotel_id', profile?.hotelId || 'none')
       .order('time', { ascending: true });
     if (error) { showToast('Failed to fetch data: ' + error.message, 'error'); return; }
     const allBookings = freshData || [];
@@ -1511,19 +1512,46 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
   useEffect(() => { if (initialRoom) setRoomNumber(initialRoom); }, [initialRoom]);
 
   useEffect(() => {
-    supabase.from('app_settings').select('value').eq('key', 'access_mode').single()
-      .then(({ data }) => { if (data?.value === 'qr_only') setQrOnlyMode(true); });
+    // Read QR mode from hotel context (set when staff code was entered)
+    const hotelRaw = localStorage.getItem('sentinel_hotel');
+    if (hotelRaw) {
+      try {
+        const h = JSON.parse(hotelRaw);
+        if (h.access_mode === 'qr_only') setQrOnlyMode(true);
+      } catch {}
+    } else {
+      // Fallback: check app_settings
+      supabase.from('app_settings').select('value').eq('key', 'access_mode').single()
+        .then(({ data }) => { if (data?.value === 'qr_only') setQrOnlyMode(true); });
+    }
   }, []);
 
   const handleGuestLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (fullName === '12345' || roomNumber === '12345') { setShowSecret(true); return; }
+    // ✅ Check hotel entry code OR legacy 12345
+    const typedCode = fullName.trim().toUpperCase();
+    if (typedCode === '12345' || roomNumber === '12345') { setShowSecret(true); return; }
+    // Check hotel_clients for matching entry_code
+    const { data: hotelByCode } = await supabase.from('hotel_clients')
+      .select('id, hotel_name, entry_code, executive_password, access_mode')
+      .eq('entry_code', typedCode).single();
+    if (hotelByCode) {
+      // Store hotel context in localStorage for this session
+      localStorage.setItem('sentinel_hotel', JSON.stringify(hotelByCode));
+      setShowSecret(true);
+      return;
+    }
     setLoading(true);
     try {
+      const hotelParam = queryParams.get('hotel');
+      const hotelSessionRaw = localStorage.getItem('sentinel_hotel');
+      const hotelSession = hotelSessionRaw ? JSON.parse(hotelSessionRaw) : null;
+      const resolvedHotelId = hotelParam || hotelSession?.id || null;
       const guestId = `${fullName.replace(/[^a-zA-Z0-9]/g, '_')}_${roomNumber}`;
       const { data: existing } = await supabase.from('guests').select('*').eq('id', guestId).single();
       if (!existing) await supabase.from('guests').insert({ id: guestId, name: fullName, email: 'guest@hotel.com', room: roomNumber });
-      const profile: UserProfile = { uid: guestId, email: 'guest@hotel.com', displayName: fullName || `Guest ${roomNumber}`, role: 'guest', department: 'None', roomNumber, status: 'Approved' };
+      const profile: UserProfile = { uid: guestId, email: 'guest@hotel.com', displayName: fullName || `Guest ${roomNumber}`, role: 'guest', department: 'None', roomNumber, status: 'Approved',
+        hotelId: resolvedHotelId };
       localStorage.setItem('sentinel_local_session', JSON.stringify(profile));
       onLoginSuccess(profile);
     } catch (err: any) { showToast(err.message || 'An error occurred. Please try again.', 'error'); } finally { setLoading(false); }
@@ -1531,6 +1559,21 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
 
   const handleManagerAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Check hotel-specific exec password first
+    const hotelRaw = localStorage.getItem('sentinel_hotel');
+    const hotelCtx = hotelRaw ? JSON.parse(hotelRaw) : null;
+    if (hotelCtx && managerPassword === hotelCtx.executive_password) {
+      const adminProfile: UserProfile = {
+        uid: 'exec_' + hotelCtx.id,
+        email: 'executive@' + hotelCtx.hotel_name.toLowerCase().replace(/\s/g,'') + '.hotel',
+        displayName: 'Executive Director',
+        role: 'manager', department: 'None', status: 'Approved',
+        hotelId: hotelCtx.id, hotelName: hotelCtx.hotel_name,
+      };
+      localStorage.setItem('sentinel_local_session', JSON.stringify(adminProfile));
+      onLoginSuccess(adminProfile); return;
+    }
+    // Legacy global password
     if (managerPassword === 'Manager12345') {
       const adminProfile: UserProfile = { uid: 'admin_override', email: 'admin@sentinel.pro', displayName: 'Executive Director', role: 'manager', department: 'None', status: 'Approved' };
       localStorage.setItem('sentinel_local_session', JSON.stringify(adminProfile));
@@ -1628,6 +1671,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
           department: derivedDept, occupation, approved: false,
           needs_executive_approval: isManagerOccupation,
           logged_in: false, tasks_completed: 0, tasks_on_time: 0, violations: 0, failed_attempts: 0,
+          hotel_id: hotelCtx?.id || null,
         });
         if (error) throw error;
         setPendingMessage(isManagerOccupation ? `Your ${occupation} profile has been submitted for Executive approval.` : `Your profile has been submitted for Department Manager approval.`);
@@ -1646,11 +1690,15 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         if (!staffData.approved) { showToast('Your account is pending manager approval. Please wait.', 'info'); setLoading(false); return; }
         await supabase.from('staff').update({ logged_in: true, failed_attempts: 0, locked_until: null, device_id: null }).eq('id', staffData.id);
         const isManager = MANAGER_OCCUPATIONS.includes(staffData.occupation || '');
+        const hotelCtxRaw2 = localStorage.getItem('sentinel_hotel');
+        const hotelCtx2 = hotelCtxRaw2 ? JSON.parse(hotelCtxRaw2) : null;
         const profile: UserProfile = {
           uid: staffData.id, email: staffData.email, displayName: staffData.name,
           role: isManager ? 'manager' : 'staff',
           department: (staffData.department as Department) || 'Front Office',
           staffIdNumber: staffData.staff_id, occupation: staffData.occupation, status: 'Approved',
+          hotelId: staffData.hotel_id || hotelCtx2?.id || null,
+          hotelName: hotelCtx2?.hotel_name || null,
         };
         localStorage.setItem('sentinel_local_session', JSON.stringify(profile));
         onLoginSuccess(profile);
@@ -1773,6 +1821,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const fetchTasks = useCallback(async () => {
     const dept = userProfile.department;
     let query = supabase.from('requests').select('*').order('created_at', { ascending: false });
+    if (userProfile.hotelId) query = query.eq('hotel_id', userProfile.hotelId);
     if (dept === 'Security & Safety') query = query.in('department', ['Security & Safety', 'Security']);
     else query = query.eq('department', dept);
     const { data } = await query;
@@ -2247,18 +2296,25 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const fetchData = async () => {
     const dept = profile.department;
     let reqQ = supabase.from('requests').select('*').order('created_at', { ascending: false });
+    if (profile.hotelId) reqQ = reqQ.eq('hotel_id', profile.hotelId);
     if (dept === 'Security & Safety') reqQ = reqQ.in('department', ['Security & Safety', 'Security']);
     else reqQ = reqQ.eq('department', dept);
     const { data: reqData } = await reqQ;
     if (reqData) setRequests(reqData);
-    const { data: staffData } = await supabase.from('staff').select('*').eq('department', dept).order('created_at', { ascending: false });
+    let staffQ = supabase.from('staff').select('*').eq('department', dept).order('created_at', { ascending: false });
+    if (profile.hotelId) staffQ = staffQ.eq('hotel_id', profile.hotelId);
+    const { data: staffData } = await staffQ;
     if (staffData) setStaffList(staffData);
     const { data: slaData } = await supabase.from('sla_settings').select('*').eq('department', dept).single();
     if (slaData) { setSlaConfig(slaData); setEditSLA(slaData.sla_minutes); }
   };
 
   const fetchRoomsMgr = useCallback(async () => {
-    const { data } = await supabase.from('rooms').select('*').order('room_number', { ascending: true });
+    let roomQ = supabase.from('rooms').select('*').order('room_number', { ascending: true });
+    const hotelRaw = localStorage.getItem('sentinel_hotel');
+    const hCtx = hotelRaw ? JSON.parse(hotelRaw) : null;
+    if (hCtx?.id) roomQ = roomQ.eq('hotel_id', hCtx.id);
+    const { data } = await roomQ;
     if (data) setRooms(data);
   }, []);
 
@@ -2841,11 +2897,17 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   }, []);
 
   const fetchData = async () => {
-    const { data: reqData } = await supabase.from('requests').select('*').order('created_at', { ascending: false });
+    let execRQ = supabase.from('requests').select('*').order('created_at', { ascending: false });
+    if (profile.hotelId) execRQ = execRQ.eq('hotel_id', profile.hotelId);
+    const { data: reqData } = await execRQ;
     if (reqData) setRequests(reqData);
-    const { data: staffData } = await supabase.from('staff').select('*').order('created_at', { ascending: false });
+    let execSQ = supabase.from('staff').select('*').order('created_at', { ascending: false });
+    if (profile.hotelId) execSQ = execSQ.eq('hotel_id', profile.hotelId);
+    const { data: staffData } = await execSQ;
     if (staffData) setStaffList(staffData);
-    const { data: slaData } = await supabase.from('sla_settings').select('*');
+    let slaQ = supabase.from('sla_settings').select('*');
+    if (userProfile.hotelId) slaQ = slaQ.eq('hotel_id', userProfile.hotelId);
+    const { data: slaData } = await slaQ;
     if (slaData) setSlaSettings(slaData);
     const { data: roomData } = await supabase.from('rooms').select('*').order('room_number');
     if (roomData) setRooms(roomData);
@@ -2901,13 +2963,14 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
 
   const generateQRCodes = () => {
     const baseUrl = window.location.origin;
+    const hotelSuffix = profile.hotelId ? '&hotel=' + profile.hotelId : '';
     const roomNumbers = rooms.length > 0 ? rooms.map(r => r.room_number) : ['101', '102', '201', '202', '301', '302', '401', '402', '501', '502'];
     const html = `<!DOCTYPE html><html><head><title>Sentinel Pro QR Codes</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>body{font-family:Georgia,serif;background:#f8f6f0;padding:20px}h1{text-align:center;color:#C5A059;letter-spacing:4px;font-size:22px}p{text-align:center;color:#666;font-size:11px;margin-bottom:28px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.card{background:white;border:1px solid #C5A059;padding:18px;text-align:center;page-break-inside:avoid}.room{font-size:18px;font-weight:bold;color:#001529;margin-bottom:10px;letter-spacing:2px}.qr{display:flex;justify-content:center;margin:8px 0}.url{font-size:7px;color:#999;word-break:break-all;margin-top:6px}.instruction{font-size:8px;color:#C5A059;margin-top:5px;text-transform:uppercase;letter-spacing:1px}@media print{body{padding:8px}}</style>
 </head><body><h1>Sentinel Pro</h1><p>Scan QR to request hotel services</p>
 <div class="grid" id="grid"></div>
-<script>const rooms=${JSON.stringify(roomNumbers)};const base='${baseUrl}';const grid=document.getElementById('grid');rooms.forEach(room=>{const div=document.createElement('div');div.className='card';div.innerHTML='<div class="room">Room '+room+'</div><div class="qr" id="qr_'+room+'"></div><div class="instruction">Scan to request services</div><div class="url">'+base+'?room='+room+'</div>';grid.appendChild(div);setTimeout(()=>{new QRCode(document.getElementById('qr_'+room),{text:base+'?room='+room,width:110,height:110,colorDark:'#001529',colorLight:'#ffffff'});},100);});setTimeout(()=>window.print(),2000);</script>
+<script>const rooms=${JSON.stringify(roomNumbers)};const base='${baseUrl}';const grid=document.getElementById('grid');rooms.forEach(room=>{const div=document.createElement('div');div.className='card';div.innerHTML='<div class="room">Room '+room+'</div><div class="qr" id="qr_'+room+'"></div><div class="instruction">Scan to request services</div><div class="url">'+base+'?room='+room+'${profile.hotelId ? "&hotel="+profile.hotelId : ""}'+'</div>';grid.appendChild(div);setTimeout(()=>{new QRCode(document.getElementById('qr_'+room),{text:base+'?room='+room+'${profile.hotelId ? "&hotel="+profile.hotelId : ""}',width:110,height:110,colorDark:'#001529',colorLight:'#ffffff'});},100);});setTimeout(()=>window.print(),2000);</script>
 <button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:11px;font-weight:bold;cursor:pointer;">🖨 Print QR Codes</button></body></html>`;
     const win = window.open('', '_blank');
     if (win) { win.document.write(html); win.document.close(); }
@@ -3465,7 +3528,9 @@ export default function App() {
   useEffect(() => {
     if (!profile || profile.role !== 'guest') return;
     const fetchRequests = async () => {
-      const { data } = await supabase.from('requests').select('*').eq('guest_id', profile.uid).order('created_at', { ascending: false });
+      let guestReqQ = supabase.from('requests').select('*').eq('guest_id', profile.uid).order('created_at', { ascending: false });
+      if (profile.hotelId) guestReqQ = guestReqQ.eq('hotel_id', profile.hotelId);
+      const { data } = await guestReqQ;
       if (data) {
         const mapped = data.map((row: any) => ({
           id: row.id, roomNumber: row.guest_room || '', type: row.service || '',
@@ -3514,6 +3579,7 @@ export default function App() {
         total_price: totalPrice > 0 ? totalPrice : null,
         line_items: lineItems,
         language,
+        hotel_id: profile?.hotelId || null,
       });
       if (error) throw error;
       setShowRequestModal(false); setMessage(''); setSelectedService(null);
