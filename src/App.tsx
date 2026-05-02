@@ -1666,6 +1666,8 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
       if (mode === 'register') {
         const { data: existing } = await supabase.from('staff').select('id').eq('email', email).single();
         if (existing) { showToast('A profile with this email already exists. Please login.', 'info'); setMode('login'); setLoading(false); return; }
+        const hotelCtxRaw = localStorage.getItem('sentinel_hotel');
+        const hotelCtx = hotelCtxRaw ? JSON.parse(hotelCtxRaw) : null;
         const { error } = await supabase.from('staff').insert({
           name: fullName, staff_id: staffIdNumber, email, password,
           department: derivedDept, occupation, approved: false,
@@ -2906,10 +2908,12 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
     const { data: staffData } = await execSQ;
     if (staffData) setStaffList(staffData);
     let slaQ = supabase.from('sla_settings').select('*');
-    if (userProfile.hotelId) slaQ = slaQ.eq('hotel_id', userProfile.hotelId);
+    if (profile.hotelId) slaQ = slaQ.eq('hotel_id', profile.hotelId);
     const { data: slaData } = await slaQ;
     if (slaData) setSlaSettings(slaData);
-    const { data: roomData } = await supabase.from('rooms').select('*').order('room_number');
+    let roomQ2 = supabase.from('rooms').select('*').order('room_number');
+    if (profile.hotelId) roomQ2 = roomQ2.eq('hotel_id', profile.hotelId);
+    const { data: roomData } = await roomQ2;
     if (roomData) setRooms(roomData);
   };
 
