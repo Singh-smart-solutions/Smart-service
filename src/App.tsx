@@ -775,7 +775,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
     const { data: freshData, error } = await supabase
       .from('restaurant_bookings')
       .select('*')
-      .eq('hotel_id', profile?.hotelId || 'none')
+      .eq('hotel_id', profile?.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id || 'none'; } catch { return 'none'; } })())
       .order('time', { ascending: true });
     if (error) { showToast('Failed to fetch data: ' + error.message, 'error'); return; }
     const allBookings = freshData || [];
@@ -1512,17 +1512,27 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
   useEffect(() => { if (initialRoom) setRoomNumber(initialRoom); }, [initialRoom]);
 
   useEffect(() => {
-    // Read QR mode from hotel context (set when staff code was entered)
-    const hotelRaw = localStorage.getItem('sentinel_hotel');
-    if (hotelRaw) {
-      try {
-        const h = JSON.parse(hotelRaw);
-        if (h.access_mode === 'qr_only') setQrOnlyMode(true);
-      } catch {}
+    const hotelParam = queryParams.get('hotel');
+    if (hotelParam) {
+      // Guest scanned QR — load hotel from URL param
+      supabase.from('hotel_clients')
+        .select('id, hotel_name, entry_code, executive_password, access_mode, status')
+        .eq('id', hotelParam).single()
+        .then(({ data: h }) => {
+          if (h && h.status !== 'suspended' && h.status !== 'inactive') {
+            localStorage.setItem('sentinel_hotel', JSON.stringify(h));
+            if (h.access_mode === 'qr_only') setQrOnlyMode(true);
+          }
+        });
     } else {
-      // Fallback: check app_settings
-      supabase.from('app_settings').select('value').eq('key', 'access_mode').single()
-        .then(({ data }) => { if (data?.value === 'qr_only') setQrOnlyMode(true); });
+      // No URL param — read from session (staff already set it)
+      const hotelRaw = localStorage.getItem('sentinel_hotel');
+      if (hotelRaw) {
+        try {
+          const h = JSON.parse(hotelRaw);
+          if (h.access_mode === 'qr_only') setQrOnlyMode(true);
+        } catch {}
+      }
     }
   }, []);
 
@@ -1536,7 +1546,12 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
       .select('id, hotel_name, entry_code, executive_password, access_mode')
       .eq('entry_code', typedCode).single();
     if (hotelByCode) {
-      // Store hotel context in localStorage for this session
+      // Check hotel is active before allowing access
+      if (hotelByCode.status === 'suspended' || hotelByCode.status === 'inactive') {
+        showToast('This hotel account is currently suspended. Please contact support.', 'error');
+        setLoading(false);
+        return;
+      }
       localStorage.setItem('sentinel_hotel', JSON.stringify(hotelByCode));
       setShowSecret(true);
       return;
@@ -1694,6 +1709,11 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         const isManager = MANAGER_OCCUPATIONS.includes(staffData.occupation || '');
         const hotelCtxRaw2 = localStorage.getItem('sentinel_hotel');
         const hotelCtx2 = hotelCtxRaw2 ? JSON.parse(hotelCtxRaw2) : null;
+        // ✅ FIX 2: Staff must belong to this hotel
+        if (hotelCtx2?.id && staffData.hotel_id && staffData.hotel_id !== hotelCtx2.id) {
+          showToast('This account does not belong to this hotel.', 'error');
+          setLoading(false); return;
+        }
         const profile: UserProfile = {
           uid: staffData.id, email: staffData.email, displayName: staffData.name,
           role: isManager ? 'manager' : 'staff',
