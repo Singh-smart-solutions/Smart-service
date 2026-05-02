@@ -79,7 +79,7 @@ const HotelModal: React.FC<{
     city: hotel?.city || '',
     country: hotel?.country || 'UAE',
     rooms_count: hotel?.rooms_count || 0,
-    entry_code: hotel?.entry_code || generateCode(),
+    entry_code: hotel?.entry_code || '',
     executive_password: hotel?.executive_password || '',
     status: hotel?.status || 'trial',
     plan: hotel?.plan || 'trial',
@@ -185,10 +185,7 @@ const HotelModal: React.FC<{
               <div className="space-y-1">
                 <label className="text-[9px] uppercase tracking-widest text-white/50">Staff Portal Entry Code *</label>
                 <div className="flex gap-2">
-                  <input value={form.entry_code} onChange={e => setForm({ ...form, entry_code: e.target.value.toUpperCase() })} className="flex-1 bg-navy/50 border border-gold/20 text-white p-3 text-sm outline-none focus:border-gold font-mono" placeholder="e.g. XK-291" />
-                  <button onClick={() => setForm({ ...form, entry_code: generateCode() })} className="px-3 bg-gold/20 border border-gold/30 text-gold text-[9px] font-bold uppercase hover:bg-gold/30">
-                    <RefreshCw size={14} />
-                  </button>
+                  <input value={form.entry_code} onChange={e => setForm({ ...form, entry_code: e.target.value.toUpperCase() })} className="flex-1 bg-navy/50 border border-gold/20 text-white p-3 text-sm outline-none focus:border-gold font-mono" placeholder="e.g. HOTEL1 or 99999" />
                 </div>
                 <p className="text-[8px] text-white/30">Guest types this to access staff/executive portal</p>
               </div>
