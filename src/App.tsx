@@ -1543,7 +1543,7 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
     if (typedCode === '12345' || roomNumber === '12345') { setShowSecret(true); return; }
     // Check hotel_clients for matching entry_code
     const { data: hotelByCode } = await supabase.from('hotel_clients')
-      .select('id, hotel_name, entry_code, executive_password, access_mode')
+      .select('id, hotel_name, entry_code, executive_password, access_mode, status')
       .eq('entry_code', typedCode).single();
     if (hotelByCode) {
       // Check hotel is active before allowing access
