@@ -1709,10 +1709,12 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         const isManager = MANAGER_OCCUPATIONS.includes(staffData.occupation || '');
         const hotelCtxRaw2 = localStorage.getItem('sentinel_hotel');
         const hotelCtx2 = hotelCtxRaw2 ? JSON.parse(hotelCtxRaw2) : null;
-        // ✅ FIX 2: Staff must belong to this hotel
-        if (hotelCtx2?.id && staffData.hotel_id && staffData.hotel_id !== hotelCtx2.id) {
-          showToast('This account does not belong to this hotel.', 'error');
-          setLoading(false); return;
+        // ✅ Staff must belong to this hotel — block NULL hotel_id too
+        if (hotelCtx2?.id) {
+          if (!staffData.hotel_id || staffData.hotel_id !== hotelCtx2.id) {
+            showToast('This account does not belong to this hotel.', 'error');
+            setLoading(false); return;
+          }
         }
         const profile: UserProfile = {
           uid: staffData.id, email: staffData.email, displayName: staffData.name,
