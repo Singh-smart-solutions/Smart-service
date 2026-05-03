@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './supabase';
+import bcrypt from 'bcryptjs';
 import { UserProfile, Department } from './types';
 import { cn } from './lib/utils';
 import {
@@ -1696,8 +1697,9 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         if (existing) { showToast('A profile with this email already exists. Please login.', 'info'); setMode('login'); setLoading(false); return; }
         const hotelCtxRaw = localStorage.getItem('sentinel_hotel');
         const hotelCtx = hotelCtxRaw ? JSON.parse(hotelCtxRaw) : null;
+        const hashedPassword = await bcrypt.hash(password, 10);
         const { error } = await supabase.from('staff').insert({
-          name: fullName, staff_id: staffIdNumber, email, password,
+          name: fullName, staff_id: staffIdNumber, email, password: hashedPassword,
           department: derivedDept, occupation, approved: false,
           needs_executive_approval: isManagerOccupation,
           logged_in: false, tasks_completed: 0, tasks_on_time: 0, violations: 0, failed_attempts: 0,
@@ -1710,7 +1712,8 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         const { data: staffData, error } = await supabase.from('staff').select('*').eq('email', email).single();
         if (error || !staffData) { showToast('Invalid email or password. Please try again.', 'error'); setLoading(false); return; }
         if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) { showToast(`Account is locked until ${new Date(staffData.locked_until).toLocaleTimeString()}. Please try again later.`, 'error'); setLoading(false); return; }
-        if (staffData.password !== password) {
+        const passwordMatch = await bcrypt.compare(password, staffData.password);
+        if (!passwordMatch) {
           const attempts = (staffData.failed_attempts || 0) + 1;
           const lockUntil = attempts >= 5 ? new Date(Date.now() + 30 * 60000).toISOString() : null;
           await supabase.from('staff').update({ failed_attempts: attempts, ...(lockUntil ? { locked_until: lockUntil } : {}) }).eq('id', staffData.id);
