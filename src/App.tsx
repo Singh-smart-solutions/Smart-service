@@ -687,7 +687,7 @@ const formatBookingDate = (date: string) => {
 // ─── BOOKING TICKET ───────────────────────────────────────────────────────────
 const printBookingTicket = (booking: any) => {
   // restaurant name stored in booking or fallback to id
-  const restaurant = { name: booking.restaurant_name || booking.restaurant || 'Restaurant', emoji: '🍽' };
+  const restaurant = { name: booking.restaurant_name || booking.restaurant || 'Restaurant', emoji: '🍽', cuisine: '' };
   const html = `<!DOCTYPE html><html><head><title>Booking Confirmation</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600&display=swap');
