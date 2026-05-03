@@ -665,7 +665,7 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void; profile?: UserProfile
 };
 
 
-// RESTAURANTS loaded dynamically from DB per hotel
+// restaurants loaded dynamically from DB per hotel
 
 const generateBookingRef = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -679,7 +679,7 @@ const formatBookingDate = (date: string) => {
 
 // ─── BOOKING TICKET ───────────────────────────────────────────────────────────
 const printBookingTicket = (booking: any) => {
-  const restaurant = RESTAURANTS.find(r => r.id === booking.restaurant);
+  const restaurant = restaurants.find(r => r.id === booking.restaurant);
   const html = `<!DOCTYPE html><html><head><title>Booking Confirmation</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600&display=swap');
@@ -916,7 +916,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
     setWalkInLoading(true);
     try {
       const ref = generateBookingRef();
-      const restaurant = RESTAURANTS.find(r => r.id === walkInRestaurant);
+      const restaurant = restaurants.find(r => r.id === walkInRestaurant);
       const { data, error } = await supabase.from('restaurant_bookings').insert({
         booking_ref: ref,
         guest_id: 'WALKIN-' + Date.now(),
@@ -989,7 +989,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
 
     // Build rows using string concat — no nested backticks
     const buildRow = (b: any, i: number) => {
-      const restName = RESTAURANTS.find((r: any) => r.id === b.restaurant)?.name || b.restaurant || '';
+      const restName = restaurants.find((r: any) => r.id === b.restaurant)?.name || b.restaurant || '';
       const roomDisplay = b.room_number === 'WALK-IN' ? '<span style="color:#7C3AED;font-weight:bold">OUTSIDE</span>' : b.room_number;
       return '<tr style="background:' + (i % 2 === 0 ? '#ffffff' : '#f9f8f5') + '">' +
         '<td style="padding:6px 8px;border-bottom:1px solid #eee;color:#C5A059;font-weight:bold">' + (i + 1) + '</td>' +
@@ -1165,7 +1165,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#001c36] border border-red-500 w-full max-w-md p-6 shadow-2xl space-y-4">
               <h3 className="text-lg font-serif text-white flex items-center gap-2"><AlertCircle size={18} className="text-red-400" /> Reject Booking</h3>
               <div className="bg-navy/50 p-3 rounded">
-                <p className="text-gold font-bold text-sm">{RESTAURANTS.find(r => r.id === rejectModal.restaurant)?.name}</p>
+                <p className="text-gold font-bold text-sm">{restaurants.find(r => r.id === rejectModal.restaurant)?.name}</p>
                 <p className="text-white/60 text-[9px]">{rejectModal.guest_name} · Room {rejectModal.room_number} · {rejectModal.date} at {rejectModal.time} · {rejectModal.pax} pax</p>
               </div>
               <div className="space-y-1">
@@ -1182,7 +1182,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                 <label className="text-[9px] text-white/50 uppercase font-bold block">Suggest Alternative (Optional)</label>
                 <select value={rejectAlt} onChange={e => setRejectAlt(e.target.value)} className="w-full bg-white border border-gold/30 p-2.5 text-sm text-navy outline-none">
                   <option value="">-- No alternative --</option>
-                  {RESTAURANTS.filter(r => r.id !== rejectModal.restaurant).map(r => (
+                  {restaurants.filter(r => r.id !== rejectModal.restaurant).map(r => (
                     <option key={r.id} value={r.name}>{r.emoji} {r.name} — {r.cuisine}</option>
                   ))}
                   <option value="an earlier time slot">An earlier time slot</option>
@@ -1238,7 +1238,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white w-full max-w-sm p-6 shadow-2xl border-t-4 border-red-500">
               <h3 className="text-lg font-serif text-navy mb-2">Cancel Booking?</h3>
               <p className="text-sm text-gray-500 mb-2">Booking Reference: <strong>{cancelConfirm.booking_ref}</strong></p>
-              <p className="text-sm text-gray-500 mb-4">{RESTAURANTS.find(r => r.id === cancelConfirm.restaurant)?.name} · {cancelConfirm.date} at {cancelConfirm.time}</p>
+              <p className="text-sm text-gray-500 mb-4">{restaurants.find(r => r.id === cancelConfirm.restaurant)?.name} · {cancelConfirm.date} at {cancelConfirm.time}</p>
               <div className="flex gap-3">
                 <button onClick={() => setCancelConfirm(null)} className="flex-1 py-2.5 border border-navy/20 text-navy text-[10px] font-bold uppercase">Keep Booking</button>
                 <button onClick={() => cancelBooking(cancelConfirm.id)} className="flex-1 py-2.5 bg-red-600 text-white text-[10px] font-bold uppercase">Yes, Cancel</button>
@@ -1361,7 +1361,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                 <button onClick={() => setActiveTab('book')} className="mt-4 bg-navy text-white px-6 py-2 text-[10px] font-bold uppercase">Make a Reservation</button>
               </div>
             ) : bookings.map(b => {
-              const restaurant = RESTAURANTS.find(r => r.id === b.restaurant);
+              const restaurant = restaurants.find(r => r.id === b.restaurant);
               return (
                 <div key={b.id} className="bg-white border border-navy/10 shadow-sm overflow-hidden">
                   <div className="bg-navy px-4 py-3 flex justify-between items-center">
@@ -1432,7 +1432,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
             </div>
             {bookings.length === 0 ? <p className="text-white/20 italic text-center py-12">No bookings yet</p>
               : bookings.map(b => {
-                const restaurant = RESTAURANTS.find(r => r.id === b.restaurant);
+                const restaurant = restaurants.find(r => r.id === b.restaurant);
                 return (
                   <div key={b.id} className={cn('border p-4', b.status === 'Cancelled' ? 'border-red-500/30 bg-red-900/5 opacity-60' : 'border-gold/10 bg-[#001c36]')}>
                     <div className="flex justify-between items-start mb-2">
