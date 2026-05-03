@@ -723,7 +723,7 @@ const printBookingTicket = (booking: any) => {
     <div class="ticket-title">Luxury Hotel & Residences</div>
     <div class="gold-line"></div>
     <div class="restaurant-name">${restaurant?.emoji} ${restaurant?.name}</div>
-    <div class="cuisine">${restaurant?.cuisine}</div>
+    <div class="cuisine">${restaurant?.cuisine || ''}</div>
   </div>
   <div class="ticket-body">
     <div class="booking-ref">
