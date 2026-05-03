@@ -379,12 +379,19 @@ const RoomService: React.FC<{ cart: { [id: string]: number }; updateCart: (id: s
 // ─── RESTAURANT BOOKING ───────────────────────────────────────────────────────
 const RestaurantBooking: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubmit }) => {
   const { t } = useLanguage();
-  const [data, setData] = useState({ restaurant: 'turquoise', pax: '2', date: '', time: '', notes: '' });
-  const restaurants = [
-    { id: 'turquoise', name: 'Turquoise', desc: 'International Cuisine' },
-    { id: 'mermaid', name: 'The Mermaid', desc: 'Mediterranean Cuisine' },
-    { id: 'lolivo', name: "L'Olivo", desc: 'Italian Fine Dining' },
-  ];
+  const [data, setData] = useState({ restaurant: '', pax: '2', date: '', time: '', notes: '' });
+  const [restaurants, setRestaurants] = useState<any[]>([]);
+  useEffect(() => {
+    const hId = (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    let q = supabase.from('restaurants').select('id, name, cuisine').eq('active', true);
+    if (hId) q = q.eq('hotel_id', hId);
+    q.then(({ data: rData }) => {
+      if (rData && rData.length > 0) {
+        setRestaurants(rData);
+        setData(prev => ({ ...prev, restaurant: prev.restaurant || rData[0].id }));
+      }
+    });
+  }, []);
   return (
     <div className="w-full py-6 space-y-5 px-4 sm:px-8">
       <div className="text-center space-y-1">
@@ -679,7 +686,8 @@ const formatBookingDate = (date: string) => {
 
 // ─── BOOKING TICKET ───────────────────────────────────────────────────────────
 const printBookingTicket = (booking: any) => {
-  const restaurant = restaurants.find(r => r.id === booking.restaurant);
+  // restaurant name stored in booking or fallback to id
+  const restaurant = { name: booking.restaurant_name || booking.restaurant || 'Restaurant', emoji: '🍽' };
   const html = `<!DOCTYPE html><html><head><title>Booking Confirmation</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;600&display=swap');
@@ -788,7 +796,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [walkInName, setWalkInName] = useState('');
   const [walkInPhone, setWalkInPhone] = useState('');
   const [walkInEmail, setWalkInEmail] = useState('');
-  const [walkInRestaurant, setWalkInRestaurant] = useState('turquoise');
+  const [walkInRestaurant, setWalkInRestaurant] = useState('');
   const [walkInDate, setWalkInDate] = useState('');
   const [walkInTime, setWalkInTime] = useState('');
   const [walkInPax, setWalkInPax] = useState('2');
