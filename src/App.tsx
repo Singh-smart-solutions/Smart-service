@@ -2014,10 +2014,13 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
     e.preventDefault(); setLoading(true);
     try {
       if (mode === 'register') {
-        const { data: existing } = await supabase.from('staff').select('id').eq('email', email).single();
-        if (existing) { showToast('A profile with this email already exists. Please login.', 'info'); setMode('login'); setLoading(false); return; }
         const hotelCtxRaw = localStorage.getItem('sentinel_hotel');
         const hotelCtx = hotelCtxRaw ? JSON.parse(hotelCtxRaw) : null;
+        // ✅ BUG FIX: Email uniqueness scoped to same hotel only
+        let emailQuery = supabase.from('staff').select('id').eq('email', email);
+        if (hotelCtx?.id) emailQuery = emailQuery.eq('hotel_id', hotelCtx.id);
+        const { data: existing } = await emailQuery.single();
+        if (existing) { showToast('A profile with this email already exists. Please login.', 'info'); setMode('login'); setLoading(false); return; }
         const hashedPassword = await bcrypt.hash(password, 10);
         const { error } = await supabase.from('staff').insert({
           name: fullName, staff_id: staffIdNumber, email, password: hashedPassword,
@@ -2164,7 +2167,11 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
 
   const fetchSLA = async () => {
-    const { data } = await supabase.from('sla_settings').select('*');
+    // ✅ BUG FIX: Filter SLA by hotel_id — staff see their hotel's SLA only
+    const hId = userProfile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    let slaQ = supabase.from('sla_settings').select('*');
+    if (hId) slaQ = slaQ.eq('hotel_id', hId);
+    const { data } = await slaQ;
     if (data) { const map: any = {}; data.forEach((s: any) => { map[s.department] = s.sla_minutes; }); setSlaSettings(map); }
   };
 
@@ -2197,9 +2204,13 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   }, [userProfile]);
 
   const fetchRooms = useCallback(async () => {
-    const { data } = await supabase.from('rooms').select('*').order('room_number');
+    // ✅ BUG FIX: Filter rooms by hotel_id — HK staff only see their hotel
+    const hId = userProfile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    let rQ = supabase.from('rooms').select('*').order('room_number');
+    if (hId) rQ = rQ.eq('hotel_id', hId);
+    const { data } = await rQ;
     if (data) setRooms(data);
-  }, []);
+  }, [userProfile.hotelId]);
 
   // ✅ 5-second polling fallback + SLA escalation notifications
   const slaWarned = useRef<Set<string>>(new Set());
