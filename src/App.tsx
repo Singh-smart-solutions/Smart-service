@@ -1514,7 +1514,7 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
   useEffect(() => {
     const hotelParam = queryParams.get('hotel');
     if (hotelParam) {
-      // Guest scanned QR — load hotel from URL param
+      // Guest scanned QR — load fresh hotel data from DB
       supabase.from('hotel_clients')
         .select('id, hotel_name, entry_code, executive_password, access_mode, status')
         .eq('id', hotelParam).single()
@@ -1525,12 +1525,15 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
           }
         });
     } else {
-      // No URL param — read from session (staff already set it)
+      // No hotel URL param — guest accessed directly, no QR lock applied
+      // Clear any stale hotel session that might have old access_mode
       const hotelRaw = localStorage.getItem('sentinel_hotel');
       if (hotelRaw) {
         try {
           const h = JSON.parse(hotelRaw);
-          if (h.access_mode === 'qr_only') setQrOnlyMode(true);
+          // Only apply QR lock if hotel was set via QR (has hotel param in URL)
+          // Direct URL access = no lock regardless of cached session
+          if (h.access_mode === 'qr_only' && hotelParam) setQrOnlyMode(true);
         } catch {}
       }
     }
@@ -3000,13 +3003,17 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const generateQRCodes = () => {
     const baseUrl = window.location.origin;
     const hotelSuffix = profile.hotelId ? '&hotel=' + profile.hotelId : '';
-    const roomNumbers = rooms.length > 0 ? rooms.map(r => r.room_number) : ['101', '102', '201', '202', '301', '302', '401', '402', '501', '502'];
+    if (rooms.length === 0) {
+      showToast('No rooms found. Please add rooms to this hotel first.', 'error');
+      return;
+    }
+    const roomNumbers = rooms.map(r => r.room_number);
     const html = `<!DOCTYPE html><html><head><title>Sentinel Pro QR Codes</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<style>body{font-family:Georgia,serif;background:#f8f6f0;padding:20px}h1{text-align:center;color:#C5A059;letter-spacing:4px;font-size:22px}p{text-align:center;color:#666;font-size:11px;margin-bottom:28px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.card{background:white;border:1px solid #C5A059;padding:18px;text-align:center;page-break-inside:avoid}.room{font-size:18px;font-weight:bold;color:#001529;margin-bottom:10px;letter-spacing:2px}.qr{display:flex;justify-content:center;margin:8px 0}.url{font-size:7px;color:#999;word-break:break-all;margin-top:6px}.instruction{font-size:8px;color:#C5A059;margin-top:5px;text-transform:uppercase;letter-spacing:1px}@media print{body{padding:8px}}</style>
+<style>body{font-family:Georgia,serif;background:#f8f6f0;padding:20px}h1{text-align:center;color:#C5A059;letter-spacing:4px;font-size:22px}p{text-align:center;color:#666;font-size:11px;margin-bottom:28px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.card{background:white;border:1px solid #C5A059;padding:18px;text-align:center;page-break-inside:avoid}.room{font-size:18px;font-weight:bold;color:#001529;margin-bottom:10px;letter-spacing:2px}.qr{display:flex;justify-content:center;margin:8px 0}.welcome{font-size:8px;color:#C5A059;margin-top:6px;line-height:1.6;font-style:italic;font-family:Georgia,serif}.instruction{font-size:8px;color:#C5A059;margin-top:5px;text-transform:uppercase;letter-spacing:1px}@media print{body{padding:8px}}</style>
 </head><body><h1>Sentinel Pro</h1><p>Scan QR to request hotel services</p>
 <div class="grid" id="grid"></div>
-<script>const rooms=${JSON.stringify(roomNumbers)};const base='${baseUrl}';const grid=document.getElementById('grid');rooms.forEach(room=>{const div=document.createElement('div');div.className='card';div.innerHTML='<div class="room">Room '+room+'</div><div class="qr" id="qr_'+room+'"></div><div class="instruction">Scan to request services</div><div class="url">'+base+'?room='+room+'${profile.hotelId ? "&hotel="+profile.hotelId : ""}'+'</div>';grid.appendChild(div);setTimeout(()=>{new QRCode(document.getElementById('qr_'+room),{text:base+'?room='+room+'${profile.hotelId ? "&hotel="+profile.hotelId : ""}',width:110,height:110,colorDark:'#001529',colorLight:'#ffffff'});},100);});setTimeout(()=>window.print(),2000);</script>
+<script>const rooms=${JSON.stringify(roomNumbers)};const base='${baseUrl}';const grid=document.getElementById('grid');rooms.forEach(room=>{const div=document.createElement('div');div.className='card';div.innerHTML='<div class="room">Room '+room+'</div><div class="qr" id="qr_'+room+'"></div><div class="instruction">📱 Scan to Request Services</div><div class="welcome">Your comfort is our priority.<br>We are here for you, anytime.</div>';grid.appendChild(div);setTimeout(()=>{new QRCode(document.getElementById('qr_'+room),{text:base+'?room='+room+'${profile.hotelId ? "&hotel="+profile.hotelId : ""}',width:110,height:110,colorDark:'#001529',colorLight:'#ffffff'});},100);});setTimeout(()=>window.print(),2000);</script>
 <button onclick="window.print()" style="position:fixed;bottom:20px;right:20px;background:#001529;color:#C5A059;border:2px solid #C5A059;padding:12px 24px;font-size:11px;font-weight:bold;cursor:pointer;">🖨 Print QR Codes</button></body></html>`;
     const win = window.open('', '_blank');
     if (win) { win.document.write(html); win.document.close(); }
