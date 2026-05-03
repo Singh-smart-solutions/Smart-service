@@ -251,8 +251,7 @@ const HotelCard: React.FC<{
   onEdit: () => void;
   onDelete: () => void;
   onStatusChange: (status: string) => void;
-  onQRModeChange: (mode: 'open' | 'qr_only') => void;
-}> = ({ hotel, onEdit, onDelete, onStatusChange, onQRModeChange }) => {
+}> = ({ hotel, onEdit, onDelete, onStatusChange }) => {
   const [showCreds, setShowCreds] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -334,37 +333,7 @@ const HotelCard: React.FC<{
                 </div>
               </div>
 
-              {/* Guest Access Mode — live toggle, saves immediately */}
-              <div className="bg-navy/30 border border-gold/10 p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[9px] uppercase tracking-widest text-gold font-bold">Guest Access Mode</p>
-                  <span className={cn('text-[8px] font-bold px-2 py-0.5',
-                    hotel.access_mode === 'qr_only' ? 'bg-red-900/40 text-red-400' : 'bg-green-900/40 text-green-400')}>
-                    {hotel.access_mode === 'qr_only' ? '🔒 QR Only' : '🌐 Open'}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => onQRModeChange('open')}
-                    className={cn('flex-1 py-2 text-[9px] font-bold uppercase border',
-                      (hotel.access_mode || 'open') === 'open'
-                        ? 'bg-gold text-navy border-gold'
-                        : 'bg-transparent text-gold/50 border-gold/20')}>
-                    🌐 Open (URL &amp; QR)
-                  </button>
-                  <button onClick={() => onQRModeChange('qr_only')}
-                    className={cn('flex-1 py-2 text-[9px] font-bold uppercase border',
-                      hotel.access_mode === 'qr_only'
-                        ? 'bg-gold text-navy border-gold'
-                        : 'bg-transparent text-gold/50 border-gold/20')}>
-                    🔒 QR Code Only
-                  </button>
-                </div>
-                <p className="text-[8px] text-white/30 mt-2 italic">
-                  {hotel.access_mode === 'qr_only'
-                    ? 'Guests must scan room QR code. Room number field hidden on guest portal.'
-                    : 'Guests can access via direct URL or QR code scan.'}
-                </p>
-              </div>
+
 
               {/* Quick Actions */}
               <div className="flex gap-2 flex-wrap">
@@ -448,10 +417,6 @@ export default function SentinelAdmin() {
     fetchHotels();
   };
 
-  const handleQRModeChange = async (id: string, mode: 'open' | 'qr_only') => {
-    await supabase.from('hotel_clients').update({ access_mode: mode }).eq('id', id);
-    fetchHotels();
-  };
 
   const logout = () => { localStorage.removeItem('sentinel_admin_session'); setAdminLoggedIn(false); setEmail(''); setPassword(''); };
 
@@ -581,7 +546,6 @@ export default function SentinelAdmin() {
                 onEdit={() => { setEditingHotel(hotel); setShowModal(true); }}
                 onDelete={() => handleDelete(hotel.id, hotel.hotel_name)}
                 onStatusChange={(status) => handleStatusChange(hotel.id, status)}
-                onQRModeChange={(mode) => handleQRModeChange(hotel.id, mode)}
               />
             ))
           )}
