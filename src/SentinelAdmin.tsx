@@ -349,7 +349,7 @@ const HotelCard: React.FC<{
 
 
 
-              {/* Services Configuration */}
+                            {/* Services Configuration */}
               <div className="space-y-3">
                 <label className="text-[10px] text-gold/60 uppercase tracking-wider block">Active Services</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -376,8 +376,6 @@ const HotelCard: React.FC<{
                     </button>
                   ))}
                 </div>
-
-                {/* Concierge items — only show if concierge is on */}
                 {form.services_config?.concierge && (
                   <div className="mt-2">
                     <label className="text-[9px] text-white/40 uppercase tracking-widest block mb-2">Concierge Services</label>
