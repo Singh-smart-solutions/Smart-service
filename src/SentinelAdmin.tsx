@@ -21,6 +21,7 @@ interface HotelClient {
   rooms_count: number;
   entry_code: string;
   executive_password: string;
+  access_mode?: 'open' | 'qr_only';
   status: 'active' | 'trial' | 'suspended' | 'inactive';
   plan: 'trial' | 'basic' | 'premium';
   monthly_fee: number;
@@ -85,6 +86,7 @@ const HotelModal: React.FC<{
     plan: hotel?.plan || 'trial',
     monthly_fee: hotel?.monthly_fee || 0,
     notes: hotel?.notes || '',
+    access_mode: hotel?.access_mode || 'open',
     trial_ends_at: hotel?.trial_ends_at ? hotel.trial_ends_at.split('T')[0] : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -249,7 +251,8 @@ const HotelCard: React.FC<{
   onEdit: () => void;
   onDelete: () => void;
   onStatusChange: (status: string) => void;
-}> = ({ hotel, onEdit, onDelete, onStatusChange }) => {
+  onQRModeChange: (mode: 'open' | 'qr_only') => void;
+}> = ({ hotel, onEdit, onDelete, onStatusChange, onQRModeChange }) => {
   const [showCreds, setShowCreds] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
@@ -331,6 +334,44 @@ const HotelCard: React.FC<{
                 </div>
               </div>
 
+              {/* Guest Access Mode — live toggle, saves immediately */}
+              <div className="bg-navy/30 border border-gold/10 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[9px] uppercase tracking-widest text-gold font-bold">Guest Access Mode</p>
+                  <span className={cn('text-[8px] font-bold px-2 py-0.5',
+                    hotel.access_mode === 'qr_only' ? 'bg-red-900/40 text-red-400' : 'bg-green-900/40 text-green-400')}>
+                    {hotel.access_mode === 'qr_only' ? '🔒 QR Only' : '🌐 Open'}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => onQRModeChange('open')}
+                    className={cn('flex-1 py-2 text-[9px] font-bold uppercase border',
+                      (hotel.access_mode || 'open') === 'open'
+                        ? 'bg-gold text-navy border-gold'
+                        : 'bg-transparent text-gold/50 border-gold/20')}>
+                    🌐 Open (URL &amp; QR)
+                  </button>
+                  <button onClick={() => onQRModeChange('qr_only')}
+                    className={cn('flex-1 py-2 text-[9px] font-bold uppercase border',
+                      hotel.access_mode === 'qr_only'
+                        ? 'bg-gold text-navy border-gold'
+                        : 'bg-transparent text-gold/50 border-gold/20')}>
+                    🔒 QR Code Only
+                  </button>
+                </div>
+                <p className="text-[8px] text-white/30 mt-2 italic">
+                  {hotel.access_mode === 'qr_only'
+                    ? 'Guests must scan room QR code. Room number field hidden on guest portal.'
+                    : 'Guests can access via direct URL or QR code scan.'}
+                </p>
+              </div>             </div>
+                <p className="text-[8px] text-white/30 mt-1 italic">
+                  {(form.access_mode || 'open') === 'qr_only'
+                    ? 'Guests must scan QR in room. Direct URL access blocked.'
+                    : 'Guests can access via URL or QR scan.'}
+                </p>
+              </div>
+
               {/* Quick Actions */}
               <div className="flex gap-2 flex-wrap">
                 <p className="text-[9px] uppercase tracking-widest text-white/40 font-bold w-full">Quick Actions</p>
@@ -410,6 +451,11 @@ export default function SentinelAdmin() {
 
   const handleStatusChange = async (id: string, status: string) => {
     await supabase.from('hotel_clients').update({ status }).eq('id', id);
+    fetchHotels();
+  };
+
+  const handleQRModeChange = async (id: string, mode: 'open' | 'qr_only') => {
+    await supabase.from('hotel_clients').update({ access_mode: mode }).eq('id', id);
     fetchHotels();
   };
 
@@ -541,6 +587,7 @@ export default function SentinelAdmin() {
                 onEdit={() => { setEditingHotel(hotel); setShowModal(true); }}
                 onDelete={() => handleDelete(hotel.id, hotel.hotel_name)}
                 onStatusChange={(status) => handleStatusChange(hotel.id, status)}
+                onQRModeChange={(mode) => handleQRModeChange(hotel.id, mode)}
               />
             ))
           )}
