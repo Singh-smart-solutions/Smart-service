@@ -414,92 +414,256 @@ const RestaurantBooking: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubm
 };
 
 // ─── CONCIERGE ────────────────────────────────────────────────────────────────
-const Concierge: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubmit }) => {
+const Concierge: React.FC<{ onSubmit: (data: any) => void; profile?: UserProfile }> = ({ onSubmit, profile }) => {
   const { t } = useLanguage();
-  const [selected, setSelected] = useState('rent_a_car');
-  const [notes, setNotes] = useState('');
-  const [subTab, setSubTab] = useState('taxi');
-  const [pickupTime, setPickupTime] = useState('');
-  const [destination, setDestination] = useState('');
-  const [numBags, setNumBags] = useState('1');
-  const cars = [
-    { id: 'mercedes', name: 'Mercedes S-Class', price: 1200, img: 'https://images.unsplash.com/photo-1618843479313-40f8afb4b4d8?auto=format&fit=crop&q=80&w=400' },
-    { id: 'range', name: 'Range Rover Vogue', price: 1800, img: 'https://images.unsplash.com/photo-1606611013016-969c19ba27bb?auto=format&fit=crop&q=80&w=400' },
-    { id: 'lambo', name: 'Lamborghini Urus', price: 2500, img: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&q=80&w=400' },
-  ];
-  const options = [
-    { id: 'rent_a_car', name: t('rent_a_car'), icon: Car },
-    { id: 'taxi_limousine', name: t('taxi_limousine'), icon: MapPin },
-    { id: 'luggage_service', name: t('luggage_service'), icon: Briefcase },
-    { id: 'local_tours', name: t('local_tours'), icon: Globe },
-  ];
+  const [services, setServices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<any>(null);
+  const [myBookings, setMyBookings] = useState<any[]>([]);
+  const [view, setView] = useState<'browse'|'book'|'mybookings'>('browse');
+  const [form, setForm] = useState({ guests_count: '1', pickup_date: '', pickup_time: '', return_date: '', return_time: '', special_requests: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [modifyBooking, setModifyBooking] = useState<any>(null);
+
+  const hotelId = profile?.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+
+  const CATEGORY_LABELS: Record<string,string> = { tour: '🗺 Tours', car_rental: '🚗 Car Rental', taxi: '🚕 Taxi / Transfer', luggage: '🧳 Luggage' };
+
+  useEffect(() => {
+    const fetchServices = async () => {
+      let q = supabase.from('concierge_services').select('*').eq('active', true).order('category').order('name');
+      if (hotelId) q = q.eq('hotel_id', hotelId);
+      const { data } = await q;
+      if (data) setServices(data);
+      setLoading(false);
+    };
+    fetchServices();
+  }, [hotelId]);
+
+  const fetchMyBookings = useCallback(async () => {
+    if (!profile?.uid) return;
+    const { data } = await supabase.from('concierge_bookings').select('*')
+      .eq('guest_id', profile.uid).order('created_at', { ascending: false });
+    if (data) setMyBookings(data);
+  }, [profile?.uid]);
+
+  useEffect(() => { if (view === 'mybookings') fetchMyBookings(); }, [view, fetchMyBookings]);
+
+  const submitBooking = async () => {
+    if (!selected || !form.pickup_date || !form.pickup_time) {
+      alert('Please fill in pickup date and time.'); return;
+    }
+    setSubmitting(true);
+    const total = (parseFloat(form.guests_count)||1) * (selected.price||0);
+    await supabase.from('concierge_bookings').insert({
+      hotel_id: hotelId,
+      service_id: selected.id,
+      service_name: selected.name,
+      category: selected.category,
+      guest_id: profile?.uid,
+      guest_name: profile?.displayName,
+      room_number: profile?.roomNumber,
+      guests_count: parseInt(form.guests_count)||1,
+      pickup_date: form.pickup_date,
+      pickup_time: form.pickup_time,
+      return_date: form.return_date || null,
+      return_time: form.return_time || null,
+      special_requests: form.special_requests || null,
+      total_price: total,
+      status: 'Pending',
+    });
+    setSubmitting(false);
+    setView('mybookings'); fetchMyBookings();
+    setForm({ guests_count:'1', pickup_date:'', pickup_time:'', return_date:'', return_time:'', special_requests:'' });
+    setSelected(null);
+  };
+
+  const cancelBooking = async (id: string) => {
+    if (!window.confirm('Cancel this booking?')) return;
+    await supabase.from('concierge_bookings').update({ status: 'Cancelled' }).eq('id', id);
+    fetchMyBookings();
+  };
+
+  const saveModify = async () => {
+    if (!modifyBooking) return;
+    await supabase.from('concierge_bookings').update({
+      pickup_date: modifyBooking.pickup_date,
+      pickup_time: modifyBooking.pickup_time,
+      return_date: modifyBooking.return_date,
+      return_time: modifyBooking.return_time,
+    }).eq('id', modifyBooking.id);
+    setModifyBooking(null); fetchMyBookings();
+  };
+
+  const categories = [...new Set(services.map(s => s.category))];
+  const STATUS_COLOR: Record<string,string> = {
+    Pending:'bg-yellow-50 text-yellow-700 border-yellow-200',
+    Confirmed:'bg-green-50 text-green-700 border-green-200',
+    Cancelled:'bg-red-50 text-red-700 border-red-200',
+    Completed:'bg-blue-50 text-blue-700 border-blue-200',
+  };
+
   return (
-    <div className="w-full py-6 space-y-5 px-4 sm:px-8">
+    <div className="w-full py-4 space-y-4 px-4 sm:px-8">
       <div className="text-center space-y-1">
         <h2 className="text-2xl font-serif text-navy">{t('concierge_services')}</h2>
         <p className="text-gold text-[9px] uppercase tracking-widest font-bold">Luxury Assistance</p>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        {options.map(opt => (
-          <button key={opt.id} onClick={() => setSelected(opt.id)} className={cn('premium-card', selected === opt.id ? 'border-gold bg-gold/5' : '')}>
-            <div className="icon-wrapper"><opt.icon size={18} className="text-gold" strokeWidth={1} /></div>
-            <h3 className="text-xs">{opt.name}</h3>
+
+      {/* Tabs */}
+      <div className="flex gap-2 justify-center">
+        {[{key:'browse',label:'Browse Services'},{key:'mybookings',label:`My Bookings (${myBookings.filter(b=>b.status!=='Cancelled').length})`}].map(tab => (
+          <button key={tab.key} onClick={() => setView(tab.key as any)}
+            className={cn('px-4 py-1.5 text-[9px] font-bold uppercase border',
+              view===tab.key ? 'bg-navy text-white border-navy' : 'bg-white text-navy/50 border-navy/20')}>
+            {tab.label}
           </button>
         ))}
       </div>
-      {selected === 'rent_a_car' && (
-        <div className="space-y-3">
-          {cars.map(car => (
-            <div key={car.id} className="flex items-center gap-3 bg-white border border-gold/10 p-3 shadow-sm">
-              <img src={car.img} alt={car.name} className="w-20 h-14 object-cover" referrerPolicy="no-referrer" />
-              <div className="flex-1"><h4 className="font-serif text-navy text-sm">{car.name}</h4><p className="text-gold font-bold text-xs">AED {car.price}/day</p></div>
-              <button onClick={() => onSubmit({ type: `Rent a Car: ${car.name}`, dept: 'Concierge', totalPrice: car.price, lineItems: [{ name: car.name, qty: 1, price: car.price, total: car.price }], notes })} className="bg-gold text-white px-3 py-1.5 text-[9px] font-bold uppercase">{t('book_now')}</button>
+
+      {/* ── BROWSE SERVICES ── */}
+      {view === 'browse' && !selected && (
+        loading ? <p className="text-center text-navy/40 py-8">Loading services...</p>
+        : services.length === 0 ? <p className="text-center text-navy/40 italic py-8">No concierge services available at this time.</p>
+        : categories.map(cat => (
+          <div key={cat} className="space-y-2">
+            <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold border-b border-gold/20 pb-1">{CATEGORY_LABELS[cat]||cat}</h3>
+            {services.filter(s => s.category === cat).map(svc => (
+              <button key={svc.id} onClick={() => { setSelected(svc); setView('book'); }}
+                className="w-full bg-white border border-navy/10 p-3 text-left flex gap-3 items-start hover:border-gold/50 transition-colors">
+                {svc.image_url && <img src={svc.image_url} className="w-16 h-14 object-cover flex-shrink-0" alt="" />}
+                <div className="flex-1">
+                  <p className="text-navy font-bold font-serif">{svc.name}</p>
+                  {svc.description && <p className="text-[10px] text-navy/60 mt-0.5">{svc.description}</p>}
+                  <div className="flex items-center gap-3 mt-1">
+                    <p className="text-gold font-bold text-[11px]">AED {svc.price} <span className="text-navy/40 font-normal">{svc.price_unit}</span></p>
+                    {svc.duration && <p className="text-[9px] text-navy/50">⏱ {svc.duration}</p>}
+                  </div>
+                  <p className="text-[8px] text-navy/40 mt-0.5">Available: {(svc.availability||[]).join(', ')}</p>
+                </div>
+                <ArrowRight size={16} className="text-gold flex-shrink-0 mt-1" />
+              </button>
+            ))}
+          </div>
+        ))
+      )}
+
+      {/* ── BOOKING FORM ── */}
+      {view === 'book' && selected && (
+        <div className="space-y-4">
+          <button onClick={() => { setView('browse'); setSelected(null); }}
+            className="text-[9px] text-gold uppercase font-bold">← Back</button>
+          <div className="bg-white border border-gold/20 p-4 space-y-1">
+            <p className="text-navy font-bold font-serif text-lg">{selected.name}</p>
+            <p className="text-[10px] text-navy/60">{selected.description}</p>
+            <p className="text-gold font-bold">AED {selected.price} {selected.price_unit}</p>
+          </div>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[9px] uppercase text-navy/60 font-bold block mb-1">Pickup Date *</label>
+                <input type="date" value={form.pickup_date} onChange={e=>setForm({...form,pickup_date:e.target.value})}
+                  className="w-full border border-navy/20 p-2 text-sm text-navy outline-none focus:border-gold" />
+              </div>
+              <div>
+                <label className="text-[9px] uppercase text-navy/60 font-bold block mb-1">Pickup Time *</label>
+                <input type="time" value={form.pickup_time} onChange={e=>setForm({...form,pickup_time:e.target.value})}
+                  className="w-full border border-navy/20 p-2 text-sm text-navy outline-none focus:border-gold" />
+              </div>
+              {(selected.category==='car_rental'||selected.category==='taxi') && (<>
+              <div>
+                <label className="text-[9px] uppercase text-navy/60 font-bold block mb-1">Return Date</label>
+                <input type="date" value={form.return_date} onChange={e=>setForm({...form,return_date:e.target.value})}
+                  className="w-full border border-navy/20 p-2 text-sm text-navy outline-none focus:border-gold" />
+              </div>
+              <div>
+                <label className="text-[9px] uppercase text-navy/60 font-bold block mb-1">Return Time</label>
+                <input type="time" value={form.return_time} onChange={e=>setForm({...form,return_time:e.target.value})}
+                  className="w-full border border-navy/20 p-2 text-sm text-navy outline-none focus:border-gold" />
+              </div>
+              </>)}
+              <div>
+                <label className="text-[9px] uppercase text-navy/60 font-bold block mb-1">Number of Guests</label>
+                <input type="number" min="1" value={form.guests_count} onChange={e=>setForm({...form,guests_count:e.target.value})}
+                  className="w-full border border-navy/20 p-2 text-sm text-navy outline-none focus:border-gold" />
+              </div>
+              <div>
+                <label className="text-[9px] uppercase text-navy/60 font-bold block mb-1">Total Price</label>
+                <p className="border border-gold/20 bg-gold/5 p-2 text-gold font-bold text-sm">
+                  AED {((parseFloat(form.guests_count)||1) * (selected.price||0)).toFixed(2)}
+                </p>
+              </div>
             </div>
-          ))}
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Special requirements..." className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
+            <div>
+              <label className="text-[9px] uppercase text-navy/60 font-bold block mb-1">Special Requests</label>
+              <textarea value={form.special_requests} onChange={e=>setForm({...form,special_requests:e.target.value})}
+                rows={2} placeholder="Any special requirements..."
+                className="w-full border border-navy/20 p-2 text-sm text-navy outline-none focus:border-gold resize-none" />
+            </div>
+            <p className="text-[8px] text-navy/40 italic">Payment at concierge desk upon service. You will receive a confirmation shortly.</p>
+            <button onClick={submitBooking} disabled={submitting}
+              className="gold-button w-full">{submitting ? 'Submitting...' : 'Submit Booking Request'}</button>
+          </div>
         </div>
       )}
-      {selected === 'taxi_limousine' && (
-        <div className="bg-white p-4 border border-gold/10 space-y-4">
-          <div className="pill-container">
-            <button onClick={() => setSubTab('taxi')} className={cn('pill-btn', subTab === 'taxi' ? 'active' : 'inactive')}>{t('taxi')}</button>
-            <button onClick={() => setSubTab('limousine')} className={cn('pill-btn', subTab === 'limousine' ? 'active' : 'inactive')}>{t('limousine')}</button>
-          </div>
-          <div className="space-y-3">
-            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">Pickup Time</label><input type="time" value={pickupTime} onChange={e => setPickupTime(e.target.value)} className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
-            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">Destination</label><input type="text" value={destination} onChange={e => setDestination(e.target.value)} placeholder="Drop-off location" className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Additional notes..." className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
-          </div>
-          <button onClick={() => onSubmit({ type: `Concierge: ${subTab}`, dept: 'Concierge', pickupTime, destination, notes })} className="gold-button w-full m-0">{t('submit')}</button>
-        </div>
-      )}
-      {selected === 'luggage_service' && (
-        <div className="bg-white p-4 border border-gold/10 space-y-4">
-          <div className="pill-container">
-            <button onClick={() => setSubTab('pickup')} className={cn('pill-btn', subTab === 'pickup' ? 'active' : 'inactive')}>Pickup</button>
-            <button onClick={() => setSubTab('delivery')} className={cn('pill-btn', subTab === 'delivery' ? 'active' : 'inactive')}>Delivery</button>
-          </div>
-          <div className="space-y-3">
-            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">Number of Bags</label><input type="number" value={numBags} onChange={e => setNumBags(e.target.value)} min="1" className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
-            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold">Time</label><input type="time" value={pickupTime} onChange={e => setPickupTime(e.target.value)} className="w-full bg-white text-navy border border-gold p-3 text-sm" /></div>
-          </div>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Additional notes..." className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
-          <button onClick={() => onSubmit({ type: `Luggage: ${subTab}`, dept: 'Concierge', numBags, pickupTime, notes })} className="gold-button w-full m-0">{t('submit')}</button>
-        </div>
-      )}
-      {selected === 'local_tours' && (
-        <div className="bg-white p-4 border border-gold/10 space-y-4">
-          <p className="text-navy/60 font-serif italic text-center py-4 text-sm">Discover Abu Dhabi with our curated local tours.</p>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Interests, preferences..." className="h-16 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
-          <button onClick={() => onSubmit({ type: 'Concierge: Local Tours', dept: 'Concierge', notes })} className="gold-button w-full m-0">{t('submit')}</button>
+
+      {/* ── MY BOOKINGS ── */}
+      {view === 'mybookings' && (
+        <div className="space-y-3">
+          {myBookings.length === 0
+            ? <p className="text-center text-navy/40 italic py-8">No bookings yet.</p>
+            : myBookings.map(b => (
+              <div key={b.id} className="bg-white border border-navy/10 p-4 space-y-2">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-navy font-bold font-serif">{b.service_name}</p>
+                    <p className="text-[10px] text-navy/50">{b.guests_count} guest{b.guests_count>1?'s':''} · AED {b.total_price}</p>
+                  </div>
+                  <span className={cn('text-[8px] font-bold px-2 py-0.5 border', STATUS_COLOR[b.status]||'bg-white text-navy border-navy/20')}>{b.status}</span>
+                </div>
+                <div className="text-[9px] text-navy/50 space-y-0.5">
+                  <p>📅 Pickup: {b.pickup_date} at {b.pickup_time}</p>
+                  {b.return_date && <p>🔄 Return: {b.return_date} at {b.return_time}</p>}
+                  {b.special_requests && <p>📝 {b.special_requests}</p>}
+                </div>
+                {/* Modify form */}
+                {modifyBooking?.id === b.id && (
+                  <div className="border-t border-navy/10 pt-3 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[8px] uppercase text-navy/50 font-bold block mb-1">New Pickup Date</label>
+                        <input type="date" value={modifyBooking.pickup_date} onChange={e=>setModifyBooking({...modifyBooking,pickup_date:e.target.value})}
+                          className="w-full border border-navy/20 p-1.5 text-[11px] text-navy outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-[8px] uppercase text-navy/50 font-bold block mb-1">New Pickup Time</label>
+                        <input type="time" value={modifyBooking.pickup_time} onChange={e=>setModifyBooking({...modifyBooking,pickup_time:e.target.value})}
+                          className="w-full border border-navy/20 p-1.5 text-[11px] text-navy outline-none" />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={saveModify} className="flex-1 py-1.5 bg-navy text-white text-[9px] font-bold uppercase">Save Changes</button>
+                      <button onClick={()=>setModifyBooking(null)} className="flex-1 py-1.5 border border-navy/20 text-navy/50 text-[9px] uppercase">Cancel</button>
+                    </div>
+                  </div>
+                )}
+                {b.status === 'Pending' && !modifyBooking && (
+                  <div className="flex gap-2">
+                    <button onClick={()=>setModifyBooking({...b})}
+                      className="flex-1 py-1.5 border border-navy/20 text-navy text-[9px] font-bold uppercase">✏ Modify</button>
+                    <button onClick={()=>cancelBooking(b.id)}
+                      className="flex-1 py-1.5 border border-red-200 text-red-500 text-[9px] font-bold uppercase">✕ Cancel</button>
+                  </div>
+                )}
+              </div>
+            ))
+          }
         </div>
       )}
     </div>
   );
 };
 
-
-// ─── RESTAURANT BOOKING SYSTEM ───────────────────────────────────────────────
 
 const RESTAURANTS = [
   { id: 'turquoise', name: 'Turquoise', cuisine: 'International Cuisine', emoji: '🌊' },
@@ -643,19 +807,27 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const isReservationStaff = isFBManager || isExecutive || isReservationAgent;
 
   const fetchBookings = useCallback(async () => {
+    const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
     let q = supabase.from('restaurant_bookings').select('*').order('created_at', { ascending: false });
+    if (hId) q = q.eq('hotel_id', hId);
     if (isGuest) q = q.eq('guest_id', profile.uid);
     const { data } = await q;
     if (data) setBookings(data);
   }, [profile, isGuest]);
 
   const fetchMenuItems = useCallback(async () => {
-    const { data } = await supabase.from('menu_items').select('*').order('category');
+    const hId3 = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    let menuQ = supabase.from('menu_items').select('*').order('category');
+    if (hId3) menuQ = menuQ.eq('hotel_id', hId3);
+    const { data } = await menuQ;
     if (data) setMenuItems(data);
-  }, []);
+  }, [profile.hotelId]);
 
   const fetchSettings = useCallback(async () => {
-    const { data } = await supabase.from('restaurant_settings').select('*');
+    const hId2 = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    let settQ = supabase.from('restaurant_settings').select('*');
+    if (hId2) settQ = settQ.eq('hotel_id', hId2);
+    const { data } = await settQ;
     if (data) {
       const map: any = {};
       data.forEach((s: any) => { map[s.restaurant] = s; });
@@ -736,6 +908,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
       const { data, error } = await supabase.from('restaurant_bookings').insert({
         booking_ref: ref,
         guest_id: 'WALKIN-' + Date.now(),
+        hotel_id: profile?.hotelId || null,
         guest_name: walkInName.toUpperCase(),
         room_number: 'WALK-IN',
         restaurant: walkInRestaurant,
@@ -944,7 +1117,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
 
   const saveRestaurantSettings = async (restaurantId: string, settings: any) => {
     await supabase.from('restaurant_settings').upsert(
-      { restaurant: restaurantId, ...settings },
+      { restaurant: restaurantId, ...settings, hotel_id: profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })() },
       { onConflict: 'restaurant' }
     );
     showToast('Settings saved!', 'success'); fetchSettings();
@@ -1117,17 +1290,27 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
           <div className="space-y-4">
             <p className="text-[9px] uppercase tracking-widest text-gold font-bold">Select Restaurant</p>
             <div className="space-y-2">
-              {RESTAURANTS.map(r => (
+              {RESTAURANTS.map(r => {
+                const rs = restSettings[r.id] || {};
+                return (
                 <button key={r.id} onClick={() => setSelectedRestaurant(r.id)}
-                  className={cn('w-full p-4 border text-left flex items-center gap-3', selectedRestaurant === r.id ? 'border-gold bg-gold/5' : 'border-navy/10 bg-white')}>
-                  <span className="text-2xl">{r.emoji}</span>
-                  <div>
-                    <p className="text-navy font-bold font-serif">{r.name}</p>
-                    <p className="text-[10px] text-navy/60 italic">{r.cuisine}</p>
-                    {restSettings[r.id] && <p className="text-[9px] text-gold font-bold mt-0.5">{restSettings[r.id].opening_time} – {restSettings[r.id].closing_time}</p>}
+                  className={cn('w-full border text-left overflow-hidden', selectedRestaurant === r.id ? 'border-gold' : 'border-navy/10')}>
+                  {/* Cover image */}
+                  {rs.cover_url
+                    ? <div className="w-full h-20 bg-navy/10 overflow-hidden"><img src={rs.cover_url} alt={r.name} className="w-full h-full object-cover" /></div>
+                    : <div className="w-full h-10 bg-gold/10 flex items-center justify-center text-2xl">{r.emoji}</div>
+                  }
+                  <div className="p-3 flex items-center gap-3">
+                    {rs.logo_url && <img src={rs.logo_url} alt="logo" className="w-10 h-10 object-contain border border-gold/20 flex-shrink-0" />}
+                    <div className="flex-1">
+                      <p className="text-navy font-bold font-serif">{rs.restaurant_display_name || r.name}</p>
+                      <p className="text-[10px] text-navy/60 italic">{r.cuisine}</p>
+                      {rs.opening_time && <p className="text-[9px] text-gold font-bold mt-0.5">{rs.opening_time} – {rs.closing_time}</p>}
+                    </div>
+                    {selectedRestaurant === r.id && <Check size={18} className="text-gold ml-auto" />}
                   </div>
-                  {selectedRestaurant === r.id && <Check size={18} className="text-gold ml-auto" />}
                 </button>
+                );
               ))}
             </div>
             <div className="bg-white p-4 border border-gold/20 space-y-3">
@@ -1447,6 +1630,41 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
               return (
                 <div key={r.id} className="bg-[#001c36] border border-gold/10 p-4 space-y-3">
                   <h3 className="text-base font-serif text-gold">{r.emoji} {r.name}</h3>
+
+                  {/* Logo + Cover Image Upload */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Restaurant Logo</label>
+                      {s.logo_url && <img src={s.logo_url} alt="logo" className="w-12 h-12 object-contain mb-1 border border-gold/20" />}
+                      <input type="file" accept="image/*" id={`logo-${r.id}`}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0]; if (!file) return;
+                          const path = `restaurants/${r.id}/logo_${Date.now()}.${file.name.split('.').pop()}`;
+                          const { data, error } = await supabase.storage.from('hotel-assets').upload(path, file, { upsert: true });
+                          if (error) { showToast('Upload failed: ' + error.message, 'error'); return; }
+                          const { data: { publicUrl } } = supabase.storage.from('hotel-assets').getPublicUrl(path);
+                          await saveRestaurantSettings(r.id, { ...s, logo_url: publicUrl });
+                          showToast('Logo saved!', 'success'); fetchSettings();
+                        }}
+                        className="w-full text-[9px] text-white/50 bg-navy/50 border border-gold/20 p-1.5 file:bg-gold file:text-navy file:border-0 file:text-[8px] file:font-bold file:px-2 file:py-0.5 file:mr-2 cursor-pointer" />
+                    </div>
+                    <div>
+                      <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Cover Image</label>
+                      {s.cover_url && <img src={s.cover_url} alt="cover" className="w-full h-12 object-cover mb-1 border border-gold/20" />}
+                      <input type="file" accept="image/*" id={`cover-${r.id}`}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0]; if (!file) return;
+                          const path = `restaurants/${r.id}/cover_${Date.now()}.${file.name.split('.').pop()}`;
+                          const { data, error } = await supabase.storage.from('hotel-assets').upload(path, file, { upsert: true });
+                          if (error) { showToast('Upload failed: ' + error.message, 'error'); return; }
+                          const { data: { publicUrl } } = supabase.storage.from('hotel-assets').getPublicUrl(path);
+                          await saveRestaurantSettings(r.id, { ...s, cover_url: publicUrl });
+                          showToast('Cover saved!', 'success'); fetchSettings();
+                        }}
+                        className="w-full text-[9px] text-white/50 bg-navy/50 border border-gold/20 p-1.5 file:bg-gold file:text-navy file:border-0 file:text-[8px] file:font-bold file:px-2 file:py-0.5 file:mr-2 cursor-pointer" />
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Opening Time</label>
@@ -2320,7 +2538,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const [rooms, setRooms] = useState<any[]>([]);
   const [roomSearch, setRoomSearch] = useState('');
   const [repPeriod, setRepPeriod] = useState<'daily'|'weekly'|'monthly'>('daily');
-  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants' | 'rooms' | 'report'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants' | 'rooms' | 'report' | 'concierge'>('requests');
   const [now, setNow] = useState(Date.now());
   const [editSLA, setEditSLA] = useState<number>(5);
   const [showMgrRestaurant, setShowMgrRestaurant] = useState(false);
@@ -2428,6 +2646,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               { key: 'report', label: '📊 Report' },
               ...(profile.department === 'F&B' ? [{ key: 'restaurants', label: '🍽 Restaurants' }] : []),
               ...(profile.department === 'Housekeeping' ? [{ key: 'rooms', label: '🛏 Rooms' }] : []),
+              ...(profile.department === 'Concierge' ? [{ key: 'concierge', label: '🔑 Services' }] : []),
             ].map(tab => (
               <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
@@ -2733,7 +2952,12 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         );
       })()}
 
-            {/* HK Manager — Rooms Tab */}
+            {/* Concierge Manager — Services Tab */}
+      {activeTab === 'concierge' && profile.department === 'Concierge' && (
+        <ConciergeManagerTab profile={profile} />
+      )}
+
+      {/* HK Manager — Rooms Tab */}
       {activeTab === 'rooms' && profile.department === 'Housekeeping' && (
         <div className="p-4 space-y-4">
           <div className="flex items-center justify-between">
@@ -2912,6 +3136,268 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
       {/* F&B Manager — Restaurants Tab */}
       {activeTab === 'restaurants' && profile.department === 'F&B' && (
         <RestaurantPortal profile={profile} />
+      )}
+    </div>
+  );
+};
+
+
+// ─── CONCIERGE MANAGER TAB ───────────────────────────────────────────────────
+const ConciergeManagerTab: React.FC<{ profile: UserProfile }> = ({ profile }) => {
+  const [services, setServices] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [activeSection, setActiveSection] = useState<'services'|'bookings'>('services');
+  const [showForm, setShowForm] = useState(false);
+  const [editService, setEditService] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const CATEGORIES = [
+    { key: 'tour', label: '🗺 Tours', unit: 'per person' },
+    { key: 'car_rental', label: '🚗 Car Rental', unit: 'per day' },
+    { key: 'taxi', label: '🚕 Taxi / Transfer', unit: 'per trip' },
+    { key: 'luggage', label: '🧳 Luggage', unit: 'per bag' },
+  ];
+  const emptyForm = { category: 'tour', name: '', description: '', price: '', price_unit: 'per person', duration: '', availability: DAYS, image_url: '', active: true };
+  const [form, setForm] = useState<any>(emptyForm);
+
+  const fetchServices = useCallback(async () => {
+    const { data } = await supabase.from('concierge_services').select('*')
+      .eq('hotel_id', profile.hotelId || '').order('category').order('created_at');
+    if (data) setServices(data);
+  }, [profile.hotelId]);
+
+  const fetchBookings = useCallback(async () => {
+    const { data } = await supabase.from('concierge_bookings').select('*')
+      .eq('hotel_id', profile.hotelId || '').order('created_at', { ascending: false });
+    if (data) setBookings(data);
+  }, [profile.hotelId]);
+
+  useEffect(() => { fetchServices(); fetchBookings(); }, [fetchServices, fetchBookings]);
+
+  const saveService = async () => {
+    if (!form.name || !form.category) return;
+    setSaving(true);
+    const payload = { ...form, price: parseFloat(form.price) || 0, hotel_id: profile.hotelId };
+    if (editService) {
+      await supabase.from('concierge_services').update(payload).eq('id', editService.id);
+    } else {
+      await supabase.from('concierge_services').insert(payload);
+    }
+    setSaving(false); setShowForm(false); setEditService(null); setForm(emptyForm);
+    fetchServices();
+  };
+
+  const deleteService = async (id: string) => {
+    if (!window.confirm('Delete this service?')) return;
+    await supabase.from('concierge_services').delete().eq('id', id);
+    fetchServices();
+  };
+
+  const updateBookingStatus = async (id: string, status: string) => {
+    await supabase.from('concierge_bookings').update({ status, confirmed_by: profile.displayName }).eq('id', id);
+    fetchBookings();
+  };
+
+  const toggleDay = (day: string) => {
+    const days = form.availability || [];
+    setForm({ ...form, availability: days.includes(day) ? days.filter((d:string) => d !== day) : [...days, day] });
+  };
+
+  const STATUS_COLOR: Record<string,string> = {
+    Pending: 'bg-yellow-900/40 text-yellow-400',
+    Confirmed: 'bg-green-900/40 text-green-400',
+    Cancelled: 'bg-red-900/40 text-red-400',
+    Completed: 'bg-blue-900/40 text-blue-400',
+  };
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Section toggle */}
+      <div className="flex gap-2">
+        {[{key:'services',label:'🔧 Manage Services'},{key:'bookings',label:`📋 Bookings (${bookings.filter(b=>b.status==='Pending').length} pending)`}].map(s => (
+          <button key={s.key} onClick={() => setActiveSection(s.key as any)}
+            className={cn('px-4 py-2 text-[9px] font-bold uppercase', activeSection===s.key?'bg-gold text-navy':'bg-[#001c36] text-gold/60 border border-gold/20')}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── SERVICES MANAGEMENT ── */}
+      {activeSection === 'services' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-serif text-gold">Concierge Services</h3>
+            <button onClick={() => { setEditService(null); setForm(emptyForm); setShowForm(true); }}
+              className="bg-gold text-navy text-[9px] font-bold uppercase px-3 py-1.5 flex items-center gap-1">
+              <Plus size={11}/> Add Service
+            </button>
+          </div>
+
+          {/* Service form */}
+          {showForm && (
+            <div className="bg-[#001c36] border border-gold/30 p-4 space-y-3">
+              <h4 className="text-[10px] uppercase tracking-widest text-gold font-bold">{editService ? 'Edit Service' : 'Add New Service'}</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[8px] text-white/40 uppercase block mb-1">Category</label>
+                  <select value={form.category} onChange={e => { setForm({ ...form, category: e.target.value, price_unit: CATEGORIES.find(c=>c.key===e.target.value)?.unit || 'per person' }); }}
+                    className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none">
+                    {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[8px] text-white/40 uppercase block mb-1">Service Name</label>
+                  <input value={form.name} onChange={e => setForm({...form, name: e.target.value})}
+                    placeholder="e.g. Desert Safari, Toyota Camry"
+                    className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-[8px] text-white/40 uppercase block mb-1">Description</label>
+                  <input value={form.description} onChange={e => setForm({...form, description: e.target.value})}
+                    placeholder="Brief description for guests"
+                    className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="text-[8px] text-white/40 uppercase block mb-1">Price (AED)</label>
+                  <input type="number" value={form.price} onChange={e => setForm({...form, price: e.target.value})}
+                    placeholder="0"
+                    className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="text-[8px] text-white/40 uppercase block mb-1">Price Unit</label>
+                  <select value={form.price_unit} onChange={e => setForm({...form, price_unit: e.target.value})}
+                    className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none">
+                    {['per person','per day','per trip','per bag','per hour','per night'].map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[8px] text-white/40 uppercase block mb-1">Duration (optional)</label>
+                  <input value={form.duration} onChange={e => setForm({...form, duration: e.target.value})}
+                    placeholder="e.g. 4 hours, Full day"
+                    className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="text-[8px] text-white/40 uppercase block mb-1">Image URL (optional)</label>
+                  <input value={form.image_url} onChange={e => setForm({...form, image_url: e.target.value})}
+                    placeholder="https://..."
+                    className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none" />
+                </div>
+              </div>
+              {/* Availability */}
+              <div>
+                <label className="text-[8px] text-white/40 uppercase block mb-2">Available Days</label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {DAYS.map(day => (
+                    <button key={day} type="button" onClick={() => toggleDay(day)}
+                      className={cn('px-2.5 py-1 text-[8px] font-bold uppercase border',
+                        (form.availability||[]).includes(day) ? 'bg-gold text-navy border-gold' : 'bg-transparent text-white/30 border-white/10')}>
+                      {day}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Active toggle */}
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setForm({...form, active: !form.active})}
+                  className={cn('px-3 py-1.5 text-[9px] font-bold uppercase border',
+                    form.active ? 'bg-green-900/40 border-green-500 text-green-400' : 'bg-red-900/40 border-red-500 text-red-400')}>
+                  {form.active ? '✅ Active' : '❌ Inactive'}
+                </button>
+                <div className="flex gap-2 ml-auto">
+                  <button onClick={() => { setShowForm(false); setEditService(null); }}
+                    className="px-4 py-1.5 text-[9px] text-white/50 border border-white/10 uppercase">Cancel</button>
+                  <button onClick={saveService} disabled={saving}
+                    className="px-4 py-1.5 text-[9px] bg-gold text-navy font-bold uppercase">
+                    {saving ? 'Saving...' : 'Save Service'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Services list grouped by category */}
+          {CATEGORIES.map(cat => {
+            const catServices = services.filter(s => s.category === cat.key);
+            if (catServices.length === 0 && !showForm) return null;
+            return (
+              <div key={cat.key} className="space-y-2">
+                <h4 className="text-[9px] uppercase tracking-widest text-gold/60 font-bold border-b border-gold/10 pb-1">{cat.label}</h4>
+                {catServices.length === 0
+                  ? <p className="text-[9px] text-white/20 italic px-2">No services yet</p>
+                  : catServices.map(svc => (
+                    <div key={svc.id} className="bg-[#001c36] border border-gold/10 p-3 flex items-center gap-3">
+                      {svc.image_url && <img src={svc.image_url} className="w-12 h-10 object-cover flex-shrink-0" alt="" />}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-white font-bold text-[11px]">{svc.name}</p>
+                          <span className={cn('text-[7px] font-bold px-1.5 py-0.5', svc.active ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400')}>
+                            {svc.active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                        {svc.description && <p className="text-[9px] text-white/40 truncate">{svc.description}</p>}
+                        <p className="text-[9px] text-gold font-bold">AED {svc.price} {svc.price_unit} {svc.duration ? `· ${svc.duration}` : ''}</p>
+                        <p className="text-[8px] text-white/30">{(svc.availability||[]).join(', ')}</p>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => { setEditService(svc); setForm({...svc, price: String(svc.price)}); setShowForm(true); }}
+                          className="text-gold/50 hover:text-gold"><Edit2 size={13}/></button>
+                        <button onClick={() => deleteService(svc.id)}
+                          className="text-red-400/40 hover:text-red-400"><Trash2 size={13}/></button>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── BOOKINGS MANAGEMENT ── */}
+      {activeSection === 'bookings' && (
+        <div className="space-y-3">
+          <div className="flex gap-2 flex-wrap">
+            {['Pending','Confirmed','Completed','Cancelled'].map(s => (
+              <span key={s} className={cn('text-[8px] font-bold px-2 py-0.5', STATUS_COLOR[s])}>
+                {s}: {bookings.filter(b=>b.status===s).length}
+              </span>
+            ))}
+          </div>
+          {bookings.length === 0
+            ? <p className="text-white/20 italic text-sm text-center py-10">No bookings yet.</p>
+            : bookings.map(b => (
+              <div key={b.id} className="bg-[#001c36] border border-gold/10 p-4 space-y-2">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-white font-bold text-[11px]">{b.service_name}</p>
+                    <p className="text-[9px] text-gold">Room {b.room_number} · {b.guest_name}</p>
+                  </div>
+                  <span className={cn('text-[8px] font-bold px-2 py-0.5', STATUS_COLOR[b.status]||'bg-white/10 text-white/50')}>{b.status}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 text-[9px] text-white/50">
+                  <p>👥 {b.guests_count} guest{b.guests_count>1?'s':''}</p>
+                  <p>💰 AED {b.total_price}</p>
+                  <p>📅 Pickup: {b.pickup_date} {b.pickup_time}</p>
+                  {b.return_date && <p>🔄 Return: {b.return_date} {b.return_time}</p>}
+                  {b.special_requests && <p className="col-span-2">📝 {b.special_requests}</p>}
+                  {b.confirmed_by && <p className="col-span-2 text-gold/60">Handled by: {b.confirmed_by}</p>}
+                </div>
+                {b.status === 'Pending' && (
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={() => updateBookingStatus(b.id, 'Confirmed')}
+                      className="flex-1 py-1.5 bg-green-900/40 border border-green-500/40 text-green-400 text-[9px] font-bold uppercase">✓ Confirm</button>
+                    <button onClick={() => updateBookingStatus(b.id, 'Cancelled')}
+                      className="flex-1 py-1.5 bg-red-900/40 border border-red-500/40 text-red-400 text-[9px] font-bold uppercase">✕ Cancel</button>
+                  </div>
+                )}
+                {b.status === 'Confirmed' && (
+                  <button onClick={() => updateBookingStatus(b.id, 'Completed')}
+                    className="w-full py-1.5 bg-blue-900/40 border border-blue-500/40 text-blue-400 text-[9px] font-bold uppercase">✓ Mark Completed</button>
+                )}
+              </div>
+            ))
+          }
+        </div>
       )}
     </div>
   );
@@ -3646,14 +4132,24 @@ export default function App() {
   const isDeptManager = profile?.role === 'manager' && profile?.department !== 'None';
 
   // ✅ Guest service tiles — each has correct serviceKey for routing
-  const guestServices = [
-    { name: t('housekeeping'), icon: Sparkles, dept: 'Housekeeping', serviceKey: 'housekeeping', options: [t('room_cleaning'), t('laundry'), t('extra_blanket'), 'Extra Pillow', 'Extra Towels', 'Turn Down Service'] },
-    { name: t('room_service'), icon: Coffee, dept: 'F&B', serviceKey: 'room_service' }, // ✅ Goes to F&B
-    { name: 'Restaurant Reservations', icon: UtensilsCrossed, dept: 'F&B', serviceKey: 'restaurant_portal', isPortal: true }, // ✅ Opens dedicated portal
-    { name: t('concierge_services'), icon: Key, dept: 'Concierge', serviceKey: 'concierge_services' }, // ✅ Goes to Concierge
-    { name: t('security'), icon: Shield, dept: 'Security & Safety', serviceKey: 'security', options: [t('emergency'), t('safe_box'), t('medical'), t('escort'), 'Lost & Found', 'Other'] },
-    { name: 'Maintenance', icon: Wrench, dept: 'Maintenance', serviceKey: 'maintenance', options: ['AC / Heating Issue', 'Plumbing Issue', 'Electrical Issue', 'TV / Electronics', 'Door / Lock Issue', 'Lighting Issue', 'Bathroom Issue', 'Other'] }, // ✅ Goes to Maintenance
+  // ✅ Read hotel services config — filter tiles per hotel
+  const hotelServicesConfig = (() => {
+    try { return JSON.parse(localStorage.getItem('sentinel_hotel') || '{}').services_config || null; } catch { return null; }
+  })();
+
+  const allGuestServices = [
+    { name: t('housekeeping'), icon: Sparkles, dept: 'Housekeeping', serviceKey: 'housekeeping', configKey: 'housekeeping', options: [t('room_cleaning'), t('laundry'), t('extra_blanket'), 'Extra Pillow', 'Extra Towels', 'Turn Down Service'] },
+    { name: t('room_service'), icon: Coffee, dept: 'F&B', serviceKey: 'room_service', configKey: 'room_service' },
+    { name: 'Restaurant Reservations', icon: UtensilsCrossed, dept: 'F&B', serviceKey: 'restaurant_portal', configKey: 'restaurant', isPortal: true },
+    { name: t('concierge_services'), icon: Key, dept: 'Concierge', serviceKey: 'concierge_services', configKey: 'concierge' },
+    { name: t('security'), icon: Shield, dept: 'Security & Safety', serviceKey: 'security', configKey: 'security', options: [t('emergency'), t('safe_box'), t('medical'), t('escort'), 'Lost & Found', 'Other'] },
+    { name: 'Maintenance', icon: Wrench, dept: 'Maintenance', serviceKey: 'maintenance', configKey: 'maintenance', options: ['AC / Heating Issue', 'Plumbing Issue', 'Electrical Issue', 'TV / Electronics', 'Door / Lock Issue', 'Lighting Issue', 'Bathroom Issue', 'Other'] },
   ];
+
+  // Filter services based on hotel config — if no config (testing/12345), show all
+  const guestServices = hotelServicesConfig
+    ? allGuestServices.filter(s => hotelServicesConfig[s.configKey] === true)
+    : allGuestServices;
 
   if (loading) return <div className="min-h-screen bg-navy flex items-center justify-center"><div className="text-gold font-serif text-2xl animate-pulse">Loading...</div></div>;
 
@@ -3745,7 +4241,7 @@ export default function App() {
                   <RoomService cart={cart} updateCart={(id, delta) => setCart(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }))} onSubmit={(notes, items) => submitRequest({ type: t('room_service'), serviceKey: 'room_service', dept: 'F&B', notes, lineItems: items })} />
                 )}
                 {/* restaurant-bookings moved to dedicated RestaurantPortal */}
-                {guestTab === 'concierge' && <Concierge onSubmit={data => submitRequest({ ...data, serviceKey: 'concierge_services', dept: 'Concierge' })} />}
+                {guestTab === 'concierge' && <Concierge profile={profile} onSubmit={data => submitRequest({ ...data, serviceKey: 'concierge_services', dept: 'Concierge' })} />}
               </motion.div>
             )}
           </AnimatePresence>
