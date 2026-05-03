@@ -58,16 +58,7 @@ const MAINTENANCE_CATEGORIES = [
   'Safe Box Issue', 'Internet / WiFi', 'Minibar', 'Other',
 ];
 
-const MENU_ITEMS = [
-  { id: 'b1', name: 'Classic Wagyu Burger', price: 145, category: 'breakfast' },
-  { id: 'b2', name: 'Lobster Bisque', price: 95, category: 'breakfast' },
-  { id: 'a1', name: 'Caesar Salad', price: 125, category: 'all_day' },
-  { id: 'a2', name: 'Truffle Fries', price: 245, category: 'all_day' },
-  { id: 'a3', name: 'Wild Mushroom Risotto', price: 185, category: 'all_day' },
-  { id: 'd1', name: 'Fresh Orange Juice', price: 65, category: 'beverages' },
-  { id: 'd2', name: 'Signature Espresso', price: 28, category: 'beverages' },
-  { id: 'd3', name: 'Sparkling Mineral Water', price: 45, category: 'beverages' },
-];
+// Menu items loaded from DB per hotel in RoomService component
 
 // ✅ CORRECT department routing
 const getDepartmentFromServiceKey = (serviceKey: string, fallback?: string): string => {
@@ -328,24 +319,44 @@ const FeedbackModal: React.FC<{ request: any; onClose: () => void; onSubmit: (ra
 const RoomService: React.FC<{ cart: { [id: string]: number }; updateCart: (id: string, delta: number) => void; onSubmit: (notes: string, items: any[]) => void }> = ({ cart, updateCart, onSubmit }) => {
   const { t } = useLanguage();
   const [notes, setNotes] = useState('');
-  const [activeCategory, setActiveCategory] = useState('breakfast');
+  const [activeCategory, setActiveCategory] = useState('all_day');
+  const [menuItems, setMenuItems] = useState<any[]>([]);
+  const [loadingMenu, setLoadingMenu] = useState(true);
+
+  useEffect(() => {
+    const hId = (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    let q = supabase.from('menu_items').select('*').order('category').order('name');
+    if (hId) q = q.eq('hotel_id', hId);
+    q.then(({ data }) => {
+      setMenuItems(data || []);
+      setLoadingMenu(false);
+    });
+  }, []);
+
+  const categories = [...new Set(menuItems.map(m => m.category))];
+
   const total = Object.entries(cart).reduce((acc, [id, qty]) => {
-    const item = MENU_ITEMS.find(m => m.id === id);
+    const item = menuItems.find(m => m.id === id);
     return acc + (item?.price || 0) * qty;
   }, 0);
   const buildLineItems = () => Object.entries(cart).filter(([, qty]) => qty > 0).map(([id, qty]) => {
-    const item = MENU_ITEMS.find(m => m.id === id)!;
+    const item = menuItems.find(m => m.id === id)!;
     return { id, name: item.name, qty, price: item.price, total: item.price * qty };
   });
   return (
     <div className="space-y-6 pb-32 w-full px-4 sm:px-8">
-      <div className="flex gap-1 border-b border-gold/20 pb-2">
-        {['breakfast', 'all_day', 'beverages'].map(cat => (
-          <button key={cat} onClick={() => setActiveCategory(cat)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest', activeCategory === cat ? 'text-gold border-b-2 border-gold' : 'text-navy/40')}>{t(cat)}</button>
+      <div className="flex gap-1 border-b border-gold/20 pb-2 flex-wrap">
+        {categories.map(cat => (
+          <button key={cat} onClick={() => setActiveCategory(cat)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest', activeCategory === cat ? 'text-gold border-b-2 border-gold' : 'text-navy/40')}>{cat.replace('_',' ')}</button>
         ))}
       </div>
+      {loadingMenu ? (
+        <p className="text-center text-navy/40 py-8 text-sm">Loading menu...</p>
+      ) : menuItems.length === 0 ? (
+        <p className="text-center text-navy/40 italic py-8 text-sm">Menu not available. Please contact reception.</p>
+      ) : (
       <div className="space-y-1">
-        {MENU_ITEMS.filter(i => i.category === activeCategory).map(item => (
+        {menuItems.filter(i => i.category === activeCategory).map(item => (
           <div key={item.id} className="flex items-center justify-between p-3 border-b border-navy/5">
             <div>
               <span className="text-navy font-serif text-sm">{item.name}</span>
@@ -1724,7 +1735,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Restaurant Logo</label>
-                      {s.logo_url && <img src={s.logo_url} alt="logo" className="w-12 h-12 object-contain mb-1 border border-gold/20" />}
+                      {r.logo_url && <img src={r.logo_url} alt="logo" className="w-12 h-12 object-contain mb-1 border border-gold/20" />}
                       <input type="file" accept="image/*" id={`logo-${r.id}`}
                         onChange={async (e) => {
                           const file = e.target.files?.[0]; if (!file) return;
@@ -1739,7 +1750,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                     </div>
                     <div>
                       <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Cover Image</label>
-                      {s.cover_url && <img src={s.cover_url} alt="cover" className="w-full h-12 object-cover mb-1 border border-gold/20" />}
+                      {r.cover_url && <img src={r.cover_url} alt="cover" className="w-full h-12 object-cover mb-1 border border-gold/20" />}
                       <input type="file" accept="image/*" id={`cover-${r.id}`}
                         onChange={async (e) => {
                           const file = e.target.files?.[0]; if (!file) return;
