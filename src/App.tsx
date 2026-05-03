@@ -385,6 +385,7 @@ const RoomService: React.FC<{ cart: { [id: string]: number }; updateCart: (id: s
         )}
       </AnimatePresence>
       </>
+      )}
     </div>
   );
 };
