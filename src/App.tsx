@@ -1311,7 +1311,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                   </div>
                 </button>
                 );
-              ))}
+              })}
             </div>
             <div className="bg-white p-4 border border-gold/20 space-y-3">
               {[{ label: 'Date', key: 'date', type: 'date', val: date, set: setDate },
