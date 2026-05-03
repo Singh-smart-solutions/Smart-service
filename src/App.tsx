@@ -355,6 +355,7 @@ const RoomService: React.FC<{ cart: { [id: string]: number }; updateCart: (id: s
       ) : menuItems.length === 0 ? (
         <p className="text-center text-navy/40 italic py-8 text-sm">Menu not available. Please contact reception.</p>
       ) : (
+      <>
       <div className="space-y-1">
         {menuItems.filter(i => i.category === activeCategory).map(item => (
           <div key={item.id} className="flex items-center justify-between p-3 border-b border-navy/5">
@@ -383,6 +384,7 @@ const RoomService: React.FC<{ cart: { [id: string]: number }; updateCart: (id: s
           </motion.div>
         )}
       </AnimatePresence>
+      </>
     </div>
   );
 };
