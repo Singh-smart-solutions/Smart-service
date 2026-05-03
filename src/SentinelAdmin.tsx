@@ -380,6 +380,16 @@ export default function SentinelAdmin() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [adminName, setAdminName] = useState('');
+  const [activeTab, setActiveTab] = useState<'hotels' | 'rooms'>('hotels');
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [selectedHotelId, setSelectedHotelId] = useState<string>('');
+  const [roomsLoading, setRoomsLoading] = useState(false);
+  const [bulkFloor, setBulkFloor] = useState('1');
+  const [bulkStart, setBulkStart] = useState('101');
+  const [bulkEnd, setBulkEnd] = useState('110');
+  const [bulkType, setBulkType] = useState('Standard');
+  const [showAddRoom, setShowAddRoom] = useState(false);
+  const [singleRoom, setSingleRoom] = useState({ room_number: '', floor: '', room_type: 'Standard' });
 
   useEffect(() => {
     const saved = localStorage.getItem('sentinel_admin_session');
@@ -405,6 +415,65 @@ export default function SentinelAdmin() {
   };
 
   useEffect(() => { if (adminLoggedIn) fetchHotels(); }, [adminLoggedIn]);
+
+  const fetchRoomsForHotel = async (hotelId: string) => {
+    if (!hotelId) return;
+    setRoomsLoading(true);
+    const { data } = await supabase.from('rooms').select('*')
+      .eq('hotel_id', hotelId).order('floor').order('room_number');
+    if (data) setRooms(data);
+    setRoomsLoading(false);
+  };
+
+  const handleBulkCreate = async () => {
+    if (!selectedHotelId) { alert('Please select a hotel first.'); return; }
+    const start = parseInt(bulkStart);
+    const end = parseInt(bulkEnd);
+    if (isNaN(start) || isNaN(end) || end < start) { alert('Invalid room number range.'); return; }
+    if (end - start > 99) { alert('Maximum 100 rooms at a time.'); return; }
+    const inserts = [];
+    for (let n = start; n <= end; n++) {
+      inserts.push({
+        room_number: String(n),
+        floor: bulkFloor,
+        room_type: bulkType,
+        status: 'Clean',
+        hotel_id: selectedHotelId,
+      });
+    }
+    const { error } = await supabase.from('rooms').insert(inserts);
+    if (error) { alert('Error: ' + error.message); return; }
+    alert(`✅ ${inserts.length} rooms created successfully!`);
+    fetchRoomsForHotel(selectedHotelId);
+  };
+
+  const handleAddSingleRoom = async () => {
+    if (!selectedHotelId || !singleRoom.room_number) return;
+    const { error } = await supabase.from('rooms').insert({
+      room_number: singleRoom.room_number,
+      floor: singleRoom.floor,
+      room_type: singleRoom.room_type,
+      status: 'Clean',
+      hotel_id: selectedHotelId,
+    });
+    if (error) { alert('Error: ' + error.message); return; }
+    setSingleRoom({ room_number: '', floor: '', room_type: 'Standard' });
+    setShowAddRoom(false);
+    fetchRoomsForHotel(selectedHotelId);
+  };
+
+  const handleDeleteRoom = async (roomId: string) => {
+    if (!window.confirm('Delete this room?')) return;
+    await supabase.from('rooms').delete().eq('id', roomId);
+    fetchRoomsForHotel(selectedHotelId);
+  };
+
+  const handleDeleteAllRooms = async () => {
+    if (!selectedHotelId) return;
+    if (!window.confirm('Delete ALL rooms for this hotel? This cannot be undone.')) return;
+    await supabase.from('rooms').delete().eq('hotel_id', selectedHotelId);
+    setRooms([]);
+  };
 
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Delete ${name}? This cannot be undone.`)) return;
@@ -478,7 +547,19 @@ export default function SentinelAdmin() {
           <h1 className="text-xl font-serif text-gold tracking-wider">Sentinel Pro</h1>
           <p className="text-[9px] text-white/40 uppercase tracking-widest">Super Admin Dashboard · {adminName}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
+          <div className="flex gap-1">
+            <button onClick={() => setActiveTab('hotels')}
+              className={cn('px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider',
+                activeTab === 'hotels' ? 'bg-gold text-navy' : 'bg-transparent text-gold/50 border border-gold/20')}>
+              🏨 Hotels
+            </button>
+            <button onClick={() => { setActiveTab('rooms'); if (hotels.length > 0 && !selectedHotelId) { setSelectedHotelId(hotels[0].id); fetchRoomsForHotel(hotels[0].id); } }}
+              className={cn('px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider',
+                activeTab === 'rooms' ? 'bg-gold text-navy' : 'bg-transparent text-gold/50 border border-gold/20')}>
+              🛏 Rooms
+            </button>
+          </div>
           <button onClick={fetchHotels} className="p-2 text-gold/40 hover:text-gold"><RefreshCw size={16} /></button>
           <button onClick={logout} className="flex items-center gap-2 border border-gold/20 text-gold px-4 py-2 text-[9px] font-bold uppercase hover:bg-gold/10">
             <LogOut size={13} /> Logout
@@ -486,7 +567,7 @@ export default function SentinelAdmin() {
         </div>
       </header>
 
-      <div className="p-6 space-y-6 max-w-6xl mx-auto">
+      {activeTab === 'hotels' && <div className="p-6 space-y-6 max-w-6xl mx-auto">
         {/* KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
@@ -587,7 +668,140 @@ export default function SentinelAdmin() {
         )}
 
         <p className="text-center text-[8px] text-white/10 uppercase tracking-widest pb-4">Sentinel Pro · Super Admin · Private & Confidential</p>
-      </div>
+      </div>}
+
+      {/* ── ROOMS MANAGEMENT TAB ── */}
+      {activeTab === 'rooms' && (
+        <div className="p-6 space-y-6 max-w-6xl mx-auto">
+          <div className="bg-[#001c36] border border-gold/20 p-4">
+            <h2 className="text-sm font-serif text-gold mb-3">🛏 Room Management</h2>
+            <div className="flex gap-3 items-center flex-wrap">
+              <div className="flex-1 min-w-[200px]">
+                <label className="text-[9px] text-white/40 uppercase tracking-widest block mb-1">Select Hotel</label>
+                <select value={selectedHotelId} onChange={e => { setSelectedHotelId(e.target.value); fetchRoomsForHotel(e.target.value); }}
+                  className="w-full bg-navy/50 border border-gold/20 text-white p-2.5 text-sm outline-none">
+                  <option value="">-- Select a hotel --</option>
+                  {hotels.map(h => <option key={h.id} value={h.id}>{h.hotel_name} ({h.city})</option>)}
+                </select>
+              </div>
+              {selectedHotelId && <p className="text-[9px] text-white/40 pt-4">{rooms.length} rooms configured</p>}
+            </div>
+          </div>
+
+          {selectedHotelId && (<>
+            {/* Bulk Create */}
+            <div className="bg-[#001c36] border border-gold/20 p-4 space-y-3">
+              <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold">⚡ Bulk Create Rooms</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="text-[9px] text-white/40 uppercase tracking-widest block mb-1">Floor</label>
+                  <input value={bulkFloor} onChange={e => setBulkFloor(e.target.value)}
+                    className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none" placeholder="e.g. 1" />
+                </div>
+                <div>
+                  <label className="text-[9px] text-white/40 uppercase tracking-widest block mb-1">From Room #</label>
+                  <input value={bulkStart} onChange={e => setBulkStart(e.target.value)}
+                    className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none" placeholder="e.g. 101" />
+                </div>
+                <div>
+                  <label className="text-[9px] text-white/40 uppercase tracking-widest block mb-1">To Room #</label>
+                  <input value={bulkEnd} onChange={e => setBulkEnd(e.target.value)}
+                    className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none" placeholder="e.g. 120" />
+                </div>
+                <div>
+                  <label className="text-[9px] text-white/40 uppercase tracking-widest block mb-1">Room Type</label>
+                  <select value={bulkType} onChange={e => setBulkType(e.target.value)}
+                    className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none">
+                    {['Standard','Deluxe','Suite','Junior Suite','Presidential Suite','Studio','Villa','Penthouse','Connecting Room'].map(t =>
+                      <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button onClick={handleBulkCreate}
+                  className="bg-gold text-navy px-5 py-2 text-[9px] font-bold uppercase tracking-wider hover:bg-gold/80">
+                  Create {Math.max(0, (parseInt(bulkEnd)||0) - (parseInt(bulkStart)||0) + 1)} Rooms
+                </button>
+                <p className="text-[8px] text-white/30 italic">Max 100 rooms per batch. Repeat for each floor.</p>
+              </div>
+            </div>
+
+            {/* Add Single Room */}
+            <div className="bg-[#001c36] border border-gold/20 p-4">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold">+ Add Single Room</h3>
+                <button onClick={() => setShowAddRoom(!showAddRoom)} className="text-[9px] text-gold/60 hover:text-gold">
+                  {showAddRoom ? '▲ Hide' : '▼ Show'}
+                </button>
+              </div>
+              {showAddRoom && (
+                <div className="flex gap-3 flex-wrap">
+                  <input value={singleRoom.room_number} onChange={e => setSingleRoom({...singleRoom, room_number: e.target.value})}
+                    placeholder="Room #" className="bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none w-24" />
+                  <input value={singleRoom.floor} onChange={e => setSingleRoom({...singleRoom, floor: e.target.value})}
+                    placeholder="Floor" className="bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none w-20" />
+                  <select value={singleRoom.room_type} onChange={e => setSingleRoom({...singleRoom, room_type: e.target.value})}
+                    className="bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none">
+                    {['Standard','Deluxe','Suite','Junior Suite','Presidential Suite','Studio','Villa','Penthouse','Connecting Room'].map(t =>
+                      <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <button onClick={handleAddSingleRoom}
+                    className="bg-gold text-navy px-4 py-2 text-[9px] font-bold uppercase">+ Add</button>
+                </div>
+              )}
+            </div>
+
+            {/* Rooms Table */}
+            <div className="bg-[#001c36] border border-gold/20">
+              <div className="flex justify-between items-center p-4 border-b border-gold/10">
+                <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold">{rooms.length} Rooms Configured</h3>
+                {rooms.length > 0 && (
+                  <button onClick={handleDeleteAllRooms} className="text-[9px] text-red-400/60 hover:text-red-400 uppercase font-bold">🗑 Delete All Rooms</button>
+                )}
+              </div>
+              {roomsLoading ? (
+                <div className="p-8 text-center text-white/30 text-sm">Loading...</div>
+              ) : rooms.length === 0 ? (
+                <div className="p-8 text-center text-white/20 italic text-sm">No rooms yet. Use bulk create above.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="bg-navy/60 border-b border-gold/10">
+                        <th className="p-3 text-left text-gold/60 uppercase font-bold">Room #</th>
+                        <th className="p-3 text-left text-gold/60 uppercase font-bold">Type</th>
+                        <th className="p-3 text-left text-gold/60 uppercase font-bold">Floor</th>
+                        <th className="p-3 text-left text-gold/60 uppercase font-bold">Status</th>
+                        <th className="p-3 text-center text-gold/60 uppercase font-bold">Delete</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rooms.map((room, i) => (
+                        <tr key={room.id} className={i%2===0?'bg-[#001020]':'bg-[#001530]'}>
+                          <td className="p-3 text-gold font-bold">Room {room.room_number}</td>
+                          <td className="p-3 text-white/70">{room.room_type}</td>
+                          <td className="p-3 text-white/50">Floor {room.floor}</td>
+                          <td className="p-3">
+                            <span className={cn('text-[8px] font-bold px-2 py-0.5 rounded-full',
+                              room.status==='Clean'?'bg-green-900/40 text-green-400':
+                              room.status==='Dirty'?'bg-red-900/40 text-red-400':
+                              room.status==='Inspected'?'bg-orange-900/40 text-orange-400':'bg-white/10 text-white/50')}>
+                              {room.status}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <button onClick={() => handleDeleteRoom(room.id)} className="text-red-400/40 hover:text-red-400"><X size={13} /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>)}
+        </div>
+      )}
 
       {/* Modal */}
       <AnimatePresence>
