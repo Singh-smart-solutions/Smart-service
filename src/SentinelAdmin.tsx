@@ -364,12 +364,6 @@ const HotelCard: React.FC<{
                     ? 'Guests must scan room QR code. Room number field hidden on guest portal.'
                     : 'Guests can access via direct URL or QR code scan.'}
                 </p>
-              </div>             </div>
-                <p className="text-[8px] text-white/30 mt-1 italic">
-                  {(form.access_mode || 'open') === 'qr_only'
-                    ? 'Guests must scan QR in room. Direct URL access blocked.'
-                    : 'Guests can access via URL or QR scan.'}
-                </p>
               </div>
 
               {/* Quick Actions */}
