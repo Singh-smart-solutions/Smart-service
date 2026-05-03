@@ -665,11 +665,7 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void; profile?: UserProfile
 };
 
 
-const RESTAURANTS = [
-  { id: 'turquoise', name: 'Turquoise', cuisine: 'International Cuisine', emoji: '🌊' },
-  { id: 'mermaid', name: 'The Mermaid', cuisine: 'Mediterranean Cuisine', emoji: '🧜' },
-  { id: 'lolivo', name: "L'Olivo", cuisine: 'Italian Fine Dining', emoji: '🫒' },
-];
+// RESTAURANTS loaded dynamically from DB per hotel
 
 const generateBookingRef = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -769,8 +765,12 @@ const printBookingTicket = (booking: any) => {
 // ─── RESTAURANT BOOKING PORTAL ───────────────────────────────────────────────
 const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [bookings, setBookings] = useState<any[]>([]);
+  const [restaurants, setRestaurants] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'book' | 'mybookings' | 'manage' | 'walkin' | 'menu' | 'settings'>('book');
-  const [selectedRestaurant, setSelectedRestaurant] = useState('turquoise');
+  const [selectedRestaurant, setSelectedRestaurant] = useState('');
+  const [showAddRestaurant, setShowAddRestaurant] = useState(false);
+  const [newRest, setNewRest] = useState({ name: '', cuisine: '', emoji: '🍽', description: '' });
+  const [savingRest, setSavingRest] = useState(false);
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [pax, setPax] = useState('2');
@@ -780,7 +780,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [cancelConfirm, setCancelConfirm] = useState<any | null>(null);
   const [menuItems, setMenuItems] = useState<any[]>([]);
   const [restaurantSettings, setRestaurantSettings] = useState<any[]>([]);
-  const [newMenuItem, setNewMenuItem] = useState({ name: '', price: '', category: 'all_day', restaurant: 'turquoise' });
+  const [newMenuItem, setNewMenuItem] = useState({ name: '', price: '', category: 'all_day', restaurant: '' });
   const [restSettings, setRestSettings] = useState<any>({});
   const [rejectModal, setRejectModal] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -823,6 +823,17 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
     if (data) setMenuItems(data);
   }, [profile.hotelId]);
 
+  const fetchRestaurants = useCallback(async () => {
+    const hId0 = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    let rQ = supabase.from('restaurants').select('*').eq('active', true).order('created_at');
+    if (hId0) rQ = rQ.eq('hotel_id', hId0);
+    const { data: rData } = await rQ;
+    if (rData && rData.length > 0) {
+      setRestaurants(rData);
+      setSelectedRestaurant(prev => prev || rData[0].id);
+    }
+  }, [profile.hotelId]);
+
   const fetchSettings = useCallback(async () => {
     const hId2 = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
     let settQ = supabase.from('restaurant_settings').select('*');
@@ -837,6 +848,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
 
   useEffect(() => {
     fetchBookings();
+    fetchRestaurants();
     if (isFBManager || isExecutive || isStaff) { fetchMenuItems(); fetchSettings(); }
     // ✅ Unique channel per user to avoid conflicts
     const channel = supabase.channel(`restaurant-bookings-${profile.uid}`)
@@ -847,7 +859,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
     // ✅ Polling fallback every 3 seconds
     const poll = setInterval(() => { fetchBookings(); }, 3000);
     return () => { supabase.removeChannel(channel); clearInterval(poll); };
-  }, [fetchBookings, fetchMenuItems, fetchSettings, isFBManager, isExecutive, isStaff]);
+  }, [fetchBookings, fetchMenuItems, fetchSettings, fetchRestaurants, isFBManager, isExecutive, isStaff]);
 
   const submitBooking = async () => {
     if (!date || !time || !pax) { showToast('Please fill in date, time and number of guests', 'error'); return; }
@@ -1103,11 +1115,14 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
 
   const addMenuItem = async () => {
     if (!newMenuItem.name || !newMenuItem.price) { showToast('Please fill name and price', 'error'); return; }
+    const hIdMenu = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
     const { error } = await supabase.from('menu_items').insert({
       name: newMenuItem.name, price: Number(newMenuItem.price),
       category: newMenuItem.category, restaurant: newMenuItem.restaurant,
+      hotel_id: hIdMenu,
     });
-    if (!error) { showToast('Menu item added!', 'success'); fetchMenuItems(); setNewMenuItem({ name: '', price: '', category: 'all_day', restaurant: 'turquoise' }); }
+    const firstRestId = restaurants.length > 0 ? restaurants[0].id : '';
+    if (!error) { showToast('Menu item added!', 'success'); fetchMenuItems(); setNewMenuItem({ name: '', price: '', category: 'all_day', restaurant: firstRestId }); }
   };
 
   const deleteMenuItem = async (id: string) => {
@@ -1290,7 +1305,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
           <div className="space-y-4">
             <p className="text-[9px] uppercase tracking-widest text-gold font-bold">Select Restaurant</p>
             <div className="space-y-2">
-              {RESTAURANTS.map(r => {
+              {restaurants.map(r => {
                 const rs = restSettings[r.id] || {};
                 return (
                 <button key={r.id} onClick={() => setSelectedRestaurant(r.id)}
@@ -1496,7 +1511,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                 <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Restaurant *</label>
                 <select value={walkInRestaurant} onChange={e => setWalkInRestaurant(e.target.value)}
                   className="w-full bg-white border border-gold p-2.5 text-sm text-navy outline-none">
-                  {RESTAURANTS.map(r => <option key={r.id} value={r.id}>{r.emoji} {r.name}</option>)}
+                  {restaurants.map(r => <option key={r.id} value={r.id}>{r.emoji} {r.name}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-3 gap-2">
@@ -1573,23 +1588,27 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
         {activeTab === 'menu' && (isFBManager || isExecutive) && (
           <div className="space-y-4">
             <div className="bg-[#001c36] border border-gold/10 p-4 space-y-3">
-              <h3 className="text-base font-serif text-gold">Add Menu Item</h3>
+              <h3 className="text-base font-serif text-gold">Add Room Service Menu Item</h3>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Restaurant</label>
                   <select value={newMenuItem.restaurant} onChange={e => setNewMenuItem({ ...newMenuItem, restaurant: e.target.value })}
                     className="w-full bg-white border border-gold p-2 text-sm text-navy outline-none">
-                    {RESTAURANTS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    {restaurants.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Category</label>
                   <select value={newMenuItem.category} onChange={e => setNewMenuItem({ ...newMenuItem, category: e.target.value })}
                     className="w-full bg-white border border-gold p-2 text-sm text-navy outline-none">
-                    <option value="breakfast">Breakfast</option>
-                    <option value="all_day">All Day</option>
-                    <option value="beverages">Beverages</option>
-                    <option value="desserts">Desserts</option>
+                    <option value="breakfast">🌅 Breakfast</option>
+                    <option value="all_day">☀️ All Day Dining</option>
+                    <option value="mains">🍽 Main Course</option>
+                    <option value="starters">🥗 Starters</option>
+                    <option value="beverages">☕ Beverages</option>
+                    <option value="desserts">🍰 Desserts</option>
+                    <option value="healthy">🥑 Healthy</option>
+                    <option value="kids">👶 Kids Menu</option>
                   </select>
                 </div>
                 <div>
@@ -1625,11 +1644,73 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
         {/* RESTAURANT SETTINGS */}
         {activeTab === 'settings' && (isFBManager || isExecutive) && (
           <div className="space-y-4">
-            {RESTAURANTS.map(r => {
+            {/* Add Restaurant */}
+            <div className="bg-[#001c36] border border-gold/30 p-4">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold">+ Add New Restaurant</h3>
+                <button onClick={() => setShowAddRestaurant(!showAddRestaurant)}
+                  className="text-[9px] text-gold/60 hover:text-gold">{showAddRestaurant ? '▲ Hide' : '▼ Show'}</button>
+              </div>
+              {showAddRestaurant && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[8px] text-white/40 uppercase block mb-1">Restaurant Name *</label>
+                      <input value={newRest.name} onChange={e => setNewRest({...newRest, name: e.target.value})}
+                        placeholder="e.g. The Rooftop" className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-[8px] text-white/40 uppercase block mb-1">Cuisine Type</label>
+                      <input value={newRest.cuisine} onChange={e => setNewRest({...newRest, cuisine: e.target.value})}
+                        placeholder="e.g. Mediterranean" className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-[8px] text-white/40 uppercase block mb-1">Emoji Icon</label>
+                      <input value={newRest.emoji} onChange={e => setNewRest({...newRest, emoji: e.target.value})}
+                        placeholder="🍽" className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-[8px] text-white/40 uppercase block mb-1">Description</label>
+                      <input value={newRest.description} onChange={e => setNewRest({...newRest, description: e.target.value})}
+                        placeholder="Short description" className="w-full bg-navy/50 border border-gold/20 text-white p-2 text-sm outline-none" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={async () => {
+                      if (!newRest.name) { showToast('Restaurant name required', 'error'); return; }
+                      setSavingRest(true);
+                      const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+                      await supabase.from('restaurants').insert({ ...newRest, hotel_id: hId, active: true });
+                      setNewRest({ name: '', cuisine: '', emoji: '🍽', description: '' });
+                      setShowAddRestaurant(false);
+                      setSavingRest(false);
+                      fetchRestaurants();
+                      showToast('Restaurant added!', 'success');
+                    }} disabled={savingRest}
+                      className="bg-gold text-navy px-4 py-2 text-[9px] font-bold uppercase">
+                      {savingRest ? 'Saving...' : '+ Add Restaurant'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {restaurants.length === 0 && (
+              <p className="text-white/30 italic text-sm text-center py-6">No restaurants added yet. Add your first restaurant above.</p>
+            )}
+
+            {restaurants.map(r => {
               const s = restSettings[r.id] || {};
               return (
                 <div key={r.id} className="bg-[#001c36] border border-gold/10 p-4 space-y-3">
-                  <h3 className="text-base font-serif text-gold">{r.emoji} {r.name}</h3>
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-base font-serif text-gold">{r.emoji} {r.name}</h3>
+                    <button onClick={async () => {
+                      if (!window.confirm('Remove ' + r.name + '?')) return;
+                      await supabase.from('restaurants').update({ active: false }).eq('id', r.id);
+                      fetchRestaurants();
+                    }} className="text-red-400/40 hover:text-red-400 text-[9px]">Remove</button>
+                  </div>
 
                   {/* Logo + Cover Image Upload */}
                   <div className="grid grid-cols-2 gap-3">
@@ -1643,8 +1724,8 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                           const { data, error } = await supabase.storage.from('hotel-assets').upload(path, file, { upsert: true });
                           if (error) { showToast('Upload failed: ' + error.message, 'error'); return; }
                           const { data: { publicUrl } } = supabase.storage.from('hotel-assets').getPublicUrl(path);
-                          await saveRestaurantSettings(r.id, { ...s, logo_url: publicUrl });
-                          showToast('Logo saved!', 'success'); fetchSettings();
+                          await supabase.from('restaurants').update({ logo_url: publicUrl }).eq('id', r.id);
+                          showToast('Logo saved!', 'success'); fetchRestaurants();
                         }}
                         className="w-full text-[9px] text-white/50 bg-navy/50 border border-gold/20 p-1.5 file:bg-gold file:text-navy file:border-0 file:text-[8px] file:font-bold file:px-2 file:py-0.5 file:mr-2 cursor-pointer" />
                     </div>
@@ -1658,8 +1739,8 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                           const { data, error } = await supabase.storage.from('hotel-assets').upload(path, file, { upsert: true });
                           if (error) { showToast('Upload failed: ' + error.message, 'error'); return; }
                           const { data: { publicUrl } } = supabase.storage.from('hotel-assets').getPublicUrl(path);
-                          await saveRestaurantSettings(r.id, { ...s, cover_url: publicUrl });
-                          showToast('Cover saved!', 'success'); fetchSettings();
+                          await supabase.from('restaurants').update({ cover_url: publicUrl }).eq('id', r.id);
+                          showToast('Cover saved!', 'success'); fetchRestaurants();
                         }}
                         className="w-full text-[9px] text-white/50 bg-navy/50 border border-gold/20 p-1.5 file:bg-gold file:text-navy file:border-0 file:text-[8px] file:font-bold file:px-2 file:py-0.5 file:mr-2 cursor-pointer" />
                     </div>
