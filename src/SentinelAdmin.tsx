@@ -248,6 +248,51 @@ const HotelModal: React.FC<{
           </div>
         </div>
 
+        {/* ── Services Configuration ── */}
+        <div className="px-5 py-4 border-t border-gold/10 space-y-3">
+          <label className="text-[10px] text-gold/60 uppercase tracking-wider block">Active Services for This Hotel</label>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { key: 'housekeeping', label: '🏠 Housekeeping' },
+              { key: 'room_service', label: '☕ Room Service' },
+              { key: 'restaurant', label: '🍽 Restaurant' },
+              { key: 'concierge', label: '🔑 Concierge' },
+              { key: 'security', label: '🛡 Security' },
+              { key: 'maintenance', label: '🔧 Maintenance' },
+            ] as const).map(({ key, label }) => (
+              <button key={key} type="button"
+                onClick={() => setForm({ ...form, services_config: { ...(form.services_config as any), [key]: !(form.services_config as any)?.[key] } })}
+                className={cn('flex items-center gap-1.5 px-2 py-2 text-[8px] font-bold uppercase border',
+                  (form.services_config as any)?.[key] ? 'bg-gold/20 border-gold text-gold' : 'bg-transparent border-white/10 text-white/30')}>
+                <span className={cn('w-1.5 h-1.5 rounded-full', (form.services_config as any)?.[key] ? 'bg-gold' : 'bg-white/20')} />
+                {label}
+              </button>
+            ))}
+          </div>
+          {(form.services_config as any)?.concierge && (
+            <div>
+              <label className="text-[9px] text-white/40 uppercase tracking-widest block mb-1.5">Concierge Items</label>
+              <div className="flex flex-wrap gap-1.5">
+                {['Car Rental','Taxi','Limo','Luggage Assistance','Tours','City Guide'].map(item => {
+                  const isActive = (form.services_config as any)?.concierge_items?.includes(item);
+                  return (
+                    <button key={item} type="button"
+                      onClick={() => {
+                        const cur = (form.services_config as any)?.concierge_items || [];
+                        const upd = isActive ? cur.filter((i: string) => i !== item) : [...cur, item];
+                        setForm({ ...form, services_config: { ...(form.services_config as any), concierge_items: upd } });
+                      }}
+                      className={cn('px-2 py-1 text-[8px] font-bold uppercase border',
+                        isActive ? 'bg-gold/20 border-gold/50 text-gold' : 'bg-transparent border-white/10 text-white/20')}>
+                      {item}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="sticky bottom-0 bg-[#001c36] border-t border-gold/20 p-5 flex gap-3">
           <button onClick={onClose} className="flex-1 py-3 border border-gold/20 text-gold text-[10px] font-bold uppercase tracking-widest">Cancel</button>
           <button onClick={handleSave} disabled={loading} className="flex-1 py-3 bg-gold text-navy text-[10px] font-bold uppercase tracking-widest disabled:opacity-50">
@@ -348,59 +393,6 @@ const HotelCard: React.FC<{
               </div>
 
 
-
-                            {/* Services Configuration */}
-              <div className="space-y-3">
-                <label className="text-[10px] text-gold/60 uppercase tracking-wider block">Active Services</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {([
-                    { key: 'housekeeping', label: '🏠 Housekeeping' },
-                    { key: 'room_service', label: '☕ Room Service' },
-                    { key: 'restaurant', label: '🍽 Restaurant' },
-                    { key: 'concierge', label: '🔑 Concierge' },
-                    { key: 'security', label: '🛡 Security' },
-                    { key: 'maintenance', label: '🔧 Maintenance' },
-                  ] as const).map(({ key, label }) => (
-                    <button key={key} type="button"
-                      onClick={() => setForm({ ...form, services_config: {
-                        ...form.services_config!,
-                        [key]: !form.services_config?.[key],
-                      }})}
-                      className={cn('flex items-center gap-2 px-3 py-2 text-[9px] font-bold uppercase border text-left',
-                        form.services_config?.[key]
-                          ? 'bg-gold/20 border-gold text-gold'
-                          : 'bg-transparent border-white/10 text-white/30')}>
-                      <span className={cn('w-2 h-2 rounded-full flex-shrink-0',
-                        form.services_config?.[key] ? 'bg-gold' : 'bg-white/20')} />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {form.services_config?.concierge && (
-                  <div className="mt-2">
-                    <label className="text-[9px] text-white/40 uppercase tracking-widest block mb-2">Concierge Services</label>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {['Car Rental', 'Taxi', 'Limo', 'Luggage Assistance', 'Tours', 'City Guide'].map(item => {
-                        const active = form.services_config?.concierge_items?.includes(item);
-                        return (
-                          <button key={item} type="button"
-                            onClick={() => {
-                              const current = form.services_config?.concierge_items || [];
-                              const updated = active
-                                ? current.filter((i: string) => i !== item)
-                                : [...current, item];
-                              setForm({ ...form, services_config: { ...form.services_config!, concierge_items: updated } });
-                            }}
-                            className={cn('px-2 py-1.5 text-[8px] font-bold uppercase border',
-                              active ? 'bg-gold/20 border-gold/50 text-gold' : 'bg-transparent border-white/10 text-white/20')}>
-                            {item}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
 
               {/* Quick Actions */}
               <div className="flex gap-2 flex-wrap">
