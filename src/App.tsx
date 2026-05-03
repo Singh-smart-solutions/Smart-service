@@ -1540,7 +1540,7 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
     e.preventDefault();
     // ✅ Check hotel entry code OR legacy 12345
     const typedCode = fullName.trim().toUpperCase();
-    if (typedCode === '12345' || roomNumber === '12345') { setShowSecret(true); return; }
+    if (typedCode === '12345') { setShowSecret(true); return; }
     // Check hotel_clients for matching entry_code
     const { data: hotelByCode } = await supabase.from('hotel_clients')
       .select('id, hotel_name, entry_code, executive_password, access_mode, status')
@@ -1562,6 +1562,16 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
       const hotelSessionRaw = localStorage.getItem('sentinel_hotel');
       const hotelSession = hotelSessionRaw ? JSON.parse(hotelSessionRaw) : null;
       const resolvedHotelId = hotelParam || hotelSession?.id || null;
+      // ✅ FIX 3: Validate room number exists in rooms table
+      if (resolvedHotelId) {
+        const { data: roomCheck } = await supabase
+          .from('rooms').select('id').eq('hotel_id', resolvedHotelId)
+          .eq('room_number', roomNumber).single();
+        if (!roomCheck) {
+          showToast('Room number not found. Please scan the QR code in your room.', 'error');
+          setLoading(false); return;
+        }
+      }
       const guestId = `${fullName.replace(/[^a-zA-Z0-9]/g, '_')}_${roomNumber}`;
       const { data: existing } = await supabase.from('guests').select('*').eq('id', guestId).single();
       if (!existing) await supabase.from('guests').insert({ id: guestId, name: fullName, email: 'guest@hotel.com', room: roomNumber });
@@ -1588,8 +1598,8 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
       localStorage.setItem('sentinel_local_session', JSON.stringify(adminProfile));
       onLoginSuccess(adminProfile); return;
     }
-    // Legacy global password
-    if (managerPassword === 'Manager12345') {
+    // Legacy global password — ONLY works when no hotel context is active (owner testing only)
+    if (managerPassword === 'Manager12345' && !hotelCtx) {
       const adminProfile: UserProfile = { uid: 'admin_override', email: 'admin@sentinel.pro', displayName: 'Executive Director', role: 'manager', department: 'None', status: 'Approved' };
       localStorage.setItem('sentinel_local_session', JSON.stringify(adminProfile));
       onLoginSuccess(adminProfile); return;
