@@ -2372,12 +2372,15 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   const submitMaintenanceRequest = async () => {
     if (!maintenanceForm.room || !maintenanceForm.description) { showToast('Please fill in both room/location and description fields.', 'error'); return; }
-    await supabase.from('requests').insert({
-      guest_room: maintenanceForm.room, guest_id: 'maintenance', guest_name: userProfile.displayName,
+    const maintHotelId = userProfile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    const { error: maintErr } = await supabase.from('requests').insert({
+      guest_room: maintenanceForm.room, guest_id: userProfile.uid, guest_name: userProfile.displayName,
       service: `Maintenance: ${maintenanceForm.category}`,
       notes: `${maintenanceForm.description} [Priority: ${maintenanceForm.priority}]`,
       department: 'Maintenance', status: 'Pending',
+      hotel_id: maintHotelId,
     });
+    if (maintErr) { showToast('Failed to submit: ' + maintErr.message, 'error'); return; }
     showToast('Maintenance request submitted successfully!', 'success');
     setMaintenanceForm({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
   };
