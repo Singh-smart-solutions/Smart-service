@@ -10,7 +10,7 @@ import {
   User, ClipboardList, TrendingUp, Star, ShieldCheck,
   Car, MapPin, Briefcase, FileText, Mail, Download,
   Phone, ArrowRight, QrCode, Settings, Wrench, BedDouble,
-  Bell, RefreshCw, Search, Edit2, Trash2, Briefcase
+  Bell, RefreshCw, Search, Edit2, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage, Language } from './contexts/TranslationContext';
