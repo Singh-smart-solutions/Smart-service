@@ -894,7 +894,6 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
         guest_name: profile.displayName,
         room_number: profile.roomNumber || '',
         restaurant: selectedRestaurant,
-        restaurant_name: restaurants.find((r: any) => r.id === selectedRestaurant)?.name || '',
         date, time,
         pax: Number(pax),
         notes,
@@ -2191,7 +2190,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const fetchTasks = useCallback(async () => {
     const dept = userProfile.department;
     let query = supabase.from('requests').select('*').order('created_at', { ascending: false });
-    if (userProfile.hotelId) query = query.eq('hotel_id', userProfile.hotelId);
+    if (userProfile.hotelId) query = query.or(`hotel_id.eq.${userProfile.hotelId},hotel_id.is.null`);
     if (dept === 'Security & Safety') query = query.in('department', ['Security & Safety', 'Security']);
     else query = query.eq('department', dept);
     const { data } = await query;
@@ -2673,7 +2672,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const fetchData = async () => {
     const dept = profile.department;
     let reqQ = supabase.from('requests').select('*').order('created_at', { ascending: false });
-    if (profile.hotelId) reqQ = reqQ.eq('hotel_id', profile.hotelId);
+    if (profile.hotelId) reqQ = reqQ.or(`hotel_id.eq.${profile.hotelId},hotel_id.is.null`);
     if (dept === 'Security & Safety') reqQ = reqQ.in('department', ['Security & Safety', 'Security']);
     else reqQ = reqQ.eq('department', dept);
     const { data: reqData } = await reqQ;
@@ -3543,7 +3542,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
 
   const fetchData = async () => {
     let execRQ = supabase.from('requests').select('*').order('created_at', { ascending: false });
-    if (profile.hotelId) execRQ = execRQ.eq('hotel_id', profile.hotelId);
+    if (profile.hotelId) execRQ = execRQ.or(`hotel_id.eq.${profile.hotelId},hotel_id.is.null`);
     const { data: reqData } = await execRQ;
     if (reqData) setRequests(reqData);
     let execSQ = supabase.from('staff').select('*').order('created_at', { ascending: false });
