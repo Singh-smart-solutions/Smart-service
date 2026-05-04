@@ -894,10 +894,12 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
         guest_name: profile.displayName,
         room_number: profile.roomNumber || '',
         restaurant: selectedRestaurant,
+        restaurant_name: restaurants.find((r: any) => r.id === selectedRestaurant)?.name || '',
         date, time,
         pax: Number(pax),
         notes,
         status: 'Pending',
+        hotel_id: profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })(),
       }).select().single();
       if (error) throw error;
       showToast(`Reservation submitted! Ref: ${ref} — Our team will confirm shortly.`, 'success');
