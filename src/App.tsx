@@ -2184,7 +2184,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     guestId: row.guest_id || '', guestName: row.guest_name, timestamp: row.created_at,
     acceptedAt: row.accepted_at, completedAt: row.closed_at,
     assignedStaffName: row.assigned_to, delayReason: row.late_reason, lineItems: row.line_items,
-    guestLanguage: row.guest_language || 'en',
+    guestLanguage: row.language || 'en',
   });
 
   const fetchTasks = useCallback(async () => {
@@ -2222,7 +2222,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       tasks.forEach(task => {
         if (task.status === 'Completed') return;
         const dept = userProfile.department;
-        const slaLimit = (slaSettings[dept] || 5) * 60;
+        const slaLimit = getSLALimit(dept); // ✅ Consistent with handleComplete
         const elapsed = getElapsed(task.timestamp);
         const pct = (elapsed / slaLimit) * 100;
         const warnKey80 = `${task.id}-80`;
@@ -2235,13 +2235,25 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
           setNewOrderAlert(`⚠️ SLA WARNING — Room #${task.roomNumber} · Only ${Math.floor((slaLimit - elapsed)/60)}m left!`);
           setTimeout(() => setNewOrderAlert(null), 10000);
         }
-        // Level 2: SLA exceeded → red alert to staff
+        // Level 2: SLA exceeded (100%) → red alert to staff
         if (pct >= 100 && !slaWarned.current.has(warnKey100)) {
           slaWarned.current.add(warnKey100);
           playNotificationSound();
           showBrowserNotification('🚨 SLA EXCEEDED!', `Room #${task.roomNumber} · ${task.type} · Reason required to close!`);
           setNewOrderAlert(`🚨 SLA EXCEEDED — Room #${task.roomNumber} · Reason required!`);
           setTimeout(() => setNewOrderAlert(null), 15000);
+          // Mark as Violated in DB → visible to Manager & Executive in their SLA tab
+          supabase.from('requests').update({ status: 'Violated' }).eq('id', task.id)
+            .then(() => fetchTasks());
+        }
+        // Level 3: Escalated (150%+ SLA) → notify manager/exec via visual flag
+        const warnKey150 = `${task.id}-150`;
+        if (pct >= 150 && !slaWarned.current.has(warnKey150)) {
+          slaWarned.current.add(warnKey150);
+          playNotificationSound();
+          showBrowserNotification('🔴 ESCALATED TO MANAGEMENT', `Room #${task.roomNumber} · ${task.type} · 150% SLA exceeded — Manager & Executive alerted!`);
+          setNewOrderAlert(`🔴 ESCALATED — Room #${task.roomNumber} · Manager & Executive notified!`);
+          setTimeout(() => setNewOrderAlert(null), 20000);
         }
       });
     }, 5000);
@@ -2296,9 +2308,13 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const formatTime = (ts: any) => {
     if (!ts) return '—';
     try {
-      const normalized = String(ts).trim().replace(' ', 'T');
+      // Normalize: replace space separator, ensure Z suffix if no timezone given
+      let normalized = String(ts).trim().replace(' ', 'T');
+      // If no timezone info present, treat as UTC
+      if (!/[Z+\-]\d{2}/.test(normalized)) normalized += 'Z';
       const d = new Date(normalized);
       if (isNaN(d.getTime())) return '—';
+      // Use browser local time — if browser is set to hotel's timezone this is correct
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
     } catch { return '—'; }
   };
@@ -2686,13 +2702,15 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   };
 
   const fetchRoomsMgr = useCallback(async () => {
+    // Use profile.hotelId first (most reliable), then localStorage as fallback
+    const hId = profile.hotelId || (() => {
+      try { return JSON.parse(localStorage.getItem('sentinel_hotel') || '{}').id; } catch { return null; }
+    })();
     let roomQ = supabase.from('rooms').select('*').order('room_number', { ascending: true });
-    const hotelRaw = localStorage.getItem('sentinel_hotel');
-    const hCtx = hotelRaw ? JSON.parse(hotelRaw) : null;
-    if (hCtx?.id) roomQ = roomQ.eq('hotel_id', hCtx.id);
+    if (hId) roomQ = roomQ.eq('hotel_id', hId);
     const { data } = await roomQ;
     if (data) setRooms(data);
-  }, []);
+  }, [profile.hotelId]);
 
   useEffect(() => {
     fetchData();
