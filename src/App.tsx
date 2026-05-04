@@ -10,7 +10,7 @@ import {
   User, ClipboardList, TrendingUp, Star, ShieldCheck,
   Car, MapPin, Briefcase, FileText, Mail, Download,
   Phone, ArrowRight, QrCode, Settings, Wrench, BedDouble,
-  Bell, RefreshCw, Search, Edit2, Trash2
+  Bell, RefreshCw, Search, Edit2, Trash2, Briefcase
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage, Language } from './contexts/TranslationContext';
@@ -65,6 +65,7 @@ const getDepartmentFromServiceKey = (serviceKey: string, fallback?: string): str
   if (serviceKey === 'room_service') return 'F&B';
   if (serviceKey === 'restaurant_bookings') return 'F&B';
   if (serviceKey === 'concierge_services') return 'Concierge';
+  if (serviceKey === 'luggage') return 'Concierge';
   if (serviceKey === 'housekeeping') return 'Housekeeping';
   if (serviceKey === 'security') return 'Security & Safety';
   if (serviceKey === 'maintenance') return 'Maintenance';
@@ -2131,6 +2132,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const [tasks, setTasks] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
+  const [conciergeBookings, setConciergeBookings] = useState<any[]>([]);
   const [slaSettings, setSlaSettings] = useState<any>({});
   const [activeTab, setActiveTab] = useState<'active' | 'history' | 'rooms' | 'maintenance'>('active');
   const [now, setNow] = useState(Date.now());
@@ -2166,6 +2168,15 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   }, [userProfile.uid, userProfile.department]);
 
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
+
+  const fetchConciergeBookings = useCallback(async () => {
+    if (userProfile.department !== 'Concierge') return;
+    const hId = userProfile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    let q = supabase.from('concierge_bookings').select('*').order('created_at', { ascending: false });
+    if (hId) q = q.eq('hotel_id', hId);
+    const { data } = await q;
+    if (data) setConciergeBookings(data.filter((b: any) => b.status === 'Pending' || b.status === 'Confirmed'));
+  }, [userProfile]);
 
   const fetchSLA = async () => {
     // ✅ BUG FIX: Filter SLA by hotel_id — staff see their hotel's SLA only
@@ -2264,6 +2275,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     // ✅ Always fetch fresh data on mount/login — ensures history loads
     fetchTasks();
     fetchSLA();
+    if (userProfile.department === 'Concierge') fetchConciergeBookings();
     if (isHousekeeping) fetchRooms();
     const channel = supabase.channel(`staff-${userProfile.uid}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, (payload) => {
@@ -2308,14 +2320,12 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const formatTime = (ts: any) => {
     if (!ts) return '—';
     try {
-      // Normalize: replace space separator, ensure Z suffix if no timezone given
       let normalized = String(ts).trim().replace(' ', 'T');
-      // If no timezone info present, treat as UTC
       if (!/[Z+\-]\d{2}/.test(normalized)) normalized += 'Z';
       const d = new Date(normalized);
       if (isNaN(d.getTime())) return '—';
-      // Use browser local time — if browser is set to hotel's timezone this is correct
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+      // Always display in UAE timezone (UTC+4) regardless of staff browser setting
+      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dubai' });
     } catch { return '—'; }
   };
 
@@ -2563,6 +2573,59 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
         </div>
       )}
 
+      {/* CONCIERGE BOOKINGS — visible to Concierge dept staff */}
+      {activeTab === 'active' && userProfile.department === 'Concierge' && conciergeBookings.length > 0 && (
+        <div className="p-4 space-y-3">
+          <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold border-b border-gold/20 pb-2">
+            🔑 Concierge Bookings — Pending Confirmation
+          </h3>
+          {conciergeBookings.map(b => (
+            <div key={b.id} className="bg-[#001c36] border border-gold/10 p-4 space-y-2">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-white font-bold text-sm">{b.service_name}</p>
+                  <p className="text-[9px] text-gold">Room {b.room_number} · {b.guest_name}</p>
+                </div>
+                <span className={cn('text-[8px] font-bold px-2 py-0.5',
+                  b.status === 'Pending' ? 'bg-yellow-900/40 text-yellow-400' :
+                  b.status === 'Confirmed' ? 'bg-green-900/40 text-green-400' :
+                  'bg-white/10 text-white/40')}>{b.status}</span>
+              </div>
+              <div className="text-[9px] text-white/50 space-y-0.5">
+                <p>📅 Pickup: {b.pickup_date} at {b.pickup_time}</p>
+                {b.return_date && <p>🔄 Return: {b.return_date} at {b.return_time}</p>}
+                <p>👥 {b.guests_count} guest{b.guests_count > 1 ? 's' : ''} · AED {b.total_price}</p>
+                {b.special_requests && <p>📝 {b.special_requests}</p>}
+              </div>
+              {b.status === 'Pending' && (
+                <div className="flex gap-2 pt-1">
+                  <button onClick={async () => {
+                    await supabase.from('concierge_bookings').update({ status: 'Confirmed', confirmed_by: userProfile.displayName }).eq('id', b.id);
+                    fetchConciergeBookings();
+                  }} className="flex-1 py-1.5 bg-green-900/40 border border-green-500/40 text-green-400 text-[9px] font-bold uppercase">
+                    ✓ Confirm
+                  </button>
+                  <button onClick={async () => {
+                    await supabase.from('concierge_bookings').update({ status: 'Cancelled', confirmed_by: userProfile.displayName }).eq('id', b.id);
+                    fetchConciergeBookings();
+                  }} className="flex-1 py-1.5 bg-red-900/40 border border-red-500/40 text-red-400 text-[9px] font-bold uppercase">
+                    ✕ Cancel
+                  </button>
+                </div>
+              )}
+              {b.status === 'Confirmed' && (
+                <button onClick={async () => {
+                  await supabase.from('concierge_bookings').update({ status: 'Completed', confirmed_by: userProfile.displayName }).eq('id', b.id);
+                  fetchConciergeBookings();
+                }} className="w-full py-1.5 bg-blue-900/40 border border-blue-500/40 text-blue-400 text-[9px] font-bold uppercase">
+                  ✓ Mark Completed
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* HISTORY */}
       {activeTab === 'history' && (
         <div className="staff-grid p-4">
@@ -2745,7 +2808,11 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
   const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); showToast('Staff member logged out successfully', 'success'); };
   const saveSLA = async () => {
-    await supabase.from('sla_settings').upsert({ department: profile.department, sla_minutes: editSLA, updated_by: profile.displayName, updated_at: new Date().toISOString() }, { onConflict: 'department' });
+    const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    await supabase.from('sla_settings').upsert(
+      { department: profile.department, sla_minutes: editSLA, hotel_id: hId, updated_at: new Date().toISOString() },
+      { onConflict: 'department,hotel_id' }
+    );
     showToast(`SLA updated to ${editSLA} minutes`, 'success');
     fetchData();
   };
@@ -3299,18 +3366,28 @@ const ConciergeManagerTab: React.FC<{ profile: UserProfile }> = ({ profile }) =>
   const [form, setForm] = useState<any>(emptyForm);
 
   const fetchServices = useCallback(async () => {
-    const { data } = await supabase.from('concierge_services').select('*')
-      .eq('hotel_id', profile.hotelId || '').order('category').order('created_at');
+    const csHotelId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    let csQ = supabase.from('concierge_services').select('*').order('category').order('created_at');
+    if (csHotelId) csQ = csQ.eq('hotel_id', csHotelId);
+    const { data } = await csQ;
     if (data) setServices(data);
   }, [profile.hotelId]);
 
   const fetchBookings = useCallback(async () => {
-    const { data } = await supabase.from('concierge_bookings').select('*')
-      .eq('hotel_id', profile.hotelId || '').order('created_at', { ascending: false });
+    const cbHotelId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    let cbQ = supabase.from('concierge_bookings').select('*').order('created_at', { ascending: false });
+    if (cbHotelId) cbQ = cbQ.eq('hotel_id', cbHotelId);
+    const { data } = await cbQ;
     if (data) setBookings(data);
   }, [profile.hotelId]);
 
-  useEffect(() => { fetchServices(); fetchBookings(); }, [fetchServices, fetchBookings]);
+  useEffect(() => {
+    fetchServices();
+    fetchBookings();
+    // Poll every 10 seconds so manager sees new bookings without refresh
+    const poll = setInterval(() => fetchBookings(), 10000);
+    return () => clearInterval(poll);
+  }, [fetchServices, fetchBookings]);
 
   const saveService = async () => {
     if (!form.name || !form.category) return;
@@ -4173,6 +4250,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [guestTab, setGuestTab] = useState<'services' | 'room-service' | 'restaurant-bookings' | 'concierge'>('services');
   const [showRestaurantPortal, setShowRestaurantPortal] = useState(false);
+  const [guestNotification, setGuestNotification] = useState<{ type: 'confirmed' | 'cancelled'; message: string } | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
   const [cart, setCart] = useState<{ [itemId: string]: number }>({});
   const [showRequestModal, setShowRequestModal] = useState(false);
@@ -4220,6 +4298,28 @@ export default function App() {
     const poll = setInterval(() => { fetchRequests(); }, 3000);
     const channel = supabase.channel(`guest-${profile.uid}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, fetchRequests)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'restaurant_bookings' }, (payload) => {
+        const b = payload.new as any;
+        if (b.guest_id === profile.uid) {
+          const status = b.status;
+          if (status === 'Confirmed') {
+            setGuestNotification({ type: 'confirmed', message: `Dear ${profile.displayName}, your table reservation at ${b.restaurant_name || 'the restaurant'} on ${b.date} at ${b.time} has been confirmed. We look forward to welcoming you.` });
+          } else if (status === 'Cancelled' || status === 'Rejected') {
+            setGuestNotification({ type: 'cancelled', message: `Dear ${profile.displayName}, we regret to inform you that your table reservation on ${b.date} at ${b.time} has been cancelled. Please contact reception for assistance.` });
+          }
+        }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'concierge_bookings' }, (payload) => {
+        const b = payload.new as any;
+        if (b.guest_id === profile.uid) {
+          const status = b.status;
+          if (status === 'Confirmed') {
+            setGuestNotification({ type: 'confirmed', message: `Dear ${profile.displayName}, your ${b.service_name} booking for ${b.pickup_date} at ${b.pickup_time} has been confirmed. Our team will be ready for you.` });
+          } else if (status === 'Cancelled' || status === 'Rejected') {
+            setGuestNotification({ type: 'cancelled', message: `Dear ${profile.displayName}, we regret to inform you that your ${b.service_name} booking for ${b.pickup_date} has been cancelled. Please contact our concierge for assistance.` });
+          }
+        }
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); clearInterval(poll); };
   }, [profile]);
@@ -4281,6 +4381,7 @@ export default function App() {
     { name: t('room_service'), icon: Coffee, dept: 'F&B', serviceKey: 'room_service', configKey: 'room_service' },
     { name: 'Restaurant Reservations', icon: UtensilsCrossed, dept: 'F&B', serviceKey: 'restaurant_portal', configKey: 'restaurant', isPortal: true },
     { name: t('concierge_services'), icon: Key, dept: 'Concierge', serviceKey: 'concierge_services', configKey: 'concierge' },
+    { name: 'Luggage Assistance', icon: Briefcase, dept: 'Concierge', serviceKey: 'luggage', configKey: 'concierge', options: ['Pickup from Room', 'Delivery to Room', 'Storage Request', 'Transfer to Lobby', 'Other'] },
     { name: t('security'), icon: Shield, dept: 'Security & Safety', serviceKey: 'security', configKey: 'security', options: [t('emergency'), t('safe_box'), t('medical'), t('escort'), 'Lost & Found', 'Other'] },
     { name: 'Maintenance', icon: Wrench, dept: 'Maintenance', serviceKey: 'maintenance', configKey: 'maintenance', options: ['AC / Heating Issue', 'Plumbing Issue', 'Electrical Issue', 'TV / Electronics', 'Door / Lock Issue', 'Lighting Issue', 'Bathroom Issue', 'Other'] },
   ];
@@ -4295,6 +4396,34 @@ export default function App() {
   return (
     <>
     <ToastContainer />
+
+    {/* ── GUEST BOOKING NOTIFICATION MODAL ── */}
+    {guestNotification && (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: 'rgba(0,21,41,0.85)' }}>
+        <div className="bg-white max-w-sm w-full shadow-2xl overflow-hidden" style={{ borderTop: `4px solid ${guestNotification.type === 'confirmed' ? '#2D7D46' : '#C0392B'}` }}>
+          <div className={`px-5 py-4 flex items-center gap-3 ${guestNotification.type === 'confirmed' ? 'bg-green-50' : 'bg-red-50'}`}>
+            <span className="text-3xl">{guestNotification.type === 'confirmed' ? '✅' : '❌'}</span>
+            <div>
+              <p className="font-bold font-serif text-navy text-base">
+                {guestNotification.type === 'confirmed' ? 'Booking Confirmed' : 'Booking Cancelled'}
+              </p>
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest mt-0.5">Sentinel Pro · Guest Notification</p>
+            </div>
+          </div>
+          <div className="px-6 py-5">
+            <p className="text-navy text-sm leading-relaxed font-serif">{guestNotification.message}</p>
+          </div>
+          <div className="px-6 pb-6">
+            <button
+              onClick={() => setGuestNotification(null)}
+              className={`w-full py-3 text-[10px] font-bold uppercase tracking-widest text-white ${guestNotification.type === 'confirmed' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
+              {guestNotification.type === 'confirmed' ? 'Thank You — I Understand' : 'Understood — I Will Contact Reception'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
     <div className={cn('main-content', isRTL && 'rtl', profile?.role === 'manager' && 'manager-dark-mode')}>
       <GlobalLanguageSelector />
       {profile && profile.role === 'guest' && (
