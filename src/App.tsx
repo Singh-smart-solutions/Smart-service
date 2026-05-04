@@ -236,7 +236,7 @@ const Header: React.FC<{ roomNumber: string; user: any; logout: () => void; navi
       </div>
       <div className="logo-container cursor-pointer flex-1 flex justify-center" onClick={navigateToGuest}>
         <div className="flex flex-col items-center">
-          <h1 className="font-serif tracking-[0.15em] text-gold uppercase text-base sm:text-2xl whitespace-nowrap">Sentinel Pro</h1>
+          <h1 className="font-serif tracking-[0.15em] text-gold uppercase text-base sm:text-2xl whitespace-nowrap">{(() => { try { const h = JSON.parse(localStorage.getItem('sentinel_hotel')||'{}'); return h.hotel_name || 'Sentinel Pro'; } catch { return 'Sentinel Pro'; } })()}</h1>
           <span className="text-[6px] sm:text-[7px] font-bold text-gold/60 uppercase tracking-[0.25em]">Luxury Hotel & Residences</span>
         </div>
       </div>
@@ -2481,6 +2481,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
       <header className="p-4 bg-navy flex justify-between items-center border-b border-gold/20">
         <div>
+          {userProfile.hotelName && <p className="text-gold/50 text-[8px] uppercase tracking-[0.2em] mb-0.5">{userProfile.hotelName}</p>}
           <h1 className="text-xl font-serif text-gold">{userProfile.displayName}</h1>
           <p className="text-white/60 text-[9px] uppercase tracking-widest">{userProfile.department} · {userProfile.occupation || 'Staff'}</p>
           {notifPermission === 'denied' && <p className="text-red-400 text-[8px] mt-0.5">⚠ Enable notifications in browser settings</p>}
@@ -2769,6 +2770,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
       </AnimatePresence>
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-gold/20 pb-4">
         <div>
+          {profile.hotelName && <p className="text-gold/50 text-[8px] uppercase tracking-[0.2em] mb-0.5">{profile.hotelName}</p>}
           <h1 className="text-2xl font-serif text-gold">{profile.department} Manager</h1>
           <p className="text-gold/60 text-[9px] uppercase tracking-widest mt-1">{profile.displayName}</p>
         </div>
@@ -3840,6 +3842,7 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
     <div className="min-h-screen bg-[#001529] text-white p-4 sm:p-6 space-y-5">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-gold/20 pb-4">
         <div>
+          {profile.hotelName && <p className="text-gold/50 text-[8px] uppercase tracking-[0.2em] mb-0.5">{profile.hotelName}</p>}
           <h1 className="text-2xl sm:text-3xl font-serif text-gold">Executive Operations Center</h1>
           <p className="text-gold/60 text-[9px] uppercase tracking-widest mt-1">{profile.displayName} · All Departments</p>
         </div>
