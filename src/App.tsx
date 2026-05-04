@@ -1112,9 +1112,10 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
 
   const rejectBooking = async () => {
     if (!rejectModal || !rejectReason) { showToast('Please select a reason', 'error'); return; }
-    const message = rejectAlt 
-      ? `We regret that ${rejectModal.restaurant} is not available on ${rejectModal.date} at ${rejectModal.time}. ${rejectReason}. We would like to suggest ${rejectAlt} as an alternative — please let us know if this works for you.`
-      : `We regret that ${rejectModal.restaurant} is not available on ${rejectModal.date} at ${rejectModal.time}. ${rejectReason}. Please contact reception to explore other options.`;
+    const guestNamePart = rejectModal.guest_name ? `Dear ${rejectModal.guest_name}` : 'Dear Valued Guest';
+    const message = rejectAlt
+      ? `${guestNamePart}, we regret to inform you that your reservation at ${rejectModal.restaurant} on ${rejectModal.date} at ${rejectModal.time} cannot be accommodated. ${rejectReason}. We would be delighted to suggest ${rejectAlt} as an alternative — please let our team know if this suits you, and we will arrange it immediately.`
+      : `${guestNamePart}, we regret to inform you that your reservation at ${rejectModal.restaurant} on ${rejectModal.date} at ${rejectModal.time} cannot be accommodated. ${rejectReason}. We sincerely apologise for any inconvenience caused and kindly invite you to contact our reception team, who will be happy to assist you with alternative arrangements.`;
     const { error } = await supabase.from('restaurant_bookings').update({ 
       status: 'Rejected',
       rejection_reason: message,
@@ -2133,6 +2134,10 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const [history, setHistory] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
   const [conciergeBookings, setConciergeBookings] = useState<any[]>([]);
+  const [conciergeCancelModal, setConciergeCancelModal] = useState<{ id: string; service: string; guest: string } | null>(null);
+  const [conciergeRejectReason, setConciergeRejectReason] = useState('');
+  const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
   const [slaSettings, setSlaSettings] = useState<any>({});
   const [activeTab, setActiveTab] = useState<'active' | 'history' | 'rooms' | 'maintenance'>('active');
   const [now, setNow] = useState(Date.now());
@@ -2204,6 +2209,10 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     if (userProfile.hotelId) query = query.eq('hotel_id', userProfile.hotelId);
     if (dept === 'Security & Safety') query = query.in('department', ['Security & Safety', 'Security']);
     else query = query.eq('department', dept);
+    // ✅ Reservation Agent only sees restaurant booking requests, not room service
+    if (userProfile.occupation === 'Reservation Agent') {
+      query = query.neq('service_key', 'room_service');
+    }
     const { data } = await query;
     if (data) {
       const mapped = data.map(mapRow);
@@ -2229,6 +2238,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   useEffect(() => {
     const poll = setInterval(() => {
       fetchTasks();
+      fetchSLA(); // ✅ Re-fetch SLA every cycle — picks up manager changes immediately
+      if (userProfile.department === 'Concierge') fetchConciergeBookings();
       // SLA Escalation — warn staff before it expires
       tasks.forEach(task => {
         if (task.status === 'Completed') return;
@@ -2273,8 +2284,13 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   useEffect(() => {
     // ✅ Always fetch fresh data on mount/login — ensures history loads
-    fetchTasks();
-    fetchSLA();
+    // Reservation Agent auto-opens restaurant portal — they don't handle task requests
+    if (userProfile.occupation === 'Reservation Agent') {
+      setShowFBRestaurant(true);
+    } else {
+      fetchTasks();
+      fetchSLA();
+    }
     if (userProfile.department === 'Concierge') fetchConciergeBookings();
     if (isHousekeeping) fetchRooms();
     const channel = supabase.channel(`staff-${userProfile.uid}`)
@@ -2598,19 +2614,44 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                 {b.special_requests && <p>📝 {b.special_requests}</p>}
               </div>
               {b.status === 'Pending' && (
-                <div className="flex gap-2 pt-1">
-                  <button onClick={async () => {
-                    await supabase.from('concierge_bookings').update({ status: 'Confirmed', confirmed_by: userProfile.displayName }).eq('id', b.id);
-                    fetchConciergeBookings();
-                  }} className="flex-1 py-1.5 bg-green-900/40 border border-green-500/40 text-green-400 text-[9px] font-bold uppercase">
-                    ✓ Confirm
-                  </button>
-                  <button onClick={async () => {
-                    await supabase.from('concierge_bookings').update({ status: 'Cancelled', confirmed_by: userProfile.displayName }).eq('id', b.id);
-                    fetchConciergeBookings();
-                  }} className="flex-1 py-1.5 bg-red-900/40 border border-red-500/40 text-red-400 text-[9px] font-bold uppercase">
-                    ✕ Cancel
-                  </button>
+                <div className="space-y-2 pt-1">
+                  <div className="flex gap-2">
+                    <button onClick={async () => {
+                      await supabase.from('concierge_bookings').update({ status: 'Confirmed', confirmed_by: userProfile.displayName }).eq('id', b.id);
+                      fetchConciergeBookings();
+                    }} className="flex-1 py-1.5 bg-green-900/40 border border-green-500/40 text-green-400 text-[9px] font-bold uppercase">
+                      ✓ Confirm
+                    </button>
+                    <button
+                      onClick={() => { setConciergeCancelModal({ id: b.id, service: b.service_name, guest: b.guest_name }); }}
+                      className="flex-1 py-1.5 bg-red-900/40 border border-red-500/40 text-red-400 text-[9px] font-bold uppercase">
+                      ✕ Cancel / Reject
+                    </button>
+                  </div>
+                  {cancellingBookingId === b.id && (
+                    <div className="space-y-2">
+                      <textarea
+                        placeholder="Please explain the reason for cancellation (visible to guest)..."
+                        className="w-full bg-navy/30 border border-red-500/30 text-white/80 p-2 text-[9px] resize-none outline-none"
+                        rows={2}
+                        value={cancelReason}
+                        onChange={e => setCancelReason(e.target.value)}
+                      />
+                      <button onClick={async () => {
+                        if (!cancelReason.trim()) { showToast('Please enter a cancellation reason', 'error'); return; }
+                        await supabase.from('concierge_bookings').update({
+                          status: 'Cancelled',
+                          confirmed_by: userProfile.displayName,
+                          special_requests: (b.special_requests ? b.special_requests + ' | ' : '') + 'CANCELLATION REASON: ' + cancelReason
+                        }).eq('id', b.id);
+                        setCancellingBookingId(null);
+                        setCancelReason('');
+                        fetchConciergeBookings();
+                      }} className="w-full py-1.5 bg-red-700 text-white text-[9px] font-bold uppercase">
+                        Confirm Cancellation
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               {b.status === 'Confirmed' && (
@@ -2623,6 +2664,54 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* CONCIERGE REJECTION MODAL */}
+      {conciergeCancelModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.8)' }}>
+          <div className="bg-[#001c36] border border-gold/30 max-w-sm w-full p-6 space-y-4">
+            <h3 className="text-gold font-serif text-base">Cancel / Reject Booking</h3>
+            <div className="bg-navy/50 p-3 rounded text-[9px] text-white/60 space-y-1">
+              <p><b className="text-white">{conciergeCancelModal.service}</b></p>
+              <p>Guest: {conciergeCancelModal.guest}</p>
+            </div>
+            <div>
+              <label className="text-[9px] text-white/50 uppercase tracking-wider block mb-2">Reason for cancellation <span className="text-red-400">*</span></label>
+              <textarea
+                value={conciergeRejectReason}
+                onChange={e => setConciergeRejectReason(e.target.value)}
+                rows={3}
+                placeholder="e.g. Fully booked on this date, vehicle not available, etc."
+                className="w-full bg-navy/50 border border-gold/20 text-white p-3 text-sm outline-none resize-none focus:border-gold"
+              />
+            </div>
+            <p className="text-[8px] text-white/30 italic">
+              Guest will receive: "Dear Valued Guest, we regret to inform you that your {conciergeCancelModal.service} booking has been cancelled. [Your reason]. We apologise for any inconvenience and hope to assist you with an alternative arrangement."
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => { setConciergeCancelModal(null); setConciergeRejectReason(''); }}
+                className="flex-1 py-2 border border-white/20 text-white/50 text-[9px] uppercase">
+                Back
+              </button>
+              <button
+                disabled={!conciergeRejectReason.trim()}
+                onClick={async () => {
+                  const fullMsg = `Dear Valued Guest, we regret to inform you that your ${conciergeCancelModal.service} booking has been cancelled. ${conciergeRejectReason.trim()}. We apologise for any inconvenience and hope to assist you with an alternative arrangement. Please do not hesitate to contact our concierge team.`;
+                  await supabase.from('concierge_bookings').update({
+                    status: 'Cancelled',
+                    confirmed_by: userProfile.displayName,
+                    rejection_reason: fullMsg,
+                  }).eq('id', conciergeCancelModal.id);
+                  setConciergeCancelModal(null);
+                  setConciergeRejectReason('');
+                  fetchConciergeBookings();
+                }}
+                className="flex-1 py-2 bg-red-700 text-white text-[9px] font-bold uppercase disabled:opacity-40">
+                Confirm Cancellation
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2761,7 +2850,10 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     if (profile.hotelId) staffQ = staffQ.eq('hotel_id', profile.hotelId);
     const { data: staffData } = await staffQ;
     if (staffData) setStaffList(staffData);
-    const { data: slaData } = await supabase.from('sla_settings').select('*').eq('department', dept).single();
+    const slaHotelId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    let slaQ2 = supabase.from('sla_settings').select('*').eq('department', dept);
+    if (slaHotelId) slaQ2 = slaQ2.eq('hotel_id', slaHotelId);
+    const { data: slaData } = await slaQ2.maybeSingle();
     if (slaData) { setSlaConfig(slaData); setEditSLA(slaData.sla_minutes); }
   };
 
@@ -4303,9 +4395,10 @@ export default function App() {
         if (b.guest_id === profile.uid) {
           const status = b.status;
           if (status === 'Confirmed') {
-            setGuestNotification({ type: 'confirmed', message: `Dear ${profile.displayName}, your table reservation at ${b.restaurant_name || 'the restaurant'} on ${b.date} at ${b.time} has been confirmed. We look forward to welcoming you.` });
+            setGuestNotification({ type: 'confirmed', message: `Dear ${profile.displayName}, we are delighted to confirm your table reservation on ${b.date} at ${b.time}. We very much look forward to welcoming you and ensuring a memorable dining experience.` });
           } else if (status === 'Cancelled' || status === 'Rejected') {
-            setGuestNotification({ type: 'cancelled', message: `Dear ${profile.displayName}, we regret to inform you that your table reservation on ${b.date} at ${b.time} has been cancelled. Please contact reception for assistance.` });
+            const restReason = b.rejection_reason ? ` ${b.rejection_reason}` : '';
+            setGuestNotification({ type: 'cancelled', message: `Dear ${profile.displayName}, we regret to inform you that your table reservation on ${b.date} at ${b.time} has been cancelled.${restReason} We sincerely apologise for the inconvenience. Please contact our reservations team or reception for further assistance.` });
           }
         }
       })
@@ -4314,9 +4407,13 @@ export default function App() {
         if (b.guest_id === profile.uid) {
           const status = b.status;
           if (status === 'Confirmed') {
-            setGuestNotification({ type: 'confirmed', message: `Dear ${profile.displayName}, your ${b.service_name} booking for ${b.pickup_date} at ${b.pickup_time} has been confirmed. Our team will be ready for you.` });
+            setGuestNotification({ type: 'confirmed', message: `Dear ${profile.displayName}, we are pleased to confirm your ${b.service_name} booking on ${b.pickup_date} at ${b.pickup_time}. Our team will be fully prepared and ready to assist you. We look forward to making your experience exceptional.` });
           } else if (status === 'Cancelled' || status === 'Rejected') {
-            setGuestNotification({ type: 'cancelled', message: `Dear ${profile.displayName}, we regret to inform you that your ${b.service_name} booking for ${b.pickup_date} has been cancelled. Please contact our concierge for assistance.` });
+            const reason = b.special_requests && b.special_requests.includes('CANCELLATION REASON:')
+              ? b.special_requests.split('CANCELLATION REASON:').pop()?.trim()
+              : null;
+            const reasonText = reason ? ` Our team has noted: "${reason}".` : '';
+            setGuestNotification({ type: 'cancelled', message: `Dear ${profile.displayName}, we regret to inform you that your ${b.service_name} booking scheduled for ${b.pickup_date} has been cancelled.${reasonText} We sincerely apologise for any inconvenience. Please do not hesitate to contact our concierge team for further assistance.` });
           }
         }
       })
