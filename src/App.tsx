@@ -2038,7 +2038,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
       } else {
         const { data: staffData, error } = await supabase.from('staff').select('*').eq('email', email).single();
         if (error || !staffData) { showToast('Invalid email or password. Please try again.', 'error'); setLoading(false); return; }
-        if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) { showToast(`Account is locked until ${new Date(staffData.locked_until).toLocaleTimeString()}. Please try again later.`, 'error'); setLoading(false); return; }
+        if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) { showToast(`Account is locked until ${new Date(staffData.locked_until).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}. Please try again later.`, 'error'); setLoading(false); return; }
         const passwordMatch = await bcrypt.compare(password, staffData.password);
         if (!passwordMatch) {
           const attempts = (staffData.failed_attempts || 0) + 1;
@@ -2768,9 +2768,9 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                     <span className={cn('text-[8px] font-bold px-2 py-0.5 text-white rounded-full', statusObj.color)}>{room.status}</span>
                   </div>
                   {room.assigned_to && <p className="text-[8px] text-green-400/80 italic">✏ {room.assigned_to}</p>}
-                  {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
-                  {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
-                  {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected at: {new Date(room.inspected_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
+                  {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
+                  {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
+                  {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected at: {new Date(room.inspected_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
                   <select value={room.status} onChange={e => updateRoomStatus(room.id, e.target.value)} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none">
                     {ROOM_STATUSES.filter(s => s.key !== 'Inspected').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
@@ -2989,9 +2989,9 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     {req.late_reason && <p className="text-[9px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
                   </div>
                   <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
-                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
-                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
-                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T')).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>
+                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T')).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
+                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T')).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
                     {req.closed_at && req.accepted_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
                     {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                     {over && <p className="text-red-400 text-xs font-bold">{getElapsedMin(req.created_at)}m elapsed</p>}
@@ -3268,7 +3268,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                   'Clean':'#166534','Dirty':'#991b1b','Cleaning':'#92400e',
                   'Inspected':'#7c2d12','Do Not Disturb':'#4c1d95','Out of Order':'#374151','Checked Out':'#1e40af',
                 };
-                const t = (ts: string|null) => ts ? new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '—';
+                const t = (ts: string|null) => ts ? new Date(ts).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'}) : '—';
                 const rows = rooms.map((r,i) => `
                   <tr style="background:${i%2===0?'#f9f8f5':'#fff'}">
                     <td style="padding:5px 8px;border-bottom:1px solid #eee;color:#C5A059;font-weight:bold">${i+1}</td>
@@ -3403,9 +3403,9 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     {room.assigned_to && (
                       <p className="text-[8px] text-white/60 italic">✏ {room.assigned_to}</p>
                     )}
-                    {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
-                    {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
-                    {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected by: {room.assigned_to} at {new Date(room.inspected_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</p>}
+                    {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
+                    {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
+                    {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected by: {room.assigned_to} at {new Date(room.inspected_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
                     <select value={room.status} onChange={async e => {
                         const newStatus = e.target.value;
                         const now = new Date().toISOString();
@@ -3900,7 +3900,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   <div class="report-title">${reportPeriod.toUpperCase()} OPERATIONS AUDIT REPORT</div>
   <div class="meta">
     <div class="meta-item"><div class="label">Generated</div><div class="value">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</div></div>
-    <div class="meta-item"><div class="label">Time</div><div class="value">${new Date().toLocaleTimeString()}</div></div>
+    <div class="meta-item"><div class="label">Time</div><div class="value">${new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</div></div>
     <div class="meta-item"><div class="label">Prepared by</div><div class="value">${profile.displayName}</div></div>
     <div class="meta-item"><div class="label">Period</div><div class="value">${reportPeriod.charAt(0).toUpperCase() + reportPeriod.slice(1)} Summary</div></div>
   </div>
@@ -4221,9 +4221,9 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
                     {req.line_items && req.line_items.map((li: any, i: number) => <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>)}
                   </div>
                   <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
-                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
-                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
-                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T').replace('+00','Z').replace('+00:00','Z')).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>}
+                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T')).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>
+                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T')).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
+                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T')).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
                     {req.closed_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
                     {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                   </div>
