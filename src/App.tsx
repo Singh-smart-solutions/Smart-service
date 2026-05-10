@@ -476,6 +476,14 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void; profile?: UserProfile
       alert('Please fill in pickup date and time.'); return;
     }
     setSubmitting(true);
+    // ✅ ISSUE 3 FIX: Check for existing Pending booking for same service+guest
+    const { data: existingBooking } = await supabase.from('concierge_bookings')
+      .select('id').eq('guest_id', profile?.uid || '').eq('service_id', selected.id)
+      .eq('status', 'Pending').single();
+    if (existingBooking) {
+      alert('You already have a pending booking for this service. Please check My Bookings.');
+      setSubmitting(false); return;
+    }
     const total = (parseFloat(form.guests_count)||1) * (selected.price||0);
     await supabase.from('concierge_bookings').insert({
       hotel_id: hotelId,
@@ -886,8 +894,36 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
 
   const submitBooking = async () => {
     if (!date || !time || !pax) { showToast('Please fill in date, time and number of guests', 'error'); return; }
+    // ✅ ISSUE 4 FIX: Validate against restaurant opening hours and closed days
+    const settings = restSettings[selectedRestaurant];
+    if (settings) {
+      const bookingDay = new Date(date).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Dubai' });
+      const closedDays: string[] = settings.closed_days || [];
+      if (closedDays.includes(bookingDay)) {
+        showToast(`Sorry, this restaurant is closed on ${bookingDay}s. Please choose another date.`, 'error'); return;
+      }
+      if (settings.opening_time && settings.closing_time) {
+        const [openH, openM] = settings.opening_time.split(':').map(Number);
+        const [closeH, closeM] = settings.closing_time.split(':').map(Number);
+        const [bookH, bookM] = time.split(':').map(Number);
+        const openMins = openH * 60 + openM;
+        const closeMins = closeH * 60 + closeM;
+        const bookMins = bookH * 60 + bookM;
+        if (bookMins < openMins || bookMins >= closeMins) {
+          showToast(`Sorry, this restaurant is open from ${settings.opening_time} to ${settings.closing_time}. Please choose a time within opening hours.`, 'error'); return;
+        }
+      }
+    }
     setLoading(true);
     try {
+      // ✅ ISSUE 3 FIX: Check for existing Pending booking same guest+date+restaurant
+      const { data: existingRB } = await supabase.from('restaurant_bookings')
+        .select('id').eq('guest_id', profile.uid).eq('restaurant', selectedRestaurant)
+        .eq('date', date).eq('status', 'Pending').single();
+      if (existingRB) {
+        showToast('You already have a pending reservation at this restaurant for this date.', 'error');
+        setLoading(false); return;
+      }
       const ref = generateBookingRef();
       const { data, error } = await supabase.from('restaurant_bookings').insert({
         booking_ref: ref,
@@ -1128,6 +1164,8 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
 
   const exportBookings = () => {
     const headers = 'Ref,Guest,Room,Restaurant,Date,Time,Pax,Notes,Status,Created\n';
+    logAudit('booking_rejected', { id: profile.uid, name: profile.displayName, role: profile.occupation || 'staff', hotelId: profile.hotelId },
+      { type: 'restaurant_booking', id: rejectModal?.id }, { guest: rejectModal?.guest_name, restaurant: rejectModal?.restaurant });
     const rows = bookings.map(b =>
       `${b.booking_ref},${b.guest_name},${b.room_number},${b.restaurant},${b.date},${b.time},${b.pax},"${b.notes || ''}",${b.status},${b.created_at}`
     ).join('\n');
@@ -1745,7 +1783,11 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                       <input type="file" accept="image/*" id={`logo-${r.id}`}
                         onChange={async (e) => {
                           const file = e.target.files?.[0]; if (!file) return;
-                          const path = `restaurants/${r.id}/logo_${Date.now()}.${file.name.split('.').pop()}`;
+                          // ✅ ISSUE 5 FIX: Validate file type and size
+                          if (!file.type.startsWith('image/')) { showToast('Only image files are allowed.', 'error'); return; }
+                          if (file.size > 2 * 1024 * 1024) { showToast('Image must be under 2MB.', 'error'); return; }
+                          const ext = file.name.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
+                          const path = `restaurants/${r.id}/logo_${Date.now()}.${ext}`;
                           const { data, error } = await supabase.storage.from('hotel-assets').upload(path, file, { upsert: true });
                           if (error) { showToast('Upload failed: ' + error.message, 'error'); return; }
                           const { data: { publicUrl } } = supabase.storage.from('hotel-assets').getPublicUrl(path);
@@ -1760,7 +1802,11 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                       <input type="file" accept="image/*" id={`cover-${r.id}`}
                         onChange={async (e) => {
                           const file = e.target.files?.[0]; if (!file) return;
-                          const path = `restaurants/${r.id}/cover_${Date.now()}.${file.name.split('.').pop()}`;
+                          // ✅ ISSUE 5 FIX: Validate file type and size
+                          if (!file.type.startsWith('image/')) { showToast('Only image files are allowed.', 'error'); return; }
+                          if (file.size > 2 * 1024 * 1024) { showToast('Image must be under 2MB.', 'error'); return; }
+                          const ext = file.name.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
+                          const path = `restaurants/${r.id}/cover_${Date.now()}.${ext}`;
                           const { data, error } = await supabase.storage.from('hotel-assets').upload(path, file, { upsert: true });
                           if (error) { showToast('Upload failed: ' + error.message, 'error'); return; }
                           const { data: { publicUrl } } = supabase.storage.from('hotel-assets').getPublicUrl(path);
@@ -1905,7 +1951,9 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
       if (!existing) await supabase.from('guests').insert({ id: guestId, name: fullName, email: 'guest@hotel.com', room: roomNumber });
       const profile: UserProfile = { uid: guestId, email: 'guest@hotel.com', displayName: fullName || `Guest ${roomNumber}`, role: 'guest', department: 'None', roomNumber, status: 'Approved',
         hotelId: resolvedHotelId };
-      localStorage.setItem('sentinel_local_session', JSON.stringify(profile));
+      localStorage.setItem('sentinel_local_session', JSON.stringify({ ...profile, loginAt: Date.now() }));
+      logAudit('staff_login', { id: profile.uid, name: profile.displayName, role: profile.occupation || 'staff', hotelId: profile.hotelId },
+        { type: 'staff', id: profile.uid }, { department: profile.department });
       onLoginSuccess(profile);
     } catch (err: any) { showToast(err.message || 'An error occurred. Please try again.', 'error'); } finally { setLoading(false); }
   };
@@ -1923,19 +1971,19 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
         role: 'manager', department: 'None', status: 'Approved',
         hotelId: hotelCtx.id, hotelName: hotelCtx.hotel_name,
       };
-      localStorage.setItem('sentinel_local_session', JSON.stringify(adminProfile));
+      localStorage.setItem('sentinel_local_session', JSON.stringify({ ...adminProfile, loginAt: Date.now() }));
       onLoginSuccess(adminProfile); return;
     }
     // Legacy global password — ONLY works when no hotel context is active (owner testing only)
     if (managerPassword === 'Manager12345' && !hotelCtx) {
       const adminProfile: UserProfile = { uid: 'admin_override', email: 'admin@sentinel.pro', displayName: 'Executive Director', role: 'manager', department: 'None', status: 'Approved' };
-      localStorage.setItem('sentinel_local_session', JSON.stringify(adminProfile));
+      localStorage.setItem('sentinel_local_session', JSON.stringify({ ...adminProfile, loginAt: Date.now() }));
       onLoginSuccess(adminProfile); return;
     }
     const { data: manager } = await supabase.from('managers').select('*').eq('password', managerPassword).single();
     if (manager) {
       const mp: UserProfile = { uid: manager.id, email: manager.email, displayName: manager.name, role: 'manager', department: manager.department as Department, status: 'Approved' };
-      localStorage.setItem('sentinel_local_session', JSON.stringify(mp));
+      localStorage.setItem('sentinel_local_session', JSON.stringify({ ...mp, loginAt: Date.now() }));
       onLoginSuccess(mp); return;
     }
     const newCount = failCount + 1; setFailCount(newCount);
@@ -2072,7 +2120,9 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
           hotelId: staffData.hotel_id || hotelCtx2?.id || null,
           hotelName: hotelCtx2?.hotel_name || null,
         };
-        localStorage.setItem('sentinel_local_session', JSON.stringify(profile));
+        localStorage.setItem('sentinel_local_session', JSON.stringify({ ...profile, loginAt: Date.now() }));
+        logAudit('staff_login', { id: profile.uid, name: profile.displayName, role: profile.occupation || 'staff', hotelId: profile.hotelId },
+          { type: 'staff', id: profile.uid }, { department: profile.department });
         onLoginSuccess(profile);
       }
     } catch (err: any) { showToast(err.message || 'An error occurred. Please try again.', 'error'); } finally { setLoading(false); }
@@ -2374,6 +2424,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       return;
     }
     await supabase.from('requests').update({ status: 'Completed', closed_at: new Date().toISOString() }).eq('id', task.id);
+    logAudit('request_completed', { id: userProfile.uid, name: userProfile.displayName, role: userProfile.occupation || 'staff', hotelId: userProfile.hotelId },
+      { type: 'request', id: task.id }, { service: task.type, room: task.roomNumber });
     const { data: sr } = await supabase.from('staff').select('tasks_completed,tasks_on_time').eq('id', userProfile.uid).single();
     if (sr) await supabase.from('staff').update({ tasks_completed: (sr.tasks_completed || 0) + 1, tasks_on_time: (sr.tasks_on_time || 0) + 1 }).eq('id', userProfile.uid);
     // ✅ Refresh immediately — completed task disappears from active, appears in history
@@ -2708,6 +2760,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                     confirmed_by: userProfile.displayName,
                     rejection_reason: fullMsg,
                   }).eq('id', conciergeCancelModal.id);
+                  logAudit('concierge_booking_cancelled', { id: userProfile.uid, name: userProfile.displayName, role: userProfile.occupation || 'staff', hotelId: userProfile.hotelId },
+                    { type: 'concierge_booking', id: conciergeCancelModal.id }, { service: conciergeCancelModal.service, guest: conciergeCancelModal.guest });
                   setConciergeCancelModal(null);
                   setConciergeRejectReason('');
                   fetchConciergeBookings();
@@ -2900,7 +2954,12 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const pendingStaff = staffList.filter(s => !s.approved && !MANAGER_OCCUPATIONS.includes(s.occupation || ''));
   const approvedStaff = staffList.filter(s => s.approved);
 
-  const approveStaff = async (id: string) => { await supabase.from('staff').update({ approved: true }).eq('id', id); };
+  const approveStaff = async (id: string) => {
+    const s = staffList.find((x: any) => x.id === id);
+    await supabase.from('staff').update({ approved: true }).eq('id', id);
+    logAudit('staff_approved', { id: profile.uid, name: profile.displayName, role: profile.occupation || 'manager', hotelId: profile.hotelId },
+      { type: 'staff', id }, { approved_name: s?.name, department: s?.department });
+  };
   const rejectStaff = async (id: string) => { if (window.confirm('Are you sure you want to reject and delete this profile?')) { await supabase.from('staff').delete().eq('id', id); showToast('Staff profile rejected and deleted', 'info'); } };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
   const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); showToast('Staff member logged out successfully', 'success'); };
@@ -2911,6 +2970,8 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
       { onConflict: 'department,hotel_id' }
     );
     showToast(`SLA updated to ${editSLA} minutes`, 'success');
+    logAudit('sla_changed', { id: profile.uid, name: profile.displayName, role: profile.occupation || 'manager', hotelId: profile.hotelId },
+      { type: 'sla_settings' }, { department: profile.department, new_minutes: editSLA });
     fetchData();
   };
 
@@ -3796,7 +3857,12 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const leaderboard = approvedStaff.filter(s => (s.tasks_completed || 0) > 0).sort((a, b) => ((b.tasks_on_time || 0) / (b.tasks_completed || 1)) - ((a.tasks_on_time || 0) / (a.tasks_completed || 1)));
   const slaViolators = staffList.filter(s => (s.violations || 0) > 0).sort((a, b) => (b.violations || 0) - (a.violations || 0));
 
-  const approveStaff = async (id: string) => { await supabase.from('staff').update({ approved: true }).eq('id', id); };
+  const approveStaff = async (id: string) => {
+    const s = staffList.find((x: any) => x.id === id);
+    await supabase.from('staff').update({ approved: true }).eq('id', id);
+    logAudit('staff_approved', { id: profile.uid, name: profile.displayName, role: profile.occupation || 'manager', hotelId: profile.hotelId },
+      { type: 'staff', id }, { approved_name: s?.name, department: s?.department });
+  };
   const deleteStaff = async (id: string) => { if (window.confirm('Are you sure you want to permanently delete this staff member?')) { await supabase.from('staff').delete().eq('id', id); showToast('Staff member deleted', 'info'); } };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
   const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); showToast('Account logged out successfully', 'success'); };
@@ -4342,6 +4408,27 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
 };
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
+// ✅ ISSUE 7: Audit logging helper
+const logAudit = async (
+  action: string,
+  actor: { id: string; name: string; role: string; hotelId?: string | null },
+  target?: { type: string; id?: string },
+  details?: Record<string, any>
+) => {
+  try {
+    await supabase.from('audit_logs').insert({
+      hotel_id: actor.hotelId || null,
+      actor_id: actor.id,
+      actor_name: actor.name,
+      actor_role: actor.role,
+      action,
+      target_type: target?.type || null,
+      target_id: target?.id || null,
+      details: details || null,
+    });
+  } catch { /* audit failure must never break the app */ }
+};
+
 export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -4367,7 +4454,20 @@ export default function App() {
 
   useEffect(() => {
     const saved = localStorage.getItem('sentinel_local_session');
-    if (saved) { try { setProfile(JSON.parse(saved)); } catch { localStorage.removeItem('sentinel_local_session'); } }
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // ✅ ISSUE 6 FIX: Expire sessions older than 24 hours
+        const loginAt = parsed.loginAt || 0;
+        const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+        if (Date.now() - loginAt > TWENTY_FOUR_HOURS) {
+          localStorage.removeItem('sentinel_local_session');
+          localStorage.removeItem('sentinel_hotel');
+        } else {
+          setProfile(parsed);
+        }
+      } catch { localStorage.removeItem('sentinel_local_session'); }
+    }
     setLoading(false);
   }, []);
 
@@ -4432,6 +4532,16 @@ export default function App() {
   const submitRequest = async (customData?: any) => {
     const activeRoom = profile?.roomNumber || roomNumber;
     if (!profile || !activeRoom) { showToast('Room number is required', 'error'); return; }
+    // ✅ ISSUE 3 FIX: 30-second cooldown to prevent request spam
+    const svcKey = customData?.serviceKey || 'general';
+    const cooldownKey = `sentinel_cooldown_${profile.uid}_${svcKey}`;
+    const last = sessionStorage.getItem(cooldownKey);
+    if (last && Date.now() - parseInt(last) < 30000) {
+      const secs = Math.ceil((30000 - (Date.now() - parseInt(last))) / 1000);
+      showToast(`Please wait ${secs} second${secs !== 1 ? 's' : ''} before submitting again.`, 'error');
+      return;
+    }
+    sessionStorage.setItem(cooldownKey, Date.now().toString());
     const service = customData?.type ? customData : selectedService;
     if (!service) return;
     const lineItems = customData?.lineItems || null;
