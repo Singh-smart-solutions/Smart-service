@@ -2038,7 +2038,12 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
       } else {
         const { data: staffData, error } = await supabase.from('staff').select('*').eq('email', email).single();
         if (error || !staffData) { showToast('Invalid email or password. Please try again.', 'error'); setLoading(false); return; }
-        if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) { showToast(`Account is locked until ${new Date(staffData.locked_until).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}. Please try again later.`, 'error'); setLoading(false); return; }
+        if (staffData.locked_until && new Date(staffData.locked_until) > new Date()) {
+          const lockedUntil = new Date(staffData.locked_until).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dubai' });
+          showToast(`Account is locked until ${lockedUntil}. Please try again later.`, 'error');
+          setLoading(false);
+          return;
+        }
         const passwordMatch = await bcrypt.compare(password, staffData.password);
         if (!passwordMatch) {
           const attempts = (staffData.failed_attempts || 0) + 1;
