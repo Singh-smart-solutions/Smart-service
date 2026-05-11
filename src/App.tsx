@@ -968,7 +968,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
       setDate(''); setTime(''); setPax('2'); setNotes('');
       fetchBookings();
       setActiveTab('mybookings');
-      setTimeout(() => { if (data) printBookingTicket(data); }, 1000);
+      // Ticket available in My Bookings tab
     } catch (e: any) { showToast(e.message || 'Booking failed', 'error'); }
     finally { setLoading(false); }
   };
@@ -3017,6 +3017,42 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const rejectStaff = async (id: string) => { if (window.confirm('Are you sure you want to reject and delete this profile?')) { await supabase.from('staff').delete().eq('id', id); showToast('Staff profile rejected and deleted', 'info'); } };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
   const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); showToast('Staff member logged out successfully', 'success'); };
+  const handlePrintStaffLogs = () => {
+    const win = window.open('', '_blank');
+    if (!win) return;
+    const dept = profile.department || 'All';
+    const hotel = profile.hotelName || 'Hotel';
+    const printed = new Date().toLocaleString('en-US', { timeZone: 'Asia/Dubai', hour12: true });
+    const rows = staffLogs.map((l: any) => {
+      const ts = new Date(l.created_at).toLocaleString('en-US', { timeZone: 'Asia/Dubai', hour12: true });
+      const action = l.action.replace(/_/g, ' ').replace(/\w/g, (c: string) => c.toUpperCase());
+      const detail = l.details
+        ? Object.entries(l.details).map(([k, v]) => '<b>' + k.replace(/_/g, ' ') + ':</b> ' + v).join('<br/>')
+        : '—';
+      return '<tr><td>' + ts + '</td><td>' + l.actor_name + '</td><td>' + l.actor_role + '</td><td>' + action + '</td><td>' + detail + '</td></tr>';
+    }).join('');
+    const html = '<!DOCTYPE html><html><head><title>Staff Logs - ' + dept + '</title>'
+      + '<style>'
+      + 'body{font-family:Arial,sans-serif;padding:30px;color:#1a1a2e;}'
+      + 'h1{color:#001529;font-size:20px;border-bottom:2px solid #C5A059;padding-bottom:8px;}'
+      + 'h2{color:#666;font-size:13px;font-weight:normal;margin-top:4px;}'
+      + 'table{width:100%;border-collapse:collapse;margin-top:20px;font-size:11px;}'
+      + 'th{background:#001529;color:#C5A059;padding:8px;text-align:left;}'
+      + 'td{padding:7px 8px;border-bottom:1px solid #eee;}'
+      + 'tr:nth-child(even){background:#f9f9f9;}'
+      + '.footer{margin-top:20px;font-size:10px;color:#999;text-align:center;}'
+      + '</style></head><body>'
+      + '<h1>Sentinel Pro — Staff Activity Logs</h1>'
+      + '<h2>' + dept + ' Department &nbsp;|&nbsp; ' + hotel + ' &nbsp;|&nbsp; Printed: ' + printed + '</h2>'
+      + '<table><thead><tr><th>Timestamp (UAE)</th><th>Staff Member</th><th>Role</th><th>Action</th><th>Details</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody></table>'
+      + '<div class="footer">Sentinel Pro Audit Log — Confidential</div>'
+      + '</body></html>';
+    win.document.write(html);
+    win.document.close();
+    win.print();
+  };
+
   const fetchStaffLogs = async () => {
     setLogsLoading(true);
     const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
@@ -3397,45 +3433,8 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                 className="px-4 py-2 border border-gold/30 text-gold text-[9px] uppercase tracking-widest hover:bg-gold/10">
                 🔄 Refresh
               </button>
-              <button onClick={() => {
-                const rows = staffLogs.map(l => {
-                  const ts = new Date(l.created_at).toLocaleString('en-US', { timeZone: 'Asia/Dubai', hour12: true });
-                  const action = l.action.replace(/_/g,' ').toUpperCase();
-                  const detail = l.details ? Object.entries(l.details).map(([k,v]) => `${k}: ${v}`).join(' | ') : '';
-                  return `${ts} | ${l.actor_name} (${l.actor_role}) | ${action} | ${detail}`;
-                }).join('
-');
-                const win = window.open('', '_blank');
-                if (!win) return;
-                win.document.write(`<!DOCTYPE html><html><head><title>Staff Logs — ${profile.department}</title>
-                <style>
-                  body{font-family:Arial,sans-serif;padding:30px;color:#1a1a2e;}
-                  h1{color:#001529;font-size:20px;border-bottom:2px solid #C5A059;padding-bottom:8px;}
-                  h2{color:#666;font-size:13px;font-weight:normal;margin-top:4px;}
-                  table{width:100%;border-collapse:collapse;margin-top:20px;font-size:11px;}
-                  th{background:#001529;color:#C5A059;padding:8px;text-align:left;}
-                  td{padding:7px 8px;border-bottom:1px solid #eee;}
-                  tr:nth-child(even){background:#f9f9f9;}
-                  .footer{margin-top:20px;font-size:10px;color:#999;text-align:center;}
-                </style></head><body>
-                <h1>Sentinel Pro — Staff Activity Logs</h1>
-                <h2>${profile.department} Department &nbsp;|&nbsp; ${profile.hotelName || 'Hotel'} &nbsp;|&nbsp; Printed: ${new Date().toLocaleString('en-US',{timeZone:'Asia/Dubai',hour12:true})}</h2>
-                <table>
-                  <thead><tr><th>Timestamp (UAE)</th><th>Staff Member</th><th>Role</th><th>Action</th><th>Details</th></tr></thead>
-                  <tbody>
-                    ${staffLogs.map(l => {
-                      const ts = new Date(l.created_at).toLocaleString('en-US',{timeZone:'Asia/Dubai',hour12:true});
-                      const action = l.action.replace(/_/g,' ').replace(/\w/g, (c: string) => c.toUpperCase());
-                      const detail = l.details ? Object.entries(l.details).map(([k,v]) => `<b>${k.replace(/_/g,' ')}:</b> ${v}`).join('<br/>') : '—';
-                      return \`<tr><td>\${ts}</td><td>\${l.actor_name}</td><td>\${l.actor_role}</td><td>\${action}</td><td>\${detail}</td></tr>\`;
-                    }).join('')}
-                  </tbody>
-                </table>
-                <div class="footer">Sentinel Pro Audit Log — Confidential</div>
-                </body></html>`);
-                win.document.close();
-                win.print();
-              }} className="px-4 py-2 bg-gold text-white text-[9px] font-bold uppercase tracking-widest hover:bg-gold/80">
+              <button onClick={handlePrintStaffLogs}
+                className="px-4 py-2 bg-gold text-white text-[9px] font-bold uppercase tracking-widest hover:bg-gold/80">
                 🖨 Print / Export
               </button>
             </div>
