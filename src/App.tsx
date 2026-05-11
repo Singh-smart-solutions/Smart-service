@@ -794,6 +794,26 @@ const printBookingTicket = (booking: any) => {
 };
 
 // ─── RESTAURANT BOOKING PORTAL ───────────────────────────────────────────────
+// ✅ STORAGE: Extract storage path from full URL and generate signed URL
+const getStoragePath = (fullUrl: string): string | null => {
+  if (!fullUrl) return null;
+  const marker = '/object/public/hotel-assets/';
+  const altMarker = '/object/sign/hotel-assets/';
+  const idx = fullUrl.indexOf(marker);
+  const idx2 = fullUrl.indexOf(altMarker);
+  if (idx >= 0) return fullUrl.slice(idx + marker.length);
+  if (idx2 >= 0) return fullUrl.slice(idx2 + altMarker.length).split('?')[0];
+  return null;
+};
+
+const getSignedUrl = async (fullUrl: string): Promise<string> => {
+  if (!fullUrl) return '';
+  const path = getStoragePath(fullUrl);
+  if (!path) return fullUrl; // fallback to original if can't parse
+  const { data } = await supabase.storage.from('hotel-assets').createSignedUrl(path, 3600);
+  return data?.signedUrl || fullUrl;
+};
+
 const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [bookings, setBookings] = useState<any[]>([]);
   const [restaurants, setRestaurants] = useState<any[]>([]);
@@ -860,7 +880,13 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
     if (hId0) rQ = rQ.eq('hotel_id', hId0);
     const { data: rData } = await rQ;
     if (rData && rData.length > 0) {
-      setRestaurants(rData);
+      // ✅ STORAGE: Generate signed URLs for private bucket
+      const withSignedUrls = await Promise.all(rData.map(async (r: any) => ({
+        ...r,
+        logo_url: r.logo_url ? await getSignedUrl(r.logo_url) : null,
+        cover_url: r.cover_url ? await getSignedUrl(r.cover_url) : null,
+      })));
+      setRestaurants(withSignedUrls);
       setSelectedRestaurant(prev => prev || rData[0].id);
     }
   }, [profile.hotelId]);
@@ -889,7 +915,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
       .subscribe();
     // ✅ Polling fallback every 3 seconds
     const poll = setInterval(() => { fetchBookings(); }, 3000);
-    return () => { supabase.removeChannel(channel); clearInterval(poll); };
+    return () => { supabase.removeChannel(channel); supabase.removeChannel(checkoutChannel); clearInterval(poll); };
   }, [fetchBookings, fetchMenuItems, fetchSettings, fetchRestaurants, isFBManager, isExecutive, isStaff]);
 
   const submitBooking = async () => {
@@ -1353,7 +1379,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
         )}
         <div className="flex gap-0.5 flex-wrap pb-0">
           {tabs.map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
+            <button key={tab.key} onClick={() => { setActiveTab(tab.key as any); if (tab.key === 'stafflogs') fetchStaffLogs(); }}
               className={cn('px-3 py-2 text-[9px] font-bold uppercase tracking-wider border-b-2',
                 activeTab === tab.key ? 'border-gold text-gold' : 'border-transparent text-white/50')}>
               {tab.label}
@@ -2464,6 +2490,25 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     if (status === 'Cleaning')   update.cleaning_at  = now;
     if (status === 'Clean')      update.cleaned_at   = now;
     if (status === 'Inspected')  update.inspected_at = now;
+    // ✅ FIX 2: Checked Out — clear guest session so they cannot re-login without QR
+    if (status === 'Checked Out') {
+      // Find the room to get room_number
+      const room = rooms.find((r: any) => r.id === roomId);
+      if (room) {
+        const hId = userProfile.hotelId || (() => {
+          try { return JSON.parse(localStorage.getItem('sentinel_hotel') || '{}').id; } catch { return null; }
+        })();
+        // Delete guest record from guests table — invalidates their session
+        // Delete guest record — they must re-enter name on next QR scan
+        await supabase.from('guests').delete()
+          .eq('room', room.room_number);
+        // Clear room assignment fields on checkout
+        update.assigned_to = null;
+        update.cleaning_at = null;
+        update.cleaned_at = null;
+        update.inspected_at = null;
+      }
+    }
     await supabase.from('rooms').update(update).eq('id', roomId);
     fetchRooms();
   };
@@ -2831,7 +2876,13 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
                   {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
                   {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected at: {new Date(room.inspected_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
                   <select value={room.status} onChange={e => updateRoomStatus(room.id, e.target.value)} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none">
-                    {ROOM_STATUSES.filter(s => s.key !== 'Inspected').map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                    {ROOM_STATUSES.filter(s => {
+                        // ✅ FIX: Only HK Supervisor can mark Inspected — not HK Attendant
+                        if (s.key === 'Inspected') {
+                          return userProfile.occupation === 'Housekeeping Supervisor';
+                        }
+                        return true;
+                      }).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
                 </div>
               );
@@ -2880,7 +2931,10 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const { t, language } = useLanguage();
   const [requests, setRequests] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
+  const [conciergeBookingsRevenue, setConciergeBookingsRevenue] = useState<any[]>([]);
   const [slaConfig, setSlaConfig] = useState<any>({});
+  const [staffLogs, setStaffLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
   const [rooms, setRooms] = useState<any[]>([]);
   const [roomSearch, setRoomSearch] = useState('');
   const [repPeriod, setRepPeriod] = useState<'daily'|'weekly'|'monthly'>('daily');
@@ -2963,6 +3017,20 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const rejectStaff = async (id: string) => { if (window.confirm('Are you sure you want to reject and delete this profile?')) { await supabase.from('staff').delete().eq('id', id); showToast('Staff profile rejected and deleted', 'info'); } };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
   const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); showToast('Staff member logged out successfully', 'success'); };
+  const fetchStaffLogs = async () => {
+    setLogsLoading(true);
+    const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    let q = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(200);
+    if (hId) q = q.eq('hotel_id', hId);
+    // Filter to this department's staff actions only
+    if (profile.department && profile.department !== 'None') {
+      q = q.or(`details->>'department'.eq.${profile.department},actor_role.eq.${profile.occupation}`);
+    }
+    const { data } = await q;
+    if (data) setStaffLogs(data);
+    setLogsLoading(false);
+  };
+
   const saveSLA = async () => {
     const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
     await supabase.from('sla_settings').upsert(
@@ -3007,6 +3075,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               { key: 'staff', label: `Staff${pendingStaff.length > 0 ? ` (${pendingStaff.length})` : ''}` },
               { key: 'settings', label: '⚙ Settings' },
               { key: 'report', label: '📊 Report' },
+              { key: 'stafflogs', label: '📋 Staff Logs' },
               ...(profile.department === 'F&B' ? [{ key: 'restaurants', label: '🍽 Restaurants' }] : []),
               ...(profile.department === 'Housekeeping' ? [{ key: 'rooms', label: '🛏 Rooms' }] : []),
               ...(profile.department === 'Concierge' ? [{ key: 'concierge', label: '🔑 Services' }] : []),
@@ -3315,7 +3384,111 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         );
       })()}
 
-            {/* Concierge Manager — Services Tab */}
+            {/* Staff Logs Tab */}
+      {activeTab === 'stafflogs' && (
+        <div className="space-y-4 p-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-serif text-gold">Staff Activity Logs</h2>
+              <p className="text-white/40 text-[9px] uppercase tracking-widest mt-1">{profile.department} Department · {profile.hotelName}</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={fetchStaffLogs}
+                className="px-4 py-2 border border-gold/30 text-gold text-[9px] uppercase tracking-widest hover:bg-gold/10">
+                🔄 Refresh
+              </button>
+              <button onClick={() => {
+                const rows = staffLogs.map(l => {
+                  const ts = new Date(l.created_at).toLocaleString('en-US', { timeZone: 'Asia/Dubai', hour12: true });
+                  const action = l.action.replace(/_/g,' ').toUpperCase();
+                  const detail = l.details ? Object.entries(l.details).map(([k,v]) => `${k}: ${v}`).join(' | ') : '';
+                  return `${ts} | ${l.actor_name} (${l.actor_role}) | ${action} | ${detail}`;
+                }).join('
+');
+                const win = window.open('', '_blank');
+                if (!win) return;
+                win.document.write(`<!DOCTYPE html><html><head><title>Staff Logs — ${profile.department}</title>
+                <style>
+                  body{font-family:Arial,sans-serif;padding:30px;color:#1a1a2e;}
+                  h1{color:#001529;font-size:20px;border-bottom:2px solid #C5A059;padding-bottom:8px;}
+                  h2{color:#666;font-size:13px;font-weight:normal;margin-top:4px;}
+                  table{width:100%;border-collapse:collapse;margin-top:20px;font-size:11px;}
+                  th{background:#001529;color:#C5A059;padding:8px;text-align:left;}
+                  td{padding:7px 8px;border-bottom:1px solid #eee;}
+                  tr:nth-child(even){background:#f9f9f9;}
+                  .footer{margin-top:20px;font-size:10px;color:#999;text-align:center;}
+                </style></head><body>
+                <h1>Sentinel Pro — Staff Activity Logs</h1>
+                <h2>${profile.department} Department &nbsp;|&nbsp; ${profile.hotelName || 'Hotel'} &nbsp;|&nbsp; Printed: ${new Date().toLocaleString('en-US',{timeZone:'Asia/Dubai',hour12:true})}</h2>
+                <table>
+                  <thead><tr><th>Timestamp (UAE)</th><th>Staff Member</th><th>Role</th><th>Action</th><th>Details</th></tr></thead>
+                  <tbody>
+                    ${staffLogs.map(l => {
+                      const ts = new Date(l.created_at).toLocaleString('en-US',{timeZone:'Asia/Dubai',hour12:true});
+                      const action = l.action.replace(/_/g,' ').replace(/\w/g, (c: string) => c.toUpperCase());
+                      const detail = l.details ? Object.entries(l.details).map(([k,v]) => `<b>${k.replace(/_/g,' ')}:</b> ${v}`).join('<br/>') : '—';
+                      return \`<tr><td>\${ts}</td><td>\${l.actor_name}</td><td>\${l.actor_role}</td><td>\${action}</td><td>\${detail}</td></tr>\`;
+                    }).join('')}
+                  </tbody>
+                </table>
+                <div class="footer">Sentinel Pro Audit Log — Confidential</div>
+                </body></html>`);
+                win.document.close();
+                win.print();
+              }} className="px-4 py-2 bg-gold text-white text-[9px] font-bold uppercase tracking-widest hover:bg-gold/80">
+                🖨 Print / Export
+              </button>
+            </div>
+          </div>
+
+          {logsLoading ? (
+            <div className="text-center py-12 text-white/30">Loading logs...</div>
+          ) : staffLogs.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-white/30 text-sm">No activity logs yet for this department.</p>
+              <p className="text-white/20 text-[10px] mt-2">Logs are recorded when staff login, complete tasks, get approved, and more.</p>
+              <button onClick={fetchStaffLogs} className="mt-4 px-4 py-2 border border-gold/20 text-gold/60 text-[9px] uppercase">Load Logs</button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-white/30 text-[9px]">{staffLogs.length} record{staffLogs.length !== 1 ? 's' : ''} found</p>
+              {staffLogs.map((log, i) => (
+                <div key={log.id || i} className="bg-[#001c36] border border-gold/10 p-3 flex gap-3 items-start">
+                  <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background:
+                    log.action === 'staff_login' ? '#4ade80' :
+                    log.action === 'request_completed' ? '#60a5fa' :
+                    log.action === 'staff_approved' ? '#f59e0b' :
+                    log.action === 'sla_changed' ? '#c084fc' :
+                    log.action.includes('cancel') || log.action.includes('reject') ? '#f87171' : '#94a3b8'
+                  }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <span className="text-white text-[10px] font-bold">{log.actor_name}</span>
+                        <span className="text-white/40 text-[9px] mx-2">·</span>
+                        <span className="text-white/50 text-[9px]">{log.actor_role}</span>
+                      </div>
+                      <span className="text-white/30 text-[8px] whitespace-nowrap">
+                        {new Date(log.created_at).toLocaleString('en-US', { timeZone: 'Asia/Dubai', hour12: true, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <p className="text-gold/80 text-[9px] uppercase tracking-wider mt-0.5">
+                      {log.action.replace(/_/g, ' ')}
+                    </p>
+                    {log.details && (
+                      <p className="text-white/30 text-[8px] mt-0.5">
+                        {Object.entries(log.details).map(([k,v]) => `${k.replace(/_/g,' ')}: ${v}`).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Concierge Manager — Services Tab */}
       {activeTab === 'concierge' && profile.department === 'Concierge' && (
         <ConciergeManagerTab profile={profile} />
       )}
@@ -3780,6 +3953,7 @@ const ConciergeManagerTab: React.FC<{ profile: UserProfile }> = ({ profile }) =>
 const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const [requests, setRequests] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
+  const [conciergeBookingsRevenue, setConciergeBookingsRevenue] = useState<any[]>([]);
   const [slaSettings, setSlaSettings] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'analytics' | 'requests' | 'sla' | 'leaderboard' | 'staff' | 'qr' | 'restaurants'>('analytics');
@@ -3800,6 +3974,11 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
     if (profile.hotelId) execRQ = execRQ.eq('hotel_id', profile.hotelId);
     const { data: reqData } = await execRQ;
     if (reqData) setRequests(reqData);
+    // ✅ REVENUE FIX: Fetch concierge bookings for Concierge dept revenue
+    let cbRQ = supabase.from('concierge_bookings').select('total_price, status, created_at').order('created_at', { ascending: false });
+    if (profile.hotelId) cbRQ = cbRQ.eq('hotel_id', profile.hotelId);
+    const { data: cbData } = await cbRQ;
+    if (cbData) setConciergeBookingsRevenue(cbData);
     let execSQ = supabase.from('staff').select('*').order('created_at', { ascending: false });
     if (profile.hotelId) execSQ = execSQ.eq('hotel_id', profile.hotelId);
     const { data: staffData } = await execSQ;
@@ -3838,11 +4017,18 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const violations = requests.filter(r => getSLAExceeded(r));
   const completed = requests.filter(r => r.status === 'Completed').length;
   const pending = requests.filter(r => r.status !== 'Completed').length;
-  const revenue = requests.filter(r => r.total_price && r.status === 'Completed').reduce((s, r) => s + (r.total_price || 0), 0);
+  // ✅ REVENUE FIX: Total revenue includes concierge booking revenue
+  const revenue = requests.filter(r => r.total_price && r.status === 'Completed').reduce((s, r) => s + (r.total_price || 0), 0)
+    + conciergeBookingsRevenue.filter(b => b.status === 'Completed').reduce((s, b) => s + (b.total_price || 0), 0);
 
+  // ✅ REVENUE FIX: Concierge revenue includes concierge_bookings (tours/taxi/car rental)
+  const conciergeBookingRev = conciergeBookingsRevenue
+    .filter(b => b.status === 'Completed')
+    .reduce((s, b) => s + (b.total_price || 0), 0);
   const deptRevenue = ['F&B', 'Concierge', 'Housekeeping', 'Front Office', 'Security & Safety', 'Maintenance'].map(dept => ({
     name: dept.split(' ')[0],
-    revenue: requests.filter(r => r.department === dept && r.status === 'Completed' && r.total_price).reduce((s, r) => s + (r.total_price || 0), 0),
+    revenue: requests.filter(r => r.department === dept && r.status === 'Completed' && r.total_price).reduce((s, r) => s + (r.total_price || 0), 0)
+      + (dept === 'Concierge' ? conciergeBookingRev : 0),
   }));
 
   const allLineItems: any[] = [];
@@ -4492,6 +4678,20 @@ export default function App() {
     };
     fetchRequests();
     // ✅ Poll every 3 seconds so guest sees status updates without manual refresh
+    // ✅ FIX 2 REALTIME: Subscribe to guest record — instant logout on checkout
+    const checkoutChannel = supabase.channel(`checkout-${profile.uid}`)
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'guests',
+        filter: `id=eq.${profile.uid}`,
+      }, () => {
+        // Room checked out — guest record deleted — clear session immediately
+        localStorage.removeItem('sentinel_local_session');
+        localStorage.removeItem('sentinel_hotel');
+        window.location.reload();
+      })
+      .subscribe();
     const poll = setInterval(() => { fetchRequests(); }, 3000);
     const channel = supabase.channel(`guest-${profile.uid}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, fetchRequests)
@@ -4523,7 +4723,7 @@ export default function App() {
         }
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); clearInterval(poll); };
+    return () => { supabase.removeChannel(channel); supabase.removeChannel(checkoutChannel); clearInterval(poll); };
   }, [profile]);
 
   const logout = () => { localStorage.clear(); setProfile(null); window.location.replace('/'); };
