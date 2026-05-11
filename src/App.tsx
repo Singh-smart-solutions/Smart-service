@@ -1379,7 +1379,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
         )}
         <div className="flex gap-0.5 flex-wrap pb-0">
           {tabs.map(tab => (
-            <button key={tab.key} onClick={() => { const k = tab.key as any; setActiveTab(k); if (k === 'stafflogs') fetchStaffLogs(); }}
+            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
               className={cn('px-3 py-2 text-[9px] font-bold uppercase tracking-wider border-b-2',
                 activeTab === tab.key ? 'border-gold text-gold' : 'border-transparent text-white/50')}>
               {tab.label}
@@ -3116,7 +3116,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               ...(profile.department === 'Housekeeping' ? [{ key: 'rooms', label: '🛏 Rooms' }] : []),
               ...(profile.department === 'Concierge' ? [{ key: 'concierge', label: '🔑 Services' }] : []),
             ].map(tab => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
+              <button key={tab.key} onClick={() => { const k = tab.key as any; setActiveTab(k); if (k === 'stafflogs') fetchStaffLogs(); }} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
           <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
