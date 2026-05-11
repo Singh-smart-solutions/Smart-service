@@ -1,67 +1,47 @@
 # Sentinel Pro — Complete Application Memory File
 
-> Use this file at the start of every session to understand the full codebase before making any changes.
-> Last updated: Session 4 (SLA fixes, Luggage tile, concierge staff portal, rejection messages, guest notifications, hotel name in all portals, UAE timezone)
+> Last updated: Session 5 final (Security hardening complete, audit logs, staff logs, revenue fix,
+> checkout realtime, Inspected access control, signed URLs, all TypeScript errors resolved)
 
 ---
 
 ## 1. PRODUCT OVERVIEW
 
-**Sentinel Pro** is a luxury hotel guest experience and staff productivity SaaS platform.
-
-- **Owner / Developer:** Satnam Singh
-- **Contact:** +971 585 445 642 | singh7naamg@gmail.com
-- **Business model:** Multi-tenant SaaS — one deployment serves multiple hotel clients
-- **Demo brand:** Grand Palace Hotel
-- **Status:** Pre-release / active demo to hotel GMs
+- **Owner:** Satnam Singh | +971 585 445 642 | singh7naamg@gmail.com
+- **Model:** Multi-tenant SaaS — one deployment, multiple hotel clients
+- **Status:** Real testing phase (existing staff test accounts active — do not wipe)
+- **Live URL:** smart-service-rho.vercel.app
+- **Admin:** smart-service-rho.vercel.app/admin
 
 ---
 
 ## 2. TECH STACK
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 19 + TypeScript + Vite |
-| Styling | Tailwind CSS v4 + tailwind-merge + clsx |
-| Animation | Motion (Framer Motion v12) |
-| Icons | lucide-react (incl. Briefcase for Luggage) |
-| Charts | recharts |
-| Auth / Passwords | bcryptjs (hash on register, compare on login) |
-| Backend / DB | Supabase (PostgreSQL + RLS) |
-| File Storage | Supabase Storage — bucket: hotel-assets (public) |
-| Hosting | Vercel |
-| Source control | GitHub |
+React 19 + TypeScript + Vite | Tailwind CSS v4 | Motion (Framer Motion v12)
+lucide-react (incl. Briefcase) | recharts | bcryptjs | Supabase | Vercel
 
 ---
 
-## 3. REPOSITORY & DEPLOYMENT
+## 3. REPOSITORY
 
 | Item | Value |
 |---|---|
-| GitHub repo | github.com/singh7naamg-stack/Smart-service |
-| Vercel project | smart-service (correct one — 3 forks exist) |
-| Live URL | smart-service-rho.vercel.app |
+| GitHub | github.com/singh7naamg-stack/Smart-service |
+| Vercel project | smart-service |
 | Supabase URL | https://tztydfegheocwlruyncb.supabase.co |
 | Env vars | VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY |
-| Build command | npm run build |
 | Super Admin route | /admin → SentinelAdmin.tsx |
+
+CRITICAL: Always push types.ts WITH App.tsx.
 
 ---
 
-## 4. KEY SOURCE FILES
+## 4. FILE SIZES
 
-| File | Purpose |
+| File | Lines |
 |---|---|
-| src/App.tsx | Main app — ALL portals (~4666 lines) |
-| src/SentinelAdmin.tsx | Super Admin portal (~900 lines) |
-| src/types.ts | TypeScript types |
-| src/TranslationContext.tsx | 7-language translations |
-| src/supabase.ts | Supabase client |
-| src/main.tsx | React entry point |
-| vercel.json | SPA routing rewrite |
-| package.json | Dependencies incl. bcryptjs |
-
-CRITICAL: Always push types.ts together with App.tsx.
+| src/App.tsx | ~4980 |
+| src/SentinelAdmin.tsx | ~880 |
 
 ---
 
@@ -70,11 +50,10 @@ CRITICAL: Always push types.ts together with App.tsx.
 ### requests
 id, created_at, guest_room, guest_id, guest_name, department, service,
 service_key, notes, status, assigned_to, assigned_to_email, accepted_at,
-closed_at, late_reason, line_items, total_price, language, rating, feedback,
-hotel_id
+closed_at, late_reason, line_items, total_price, language, rating, feedback, hotel_id
 
 ### staff
-id, name, staff_id, email, password (bcrypt hashed), department, occupation,
+id, name, staff_id, email, password (bcrypt), department, occupation,
 approved, needs_executive_approval, logged_in, tasks_completed, tasks_on_time,
 violations, failed_attempts, locked_until, hotel_id
 
@@ -84,395 +63,371 @@ cleaning_at, cleaned_at, inspected_at, hotel_id
 
 ### sla_settings
 id, department, sla_minutes, hotel_id
-UNIQUE CONSTRAINT: (department, hotel_id) — added via SQL in Session 4
-onConflict must use 'department,hotel_id'
+UNIQUE CONSTRAINT: (department, hotel_id)
+onConflict MUST use 'department,hotel_id'
 
-### restaurants (dynamic per hotel)
+### restaurants
 id, hotel_id, name, cuisine, description, emoji, logo_url, cover_url, active, created_at
+logo_url / cover_url: stored full URL, converted to signed URLs via getSignedUrl() on fetch
 
 ### restaurant_settings
-id, restaurant (UUID → restaurants.id), opening_time, closing_time, closed_days, hotel_id
+id, restaurant (UUID), opening_time, closing_time, closed_days (array), hotel_id
 
 ### restaurant_bookings
 id, guest_name, room_number, restaurant, date, time, pax,
-special_requests, status, confirmed_by, walk_in, hotel_id,
-rejection_reason TEXT (added Session 4)
+special_requests, status, confirmed_by, walk_in, hotel_id, rejection_reason
 
 ### menu_items
 id, name, category, price, description, available, restaurant (UUID), hotel_id
 
 ### concierge_services
-id, hotel_id, category (tour/car_rental/taxi/luggage), name, description,
-price, price_unit, duration, availability (TEXT[]), image_url, active, created_at
+id, hotel_id, category, name, description, price, price_unit,
+duration, availability (TEXT[]), image_url, active, created_at
 
 ### concierge_bookings
 id, hotel_id, service_id, service_name, category, guest_id, guest_name,
 room_number, guests_count, pickup_date, pickup_time, return_date, return_time,
-special_requests, status (Pending/Confirmed/Cancelled/Completed),
-confirmed_by, total_price, created_at,
-rejection_reason TEXT (added Session 4)
+special_requests, status, confirmed_by, total_price, created_at, rejection_reason
 
 ### hotel_clients
 id, hotel_name, contact_name, contact_email, contact_phone, city, country,
-rooms_count, entry_code, executive_password, access_mode, services_config (JSONB),
-status (active/trial/suspended/inactive), plan, monthly_fee, notes, trial_ends_at
+rooms_count, entry_code, executive_password, access_mode (open|qr_only),
+services_config (JSONB), status, plan, monthly_fee, notes, trial_ends_at
 
-services_config structure:
-{
-  "housekeeping": true, "room_service": true, "restaurant": true,
-  "concierge": true, "security": true, "maintenance": true,
-  "concierge_items": ["Car Rental","Taxi","Limo","Luggage Assistance","Tours","City Guide"]
-}
+services_config:
+{ "housekeeping":true, "room_service":true, "restaurant":true,
+  "concierge":true, "security":true, "maintenance":true,
+  "concierge_items":["Car Rental","Taxi","Limo","Luggage Assistance","Tours","City Guide"] }
+
+### guests
+id (= "Name_RoomNumber"), name, email, room (room_number)
+DELETED on room Checked Out → triggers instant guest logout via realtime
 
 ### super_admin
-id, email, password (plain text — hash before production), name
+id, email, password (bcrypt hashed via pgcrypto — NOT plain text), name
 
-### Supabase Storage
-Bucket: hotel-assets (public)
-Paths: restaurants/{restaurant_id}/logo_{timestamp}.ext
-       restaurants/{restaurant_id}/cover_{timestamp}.ext
+### audit_logs
+id, hotel_id, actor_id, actor_name, actor_role, action, target_type,
+target_id, details (JSONB), created_at
+Events: staff_login, staff_approved, request_completed,
+        sla_changed, booking_rejected, concierge_booking_cancelled
 
 ---
 
-## 6. MULTI-HOTEL ISOLATION
+## 6. SECURITY — FULL STATUS
 
-Every table has hotel_id. ALL queries filter by hotel_id — strict .eq() only.
+| Control | Implementation | Status |
+|---|---|---|
+| Staff passwords | bcrypt.hash cost 10, bcrypt.compare on login | ✅ |
+| Super admin password | pgcrypto bcrypt in DB, bcrypt.compare in SentinelAdmin.tsx | ✅ |
+| Super admin login query | Fetches by email only — no password in query | ✅ |
+| Cross-hotel staff login | hotel_id validated at login | ✅ |
+| Suspended hotel | Blocked at entry code step | ✅ |
+| Manager12345 | Only works when hotelCtx is null | ✅ |
+| Brute force | failed_attempts + locked_until | ✅ |
+| Session expiry | 24h via loginAt timestamp on restore | ✅ |
+| File uploads | MIME image/* check + 2MB limit + sanitized filename | ✅ |
+| Storage bucket | PRIVATE — signed URLs (1h expiry) via getSignedUrl() | ✅ |
+| Rate limiting | 30s cooldown per service via sessionStorage sentinel_cooldown_ | ✅ |
+| Duplicate bookings | existingBooking check before concierge insert | ✅ |
+| Duplicate restaurant | existingRB check before restaurant insert | ✅ |
+| RLS | Enabled all tables. super_admin fully blocked. hotel_clients read-only | ✅ |
+| Audit logs | logAudit() wrapped in try/catch, never throws | ✅ |
+| Guest checkout | Realtime DELETE on guests table → instant logout | ✅ |
+| OR-null queries | NEVER used | ✅ |
+| XSS | No dangerouslySetInnerHTML anywhere | ✅ |
+| SQL injection | Supabase parameterized queries only | ✅ |
+| Service role key | NOT in frontend — anon key only | ✅ |
+
+---
+
+## 7. HOTEL ISOLATION
+
+ALL queries use strict .eq('hotel_id', id). No OR-null ever.
+Every insert saves hotel_id. QR URL embeds hotel UUID.
 NEVER use .or('hotel_id.eq.X,hotel_id.is.null') — causes cross-contamination.
 
-How hotel context loads:
-1. Staff types entry code → fetches hotel_clients → localStorage('sentinel_hotel')
-2. Guest scans QR (?room=401&hotel=UUID) → fetches hotel → localStorage
-3. Legacy 12345 → no hotel context → all services, no isolation (owner testing only)
+---
 
-Security:
-- Suspended/inactive → blocked at entry code
-- Staff hotel_id must match session hotel_id (NULL also blocked)
-- Room validated against rooms table on guest login
-- Manager12345 only works when hotelCtx is null
+## 8. ACCESS FLOW
 
-localStorage keys:
-- sentinel_hotel — {id, hotel_name, entry_code, executive_password, access_mode, services_config, status}
-- sentinel_local_session — UserProfile JSON
-- sentinel_admin_session — Super Admin session
+1. Staff types entry code → hotel_clients fetched → localStorage('sentinel_hotel')
+2. Guest scans QR (?room=401&hotel=UUID) → hotel fetched → localStorage
+3. 12345 → owner testing bypass (no isolation, all services)
+4. qr_only mode: enable in Super Admin after testing complete
 
 ---
 
-## 7. ACCESS / ROLE SYSTEM
-
-Guest: URL + name + room OR scan QR → enter name only
-Staff: Entry code → secret menu → Staff Portal → email + bcrypt password
-Executive: Entry code → secret menu → Executive → hotel exec password
-Super Admin: /admin → email + password (super_admin table)
-
-UserProfile interface:
-  uid, email, displayName, role (guest/staff/manager), department,
-  roomNumber?, staffIdNumber?, occupation?, status?,
-  hotelId?, hotelName?, entryCode?
-
-Department type:
-  Housekeeping | F&B | Concierge | Security & Safety |
-  Front Office | Maintenance | None
-
-MANAGER_OCCUPATIONS (get DeptManagerDashboard):
-  Housekeeping Manager, Housekeeping Supervisor, F&B Manager,
-  Concierge Manager, Security Manager, Front Office Manager, Executive
-
-OCCUPATION_TO_DEPT mapping (key reference):
-  Reservation Agent → F&B (but filtered — sees ONLY restaurant requests, NOT room service)
-  Concierge Agent / Supervisor → Concierge
-  HK Attendant / Supervisor → Housekeeping
-  F&B Waiter / Chef → F&B
-  Security Officer → Security & Safety
-  Maintenance Technician → Maintenance
-
----
-
-## 8. COMPONENT ARCHITECTURE (App.tsx)
-
-App (export default function)
-├── Guest Booking Notification Modal (guestNotification state)
-├── Auth — guest login + hotel code entry
-├── StaffLogin — email + bcrypt password
-├── RoomService — dynamic menu from menu_items per hotel
-├── RestaurantBooking — guest restaurant booking
-├── Concierge — dynamic services from concierge_services per hotel
-├── RestaurantPortal — full F&B management
-│   ├── fetchRestaurants() — from restaurants table per hotel
-│   ├── fetchBookings() — filtered hotel_id
-│   ├── fetchMenuItems() — filtered hotel_id
-│   └── Tabs: book | mybookings | manage | walkin | menu | settings
-├── StaffPortal
-│   ├── fetchTasks() — filtered hotel_id + dept + occupation
-│   ├── fetchSLA() — filtered hotel_id (runs EVERY poll cycle)
-│   ├── fetchRooms() — filtered hotel_id (HK only)
-│   ├── fetchConciergeBookings() — filtered hotel_id (Concierge dept only)
-│   ├── conciergeCancelModal — rejection modal with custom reason
-│   └── Tabs: active | history | rooms (HK) | maintenance
-├── DeptManagerDashboard
-│   ├── fetchData() — filtered hotel_id
-│   ├── saveSLA() — saves with hotel_id, onConflict: 'department,hotel_id'
-│   └── Tabs: requests | sla | staff | settings | report |
-│           restaurants (F&B) | rooms (HK) | concierge (Concierge)
-├── ConciergeManagerTab
-│   ├── fetchBookings() — polls every 10s
-│   ├── fetchServices() — filtered hotel_id
-│   └── Sections: Manage Services | Bookings
-└── ExecutiveDashboard
-    └── Tabs: analytics | leaderboard | sla | requests | staff | qr | restaurants
-
----
-
-## 9. GUEST PORTAL — SERVICE TILES
-
-All 7 tiles filtered by hotel services_config:
+## 9. GUEST PORTAL — 7 SERVICE TILES
 
 1. 🏠 Housekeeping — configKey: housekeeping
-2. ☕ Room Service — configKey: room_service (full menu from DB)
-3. 🍽 Restaurant Reservations — configKey: restaurant (isPortal: true)
-4. 🔑 Concierge Services — configKey: concierge (tours/taxi/car rental bookings)
-5. 💼 Luggage Assistance — configKey: concierge (standalone tile, submits to requests table, Concierge dept with SLA)
+2. ☕ Room Service — configKey: room_service (menu from DB)
+3. 🍽 Restaurant Reservations — configKey: restaurant (NO auto-print on submit)
+4. 🔑 Concierge Services — configKey: concierge (booking flow)
+5. 💼 Luggage Assistance — configKey: concierge (standalone, SLA, Concierge dept, free)
 6. 🛡 Security & Safety — configKey: security
 7. 🔧 Maintenance — configKey: maintenance
 
-LUGGAGE TILE (Session 4):
-- Standalone tile (NOT inside Concierge portal)
-- Options: Pickup from Room, Delivery to Room, Storage Request, Transfer to Lobby, Other
-- serviceKey: 'luggage' → routes to Concierge department → SLA timer applies
-- Staff accept → complete same as Housekeeping
-- NO price shown — free in all hotels
+Luggage: serviceKey='luggage' → Concierge dept → requests table → SLA timer
 
-getDepartmentFromServiceKey mappings:
-  room_service → F&B
-  restaurant_bookings → F&B
-  concierge_services → Concierge
-  luggage → Concierge
-  housekeeping → Housekeeping
-  security → Security & Safety
-  maintenance → Maintenance
+getDepartmentFromServiceKey:
+  room_service → F&B | restaurant_bookings → F&B
+  concierge_services → Concierge | luggage → Concierge
+  housekeeping → Housekeeping | security → Security & Safety | maintenance → Maintenance
 
 ---
 
-## 10. CONCIERGE SYSTEM (TWO FLOWS)
+## 10. RESTAURANT / RESERVATION SYSTEM
 
-Flow A — Operational (SLA, staff accept/complete):
-- Luggage tile → submits to requests table → Concierge dept staff → SLA
-- Staff see in active tasks list with accept → complete
+- No auto-print when GUEST submits booking (removed — auto-print was bad UX)
+- Walk-in booking: manual 🖨 Print button in success card (reservation agent clicks if needed)
+- Booking validation: checks closed_days + opening/closing_time before insert
+- Duplicate check: same guest cannot book same restaurant same date while Pending
+- Rejection: professional "Dear [Guest Name]..." message saved to rejection_reason
+- Guest notification: realtime on restaurant_bookings UPDATE → popup with rejection_reason
 
-Flow B — Reservations (no SLA, manager/staff confirm, guest notified):
-- Tours, Car Rental, Taxi, Limo → saved to concierge_bookings table
-- Guest books: pickup date/time, return date/time, guests, special requests
-- Concierge staff see pending bookings in active tab (Concierge Bookings section)
-- Staff can Confirm or Cancel/Reject (with mandatory custom reason message)
-- On Confirm → guest gets pop-up notification
-- On Cancel → guest gets pop-up notification WITH rejection reason
-- Payment at concierge desk (no online payment)
-
-CONCIERGE REJECTION FLOW (Session 4):
-- Staff clicks Cancel/Reject → modal opens
-- Staff MUST enter reason (button disabled if empty)
-- Message saved: "Dear Valued Guest, we regret to inform you that your [service] booking has been cancelled. [Staff reason]. We apologise for any inconvenience..."
-- Message shown in guest notification pop-up
+RESERVATION AGENT:
+- Occupation: Reservation Agent → F&B dept
+- fetchTasks adds .neq('service_key','room_service') → sees ONLY restaurant requests
+- Auto-redirects to restaurant portal on login
 
 ---
 
-## 11. RESTAURANT / RESERVATION SYSTEM
+## 11. CONCIERGE SYSTEM
 
-RESERVATION AGENT ROLE:
-- Occupation: Reservation Agent → F&B department
-- Sees ONLY restaurant booking requests (service_key != 'room_service')
-- Does NOT see room service orders
-- fetchTasks adds .neq('service_key', 'room_service') for this occupation
-
-RESTAURANT REJECTION MESSAGE (Session 4):
-Professional format: "Dear [Guest Name], we regret to inform you that your reservation at [Restaurant] on [date] at [time] cannot be accommodated. [Staff reason]. We sincerely apologise for any inconvenience caused and kindly invite you to contact our reception team..."
-
-RESTAURANT BOOKING COLUMNS: id, guest_name, room_number, restaurant, date, time,
-pax, special_requests, status, confirmed_by, walk_in, hotel_id, rejection_reason
+Flow A (SLA): Luggage → requests table → staff accept/complete
+Flow B (Booking): Tours/Taxi/Car Rental → concierge_bookings table
+  - Staff confirm/cancel from active tab (Concierge Bookings section in StaffPortal)
+  - Cancel requires mandatory reason → "Dear Valued Guest..." saved to rejection_reason
+  - Guest gets instant realtime popup on confirm/cancel
 
 ---
 
-## 12. SLA SYSTEM (3-LEVEL ESCALATION)
+## 12. SLA SYSTEM (3-LEVEL)
 
-Default: 30 min. Custom per dept saved to sla_settings.
-DB CONSTRAINT: UNIQUE (department, hotel_id) — saveSLA uses onConflict: 'department,hotel_id'
+Default: 30 min. Saved with hotel_id. onConflict: 'department,hotel_id'
+fetchSLA runs on MOUNT and EVERY POLL CYCLE → picks up manager changes live
 
-fetchSLA: runs on mount AND every poll cycle — picks up manager changes without refresh
-getSLALimit: slaSettings[dept] || 30 (all uses consistent)
+Level 1 (80%): Orange warning
+Level 2 (100%): Red + marks Violated in DB + mandatory delay reason
+Level 3 (150%): Escalation notification
 
-Levels:
-- Level 1 (80%): ⚠️ Orange warning to staff
-- Level 2 (100%): 🚨 Red alert, task marked Violated in DB, mandatory delay reason
-- Level 3 (150%): 🔴 Escalated — staff notified management alerted
-
-handleComplete: blocks close if elapsed > limit || task.status === 'Violated'
+getSLALimit: slaSettings[dept] || 30 — consistent everywhere
+handleComplete: blocks if elapsed > limit || task.status === 'Violated'
 
 ---
 
-## 13. GUEST NOTIFICATION SYSTEM (Session 4)
-
-guestNotification state in App() function.
-Modal renders at top of App JSX, fixed full-screen overlay.
-
-Triggers:
-- Supabase realtime UPDATE on restaurant_bookings → if guest_id matches
-- Supabase realtime UPDATE on concierge_bookings → if guest_id matches
-
-Modal types:
-- Confirmed (green ✅): "Dear [Name], your [booking] has been confirmed..."
-- Cancelled (red ❌): Shows full rejection_reason message from staff
-
-Guest realtime channel subscribes to:
-1. requests table (all events) → fetchRequests
-2. restaurant_bookings (UPDATE) → check guest_id → show notification
-3. concierge_bookings (UPDATE) → check guest_id → show notification
-
----
-
-## 14. HOTEL NAME IN ALL PORTALS (Session 4)
-
-Guest portal header: reads from localStorage('sentinel_hotel').hotel_name
-Staff portal header: reads from userProfile.hotelName (small text above staff name)
-Manager dashboard: reads from profile.hotelName (small text above dept title)
-Executive dashboard: reads from profile.hotelName (small text above "Executive Operations Center")
-
-Fallback: 'Sentinel Pro' if no hotel context
-
----
-
-## 15. TIMESTAMPS (Session 4 FIX)
-
-formatTime: always displays in Asia/Dubai (UTC+4) regardless of browser timezone
-formatTime adds 'Z' to timestamps with no timezone info (treats as UTC)
-accepted_at / closed_at: stored as new Date().toISOString() (UTC)
-created_at: stored by Supabase server (with +04:00 timezone)
-Both display correctly in UAE time via timeZone: 'Asia/Dubai'
-
----
-
-## 16. HOUSEKEEPING SYSTEM
+## 13. HOUSEKEEPING SYSTEM
 
 Statuses: Clean | Dirty | Cleaning | Inspected | Do Not Disturb | Out of Order | Checked Out
-Staff: cannot select Inspected
-Supervisor/Manager: all statuses
-Timestamps: cleaning_at (Cleaning), cleaned_at (Clean), inspected_at (Inspected)
-HK rooms fetch: filtered by hotel_id using profile.hotelId first, localStorage fallback
+
+INSPECTED ACCESS:
+- HK Attendant → CANNOT select (filtered out in StaffPortal)
+- HK Supervisor → CAN select (occupation === 'Housekeeping Supervisor' check)
+- HK Manager → CAN (DeptManagerDashboard has all statuses)
+
+CHECKED OUT FLOW:
+1. Room status → Checked Out
+2. guests table row deleted by room_number (no hotel_id column in guests)
+3. Room fields cleared: assigned_to, cleaning_at, cleaned_at, inspected_at = null
+4. Realtime DELETE event fires on guest's checkoutChannel → instant logout
+5. Guest cannot re-login without QR scan (guests record gone)
 
 ---
 
-## 17. PASSWORD SECURITY
+## 14. TIMESTAMPS
 
-Staff: bcrypt.hash(password, 10) on register, bcrypt.compare on login
-Super Admin: plain text (hash before production)
-Library: bcryptjs in package.json
-
----
-
-## 18. SUPER ADMIN (SentinelAdmin.tsx)
-
-Hotels tab: create/edit/suspend hotels + services config toggles
-Rooms tab: bulk create (floor + range + type, max 100), single add, delete
-All rooms saved with hotel_id — never NULL
-Room types: Standard, Deluxe, Suite, Junior Suite, Presidential Suite,
-            Studio, Villa, Penthouse, Connecting Room
+All 16 toLocaleTimeString calls use timeZone:'Asia/Dubai' — no exceptions
+formatTime: adds 'Z' if no timezone, then converts to Asia/Dubai
+accepted_at / closed_at: stored as UTC (new Date().toISOString())
+Both display correctly in UAE time
 
 ---
 
-## 19. QR CODE SYSTEM
+## 15. GUEST NOTIFICATIONS
 
-URL: smart-service-rho.vercel.app?room=401&hotel=abc-uuid-123
-Generated in Executive Dashboard → QR tab
-Card shows: room number + QR + welcome message (no URL shown)
-Requires rooms in DB — no fallback dummy rooms
-hotelSuffix = profile.hotelId ? '&hotel=' + profile.hotelId : ''
+guestNotification state in App() function.
+Realtime subscriptions in guest useEffect:
+  1. requests table (all events) → fetchRequests
+  2. restaurant_bookings UPDATE → check guest_id → show popup with rejection_reason
+  3. concierge_bookings UPDATE → check guest_id → show popup with rejection_reason
+  4. guests DELETE (checkoutChannel) → instant logout via window.location.reload()
 
----
-
-## 20. PERFORMANCE REPORTS
-
-Manager → Report tab: Today | This Week | This Month
-Badges: 🥇 The Supernova | 🥈 The North Star | 🥉 The Rising Comet
-On-time colours: Green ≥90% | Yellow ≥70% | Red <70%
+checkoutChannel cleanup: supabase.removeChannel(checkoutChannel) on unmount
+NOTE: checkoutChannel is only in the GUEST useEffect — not in RestaurantPortal
 
 ---
 
-## 21. KNOWN GOTCHAS
+## 16. COMPONENT ARCHITECTURE (App.tsx)
 
-1. NEVER use .or('hotel_id.eq.X,hotel_id.is.null') — causes ALL clients to see test data
-2. Never strip timezone from timestamps — just .replace(' ','T')
-3. useState inside JSX = React hooks crash
-4. Unclosed JSX divs = cascading TypeScript errors
-5. Always push types.ts WITH App.tsx
-6. Multiple JSX siblings in ternary branches need <></> fragment wrapper
-7. Logo/cover from restaurants table (r.logo_url) NOT restaurant_settings (s.logo_url)
-8. RESTAURANTS constant REMOVED — use restaurants state from DB
-9. MENU_ITEMS constant REMOVED — use menuItems state from DB
-10. services_config null = all services shown (testing mode)
-11. SLA onConflict MUST be 'department,hotel_id' not just 'department'
-12. Reservation Agent must use .neq('service_key','room_service') to exclude room service
-13. fetchSLA MUST run inside poll interval, not just on mount
-14. Concierge cancel modal needs conciergeCancelModal state + conciergeRejectReason state
-15. Duplicate icon imports cause TS2300 error — always check before adding imports
-16. hotel_clients + super_admin tables must NEVER be deleted (owner data)
-17. rejection_reason column added to restaurant_bookings AND concierge_bookings in Session 4
+App() — router + shared state
+├── Guest Notification Modal (guestNotification state)
+├── Auth — guest login + hotel code entry
+├── StaffLogin — email + bcrypt
+├── RoomService — dynamic menu from DB
+├── RestaurantBooking — guest booking (NO auto-print)
+├── Concierge — booking portal
+├── RestaurantPortal (~1037 lines) — F&B management
+│   └── Tabs: book | mybookings | manage | walkin | menu | settings
+│   NOTE: Tab click = setActiveTab(tab.key as any) only — no fetchStaffLogs here
+├── StaffPortal (~689 lines)
+│   ├── fetchTasks() + fetchSLA() + fetchRooms() + fetchConciergeBookings()
+│   ├── conciergeCancelModal + handlePrintStaffLogs
+│   └── Tabs: active | history | rooms (HK) | maintenance
+├── DeptManagerDashboard (~623 lines)
+│   ├── fetchStaffLogs() — defined here, called here only
+│   ├── handlePrintStaffLogs() — string concat (no nested template literals)
+│   └── Tabs: requests|sla|staff|settings|report|restaurants|rooms|concierge|stafflogs
+│   activeTab type: 'requests'|'sla'|'staff'|'settings'|'restaurants'|'rooms'|'report'|'concierge'|'stafflogs'
+├── ConciergeManagerTab — polls every 10s
+└── ExecutiveDashboard
+    ├── conciergeBookingsRevenue state (fetched separately)
+    └── Tabs: analytics|leaderboard|sla|requests|staff|qr|restaurants
 
 ---
 
-## 22. SQL RUN IN SESSION 4
+## 17. EXECUTIVE DASHBOARD — REVENUE
+
+Total = requests.total_price (Completed) + concierge_bookings.total_price (Completed)
+conciergeBookingsRevenue fetched in fetchData() alongside requests
+deptRevenue: Concierge bar adds conciergeBookingRev on top of requests revenue
+
+---
+
+## 18. STAFF LOGS (Manager Dashboard)
+
+Tab: 📋 Staff Logs in DeptManagerDashboard
+fetchStaffLogs(): reads audit_logs filtered by hotel_id, limit 200
+handlePrintStaffLogs(): string concatenation only — NO nested template literals
+Print button: handlePrintStaffLogs — opens browser print dialog
+Tab click: { const k = tab.key as any; setActiveTab(k); if (k === 'stafflogs') fetchStaffLogs(); }
+
+---
+
+## 19. STORAGE
+
+Bucket: hotel-assets — PRIVATE
+getStoragePath(): extracts path from full URL
+getSignedUrl(): calls createSignedUrl() for 1h expiry
+fetchRestaurants(): converts logo_url + cover_url to signed URLs before setState
+Upload validation: MIME image/* + 2MB + sanitized extension
+These helper functions are defined BEFORE RestaurantPortal component
+
+---
+
+## 20. SUPER ADMIN (SentinelAdmin.tsx)
+
+Login: .eq('email', email).single() only — then bcrypt.compare(typed, data.password)
+bcryptjs imported at top of SentinelAdmin.tsx
+Hotels tab: create/edit/suspend + services config
+Rooms tab: bulk create max 100, single add, delete all
+
+---
+
+## 21. KNOWN GOTCHAS — NEVER VIOLATE
+
+1. NEVER .or('hotel_id.is.null') — cross-contamination
+2. NEVER strip timezone — .replace(' ','T') only
+3. SLA onConflict MUST be 'department,hotel_id'
+4. fetchSLA MUST run in poll interval (not just mount)
+5. Duplicate icon imports → TS2300 error
+6. Always push types.ts WITH App.tsx
+7. Multiple JSX siblings in ternary → <></> fragment
+8. logo/cover from restaurants table (r.logo_url) NOT restaurant_settings
+9. MENU_ITEMS constant removed — uses DB
+10. RESTAURANTS constant removed — uses DB
+11. super_admin password is bcrypt (pgcrypto) — never plain text in query
+12. hotel_clients + super_admin tables NEVER delete (owner data)
+13. rejection_reason on restaurant_bookings AND concierge_bookings
+14. service_key column on requests table
+15. logAudit() always wrapped in try/catch — must never throw
+16. Storage bucket PRIVATE — always getSignedUrl() to display
+17. guests table deleted on Checked Out — realtime fires on guest browser
+18. Inspected: HK Attendant blocked, HK Supervisor allowed
+19. fetchStaffLogs defined AND called only in DeptManagerDashboard — NOT RestaurantPortal
+20. handlePrintStaffLogs uses string concatenation — NO nested template literals (backticks)
+21. checkoutChannel defined in GUEST useEffect only — NOT in RestaurantPortal cleanup
+22. activeTab type in DeptManagerDashboard includes 'stafflogs'
+23. Guest restaurant booking: NO auto-print on submit
+24. Walk-in booking: manual print button only (reservation agent decides)
+
+---
+
+## 22. ALL SQL RUN (Sessions 3-5)
 
 ```sql
--- SLA unique constraint (required for saveSLA to work correctly)
-ALTER TABLE sla_settings DROP CONSTRAINT IF EXISTS sla_settings_department_key;
-ALTER TABLE sla_settings ADD CONSTRAINT sla_settings_dept_hotel_unique UNIQUE (department, hotel_id);
-
--- Rejection reason columns
+-- Columns
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS service_key TEXT;
 ALTER TABLE restaurant_bookings ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
 ALTER TABLE concierge_bookings ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
 
--- service_key column for requests
-ALTER TABLE requests ADD COLUMN IF NOT EXISTS service_key TEXT;
+-- SLA constraint
+ALTER TABLE sla_settings DROP CONSTRAINT IF EXISTS sla_settings_department_key;
+ALTER TABLE sla_settings ADD CONSTRAINT sla_settings_dept_hotel_unique UNIQUE (department, hotel_id);
 
--- Clean old test data with NULL hotel_id
-DELETE FROM requests WHERE hotel_id IS NULL;
-DELETE FROM restaurant_bookings WHERE hotel_id IS NULL;
+-- Super admin bcrypt
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+UPDATE super_admin SET password = crypt('password', gen_salt('bf', 10)) WHERE email = 'admin@email.com';
+
+-- Audit logs
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  hotel_id UUID, actor_id TEXT, actor_name TEXT, actor_role TEXT,
+  action TEXT NOT NULL, target_type TEXT, target_id TEXT,
+  details JSONB, created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS audit_logs_hotel_id_idx ON audit_logs(hotel_id);
+CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs(created_at DESC);
+
+-- RLS (all tables enabled, super_admin fully blocked, hotel_clients read-only)
+ALTER TABLE requests ENABLE ROW LEVEL SECURITY;
+-- ... (all 13 tables)
+
+-- Cleanup
+DELETE FROM sla_settings WHERE hotel_id IS NULL;
 DELETE FROM concierge_bookings WHERE hotel_id IS NULL;
+DELETE FROM requests WHERE hotel_id IS NULL;
 DELETE FROM staff WHERE hotel_id IS NULL;
 DELETE FROM rooms WHERE hotel_id IS NULL;
 ```
 
 ---
 
-## 23. BUSINESS PRICING
+## 23. PENDING (post-testing)
 
-Trial: AED 0 (30 days)
-Basic: AED 2,999/mo | AED 29,999/yr
-Standard: AED 4,999/mo | AED 49,999/yr
-Premium: AED 7,999/mo | AED 79,999/yr
+- [ ] Issue 2: Staff email format validation (skip — testing accounts active)
+- [ ] Enable qr_only mode per hotel after testing done
+- [ ] Code split into separate files (App.tsx ~4980 lines — high regression risk)
+- [ ] Pagination on requests/bookings (unlimited fetch now)
+- [ ] Supabase Auth migration (JWT sessions)
+- [ ] Per-hotel subdomain routing
+- [ ] Online payment for concierge bookings
+- [ ] Native iOS/Android app
+- [ ] Signed URL refresh strategy (currently 1h, regenerated on page load only)
 
 ---
 
-## 24. PENDING
+## 24. BUSINESS PRICING
 
-- [ ] Hash super_admin passwords before first paying client
-- [ ] Full Supabase Auth migration
-- [ ] Native iOS/Android app (Expo at /workspaces/Smart-service/SentinelProApp2)
-- [ ] Per-hotel subdomain routing
-- [ ] Online payment for concierge bookings (future)
+Trial: AED 0 (30 days) | Basic: AED 2,999/mo | Standard: AED 4,999/mo | Premium: AED 7,999/mo
 
 ---
 
 ## 25. SESSION RULES
 
-Before every change:
+Before EVERY change:
 1. Read this memory file fully
-2. Audit the exact lines of code before touching anything
+2. Audit exact code lines before touching anything
 3. Change ONLY what was asked — nothing else
-4. Run strict audit (check all affected + all untouched features)
-5. Fix any failures found in audit before presenting file
-6. State which files to replace and in what order
+4. Strict audit after every fix
+5. Present file only after all checks pass
 
 NEVER:
-- Use .or('hotel_id.is.null') in any query
+- Use .or('hotel_id.is.null')
 - Strip timezone from timestamps
-- Change onConflict for sla_settings away from 'department,hotel_id'
+- Change SLA onConflict away from 'department,hotel_id'
 - Add duplicate icon imports
-- Change any feature not mentioned in the request
+- Put plain text password in super_admin query
+- Add template literals inside template literals (use string concatenation)
+- Put DeptManagerDashboard-specific functions in RestaurantPortal
+- Skip the audit step
