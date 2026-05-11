@@ -915,7 +915,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
       .subscribe();
     // ✅ Polling fallback every 3 seconds
     const poll = setInterval(() => { fetchBookings(); }, 3000);
-    return () => { supabase.removeChannel(channel); supabase.removeChannel(checkoutChannel); clearInterval(poll); };
+    return () => { supabase.removeChannel(channel); clearInterval(poll); };
   }, [fetchBookings, fetchMenuItems, fetchSettings, fetchRestaurants, isFBManager, isExecutive, isStaff]);
 
   const submitBooking = async () => {
@@ -1379,7 +1379,7 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
         )}
         <div className="flex gap-0.5 flex-wrap pb-0">
           {tabs.map(tab => (
-            <button key={tab.key} onClick={() => { setActiveTab(tab.key as any); if (tab.key === 'stafflogs') fetchStaffLogs(); }}
+            <button key={tab.key} onClick={() => { const k = tab.key as any; setActiveTab(k); if (k === 'stafflogs') fetchStaffLogs(); }}
               className={cn('px-3 py-2 text-[9px] font-bold uppercase tracking-wider border-b-2',
                 activeTab === tab.key ? 'border-gold text-gold' : 'border-transparent text-white/50')}>
               {tab.label}
@@ -2938,7 +2938,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const [rooms, setRooms] = useState<any[]>([]);
   const [roomSearch, setRoomSearch] = useState('');
   const [repPeriod, setRepPeriod] = useState<'daily'|'weekly'|'monthly'>('daily');
-  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants' | 'rooms' | 'report' | 'concierge'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants' | 'rooms' | 'report' | 'concierge' | 'stafflogs'>('requests');
   const [now, setNow] = useState(Date.now());
   const [editSLA, setEditSLA] = useState<number>(5);
   const [showMgrRestaurant, setShowMgrRestaurant] = useState(false);
