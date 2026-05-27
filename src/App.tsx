@@ -317,6 +317,19 @@ const FeedbackModal: React.FC<{ request: any; onClose: () => void; onSubmit: (ra
 };
 
 // ─── ROOM SERVICE ─────────────────────────────────────────────────────────────
+// ─── SHARED UTILITY — used by StaffPortal, DeptManagerDashboard, ExecutiveDashboard
+const formatTime = (ts: any): string => {
+  if (!ts) return '—';
+  try {
+    let normalized = String(ts).trim().replace(' ', 'T');
+    // ✅ Check timezone at END of string only (not date separators like -27)
+    if (!/([Z]|[+\-]\d{2}(:\d{2})?)$/.test(normalized)) normalized += 'Z';
+    const d = new Date(normalized);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dubai' });
+  } catch { return '—'; }
+};
+
 const RoomService: React.FC<{ cart: { [id: string]: number }; updateCart: (id: string, delta: number) => void; onSubmit: (notes: string, items: any[]) => void }> = ({ cart, updateCart, onSubmit }) => {
   const { t } = useLanguage();
   const [notes, setNotes] = useState('');
@@ -2426,18 +2439,7 @@ const mapRow = (row: any) => ({
   };
   const getSLALimit = (dept: string) => (slaSettings[dept] || 30) * 60; // Default 30 min if not configured
 
-  const formatTime = (ts: any) => {
-    if (!ts) return '—';
-    try {
-      let normalized = String(ts).trim().replace(' ', 'T');
-      // ✅ FIX: Check for timezone ONLY at END of string (not date separators like -27)
-      if (!/([Z]|[+\-]\d{2}(:\d{2})?)$/.test(normalized)) normalized += 'Z';
-      const d = new Date(normalized);
-      if (isNaN(d.getTime())) return '—';
-      // Always display in UAE timezone (UTC+4) regardless of staff browser setting
-      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dubai' });
-    } catch { return '—'; }
-  };
+  // formatTime moved to module level
 
   const getDuration = (from: any, to: any) => {
     if (!from || !to) return null;
