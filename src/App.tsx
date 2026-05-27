@@ -2225,8 +2225,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const [newOrderAlert, setNewOrderAlert] = useState<string | null>(null);
   const [delayModalTask, setDelayModalTask] = useState<any | null>(null);
   const [delayReason, setDelayReason] = useState('');
-  const [acceptDelayReason, setAcceptDelayReason] = useState('');
-  const [acceptDelayTask, setAcceptDelayTask] = useState<any | null>(null);
+
   const [forwardModalTask, setForwardModalTask] = useState<any | null>(null);
   const [forwardDept, setForwardDept] = useState<Department>('Housekeeping');
   const [maintenanceForm, setMaintenanceForm] = useState({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
@@ -2431,7 +2430,8 @@ const mapRow = (row: any) => ({
     if (!ts) return '—';
     try {
       let normalized = String(ts).trim().replace(' ', 'T');
-      if (!/[Z+\-]\d{2}/.test(normalized)) normalized += 'Z';
+      // ✅ FIX: Check for timezone ONLY at END of string (not date separators like -27)
+      if (!/([Z]|[+\-]\d{2}(:\d{2})?)$/.test(normalized)) normalized += 'Z';
       const d = new Date(normalized);
       if (isNaN(d.getTime())) return '—';
       // Always display in UAE timezone (UTC+4) regardless of staff browser setting
@@ -2448,35 +2448,9 @@ const mapRow = (row: any) => ({
   };
 
   const handleAccept = async (id: string) => {
-    // ✅ FIX 3: Check if SLA already exceeded at time of accept
-    const task = tasks.find((t: any) => t.id === id);
-    if (task) {
-      const elapsed = getElapsed(task.timestamp);
-      const limit = getSLALimit(task.department);
-      if (elapsed > limit) {
-        // SLA exceeded before accept — ask for reason
-        setAcceptDelayTask({ ...task, pendingAcceptId: id });
-        setAcceptDelayReason('');
-        return;
-      }
-    }
+    // ✅ Staff can always accept freely — delay reason only required on CLOSE
     const acceptedAt = await getServerTime();
     await supabase.from('requests').update({ status: 'In Progress', accepted_at: acceptedAt, assigned_to: userProfile.displayName, assigned_to_email: userProfile.email }).eq('id', id);
-    await fetchTasks();
-  };
-
-  const handleAcceptWithReason = async () => {
-    if (!acceptDelayReason || !acceptDelayTask) return;
-    const acceptedAt = await getServerTime();
-    await supabase.from('requests').update({
-      status: 'In Progress',
-      accepted_at: acceptedAt,
-      assigned_to: userProfile.displayName,
-      assigned_to_email: userProfile.email,
-      late_reason: `Late Accept: ${acceptDelayReason}`,
-    }).eq('id', acceptDelayTask.pendingAcceptId);
-    setAcceptDelayTask(null);
-    setAcceptDelayReason('');
     await fetchTasks();
   };
 
@@ -2602,33 +2576,7 @@ const mapRow = (row: any) => ({
       </AnimatePresence>
       {/* Delay Modal */}
       <AnimatePresence>
-        {/* ACCEPT DELAY MODAL — SLA exceeded before staff accepted */}
-      {acceptDelayTask && (
-        <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
-          <div className="bg-[#001c36] p-8 max-w-md w-full border-t-4 border-orange-500 shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <AlertCircle className="text-orange-400" size={24} />
-              <h2 className="text-xl font-serif text-white">Late Accept — Reason Required</h2>
-            </div>
-            <p className="text-sm text-white/60 mb-1">Task: <span className="text-gold font-bold">{acceptDelayTask.type}</span></p>
-            <p className="text-sm text-white/60 mb-4">Room: <span className="text-white font-bold">#{acceptDelayTask.roomNumber}</span></p>
-            <p className="text-[11px] text-orange-400 mb-4">⚠ SLA was already exceeded before you accepted this request. Please explain why.</p>
-            <select value={acceptDelayReason} onChange={e => setAcceptDelayReason(e.target.value)}
-              className="w-full p-4 bg-white border border-orange-400 mb-5 text-sm text-navy outline-none">
-              <option value="">-- Select Reason (Required) --</option>
-              {DELAY_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-            <div className="flex gap-3">
-              <button onClick={() => { setAcceptDelayTask(null); setAcceptDelayReason(''); }}
-                className="flex-1 py-3 border border-gold/20 text-gold text-[10px] font-bold uppercase">Cancel</button>
-              <button disabled={!acceptDelayReason} onClick={handleAcceptWithReason}
-                className="flex-1 py-3 bg-orange-600 text-white text-[10px] font-bold uppercase disabled:opacity-40">Accept & Log Reason</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {delayModalTask && (
+        {delayModalTask && (
           <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#001c36] p-8 max-w-md w-full border-t-4 border-red-600 shadow-2xl">
               <div className="flex items-center gap-3 mb-4"><AlertCircle className="text-red-500" size={24} /><h2 className="text-xl font-serif text-white">SLA Violation — Reason Required</h2></div>
@@ -3000,6 +2948,8 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const [requests, setRequests] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [conciergeBookingsRevenue, setConciergeBookingsRevenue] = useState<any[]>([]);
+  const [execStaffLogs, setExecStaffLogs] = useState<any[]>([]);
+  const [execLogsLoading, setExecLogsLoading] = useState(false);
   const [slaConfig, setSlaConfig] = useState<any>({});
   const [staffLogs, setStaffLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -3126,9 +3076,17 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
     let q = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(200);
     if (hId) q = q.eq('hotel_id', hId);
-    // ✅ FIX: Show all staff in this hotel for this department
-    // Filter by hotel only — show all staff logins and actions, not just manager's own
-    // Department heads see their whole team's activity
+    // ✅ FIX: Manager sees dept staff logs only — get staff IDs in this dept first
+    const isExec = profile.occupation === 'Executive' || profile.department === 'None';
+    if (!isExec && profile.department && profile.department !== 'None') {
+      // Fetch all staff in this department for this hotel
+      const { data: deptStaff } = await supabase.from('staff')
+        .select('id').eq('hotel_id', hId).eq('department', profile.department);
+      if (deptStaff && deptStaff.length > 0) {
+        const staffIds = deptStaff.map((s: any) => s.id);
+        q = q.in('actor_id', staffIds);
+      }
+    }
     const { data } = await q;
     if (data) setStaffLogs(data);
     setLogsLoading(false);
@@ -3227,9 +3185,9 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     {req.late_reason && <p className="text-[9px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
                   </div>
                   <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
-                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T')).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>
-                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T')).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
-                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T')).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
+                    <p className="text-[8px] text-white/60 font-bold">📥 {formatTime(req.created_at)}</p>
+                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {formatTime(req.accepted_at)}</p>}
+                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {formatTime(req.closed_at)}</p>}
                     {req.closed_at && req.accepted_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
                     {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                     {over && <p className="text-red-400 text-xs font-bold">{getElapsedMin(req.created_at)}m elapsed</p>}
@@ -4020,9 +3978,11 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const [requests, setRequests] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [conciergeBookingsRevenue, setConciergeBookingsRevenue] = useState<any[]>([]);
+  const [execStaffLogs, setExecStaffLogs] = useState<any[]>([]);
+  const [execLogsLoading, setExecLogsLoading] = useState(false);
   const [slaSettings, setSlaSettings] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'analytics' | 'requests' | 'sla' | 'leaderboard' | 'staff' | 'qr' | 'restaurants'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'requests' | 'sla' | 'leaderboard' | 'staff' | 'qr' | 'restaurants' | 'stafflogs'>('analytics');
   const [reportPeriod, setReportPeriod] = useState<'weekly' | 'monthly'>('weekly');
   const [reportMenuOpen, setReportMenuOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -4067,6 +4027,17 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
+
+  const fetchExecStaffLogs = async () => {
+    setExecLogsLoading(true);
+    const hId = profile.hotelId;
+    let q = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(300);
+    if (hId) q = q.eq('hotel_id', hId);
+    // Executive sees ALL staff logs for the hotel
+    const { data } = await q;
+    if (data) setExecStaffLogs(data);
+    setExecLogsLoading(false);
+  };
 
   const getSLALimit = (dept: string) => { const s = slaSettings.find((x: any) => x.department === dept); return (s?.sla_minutes || 5) * 60; };
   const getSLAExceeded = (req: any) => { if (!req.created_at || req.status === 'Completed') return false; return (now - new Date(req.created_at).getTime()) / 1000 > getSLALimit(req.department); };
@@ -4365,8 +4336,9 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
               { key: 'staff', label: `Staff${allPendingCount > 0 ? `(${allPendingCount})` : ''}` },
               { key: 'qr', label: '📱 QR' },
               { key: 'restaurants', label: '🍽 Restaurants' },
+              { key: 'stafflogs', label: '📋 Staff Logs' },
             ].map(tab => (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={cn('px-2 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>{tab.label}</button>
+              <button key={tab.key} onClick={() => { const k = tab.key as any; setActiveTab(k); if (k === 'stafflogs') fetchExecStaffLogs(); }} className={cn('px-2 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>{tab.label}</button>
             ))}
           </div>
           <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
@@ -4475,8 +4447,7 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
       {/* SLA */}
       {activeTab === 'sla' && (
         <div className="space-y-4">
-          <h2 className="text-xl font-serif text-gold">SLA Monitoring — All Departments</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <h2 className="text-xl font-serif text-gold">SLA Monitoring — All Departments gap-3">
             {slaSettings.map((s: any) => (
               <div key={s.department} className="bg-[#001c36] border border-gold/10 p-3 text-center">
                 <p className="text-[9px] text-white/40 uppercase">{s.department}</p>
@@ -4544,9 +4515,9 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
                     {req.line_items && req.line_items.map((li: any, i: number) => <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>)}
                   </div>
                   <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
-                    <p className="text-[8px] text-white/60 font-bold">📥 {new Date(req.created_at.replace(' ','T')).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>
-                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {new Date(req.accepted_at.replace(' ','T')).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
-                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {new Date(req.closed_at.replace(' ','T')).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
+                    <p className="text-[8px] text-white/60 font-bold">📥 {formatTime(req.created_at)}</p>
+                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {formatTime(req.accepted_at)}</p>}
+                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {formatTime(req.closed_at)}</p>}
                     {req.closed_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
                     {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
                   </div>
