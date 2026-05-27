@@ -4845,7 +4845,7 @@ export default function App() {
           <AnimatePresence mode="wait">
             {!profile ? (
               <motion.div key="auth" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                {pathname === '/staff-portal' ? (
+                {(pathname === '/staff-portal' || queryParams.get('mode') === 'staff') ? (
                   <StaffLogin onLoginSuccess={p => setProfile(p)} onReturnToGuest={() => { window.history.pushState({}, '', '/'); setPathname('/'); }} />
                 ) : (
                   <Auth onLoginSuccess={p => setProfile(p)} initialRoom={roomNumber} isLocked={isRoomLocked} onNavigateToStaff={navigateToStaff} />
