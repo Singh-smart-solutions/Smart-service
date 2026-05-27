@@ -2225,6 +2225,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const [newOrderAlert, setNewOrderAlert] = useState<string | null>(null);
   const [delayModalTask, setDelayModalTask] = useState<any | null>(null);
   const [delayReason, setDelayReason] = useState('');
+  const [acceptDelayReason, setAcceptDelayReason] = useState('');
+  const [acceptDelayTask, setAcceptDelayTask] = useState<any | null>(null);
   const [forwardModalTask, setForwardModalTask] = useState<any | null>(null);
   const [forwardDept, setForwardDept] = useState<Department>('Housekeeping');
   const [maintenanceForm, setMaintenanceForm] = useState({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
@@ -2273,7 +2275,18 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
     if (data) { const map: any = {}; data.forEach((s: any) => { map[s.department] = s.sla_minutes; }); setSlaSettings(map); }
   };
 
-  const mapRow = (row: any) => ({
+  // ✅ FIX: Get server time via Supabase to avoid browser timezone issues
+  const getServerTime = async (): Promise<string> => {
+    try {
+      // Use a lightweight query to get server timestamp
+      const { data } = await supabase.from('sla_settings').select('now()' as any).limit(1);
+      if (data && data[0] && data[0]['now()']) return data[0]['now()'];
+    } catch { /* fallback */ }
+    // Fallback: use client time with explicit UTC marker
+    return new Date().toISOString();
+  };
+
+const mapRow = (row: any) => ({
     id: row.id, roomNumber: row.guest_room || '', type: row.service || '',
     message: row.notes,
     originalMessage: row.notes, // preserved original language
@@ -2435,8 +2448,35 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   };
 
   const handleAccept = async (id: string) => {
-    await supabase.from('requests').update({ status: 'In Progress', accepted_at: new Date().toISOString(), assigned_to: userProfile.displayName, assigned_to_email: userProfile.email }).eq('id', id);
-    // ✅ Immediately refresh so button switches from Accept to Complete
+    // ✅ FIX 3: Check if SLA already exceeded at time of accept
+    const task = tasks.find((t: any) => t.id === id);
+    if (task) {
+      const elapsed = getElapsed(task.timestamp);
+      const limit = getSLALimit(task.department);
+      if (elapsed > limit) {
+        // SLA exceeded before accept — ask for reason
+        setAcceptDelayTask({ ...task, pendingAcceptId: id });
+        setAcceptDelayReason('');
+        return;
+      }
+    }
+    const acceptedAt = await getServerTime();
+    await supabase.from('requests').update({ status: 'In Progress', accepted_at: acceptedAt, assigned_to: userProfile.displayName, assigned_to_email: userProfile.email }).eq('id', id);
+    await fetchTasks();
+  };
+
+  const handleAcceptWithReason = async () => {
+    if (!acceptDelayReason || !acceptDelayTask) return;
+    const acceptedAt = await getServerTime();
+    await supabase.from('requests').update({
+      status: 'In Progress',
+      accepted_at: acceptedAt,
+      assigned_to: userProfile.displayName,
+      assigned_to_email: userProfile.email,
+      late_reason: `Late Accept: ${acceptDelayReason}`,
+    }).eq('id', acceptDelayTask.pendingAcceptId);
+    setAcceptDelayTask(null);
+    setAcceptDelayReason('');
     await fetchTasks();
   };
 
@@ -2449,7 +2489,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       setDelayReason('');
       return;
     }
-    await supabase.from('requests').update({ status: 'Completed', closed_at: new Date().toISOString() }).eq('id', task.id);
+    const closedAt = await getServerTime();
+    await supabase.from('requests').update({ status: 'Completed', closed_at: closedAt }).eq('id', task.id);
     logAudit('request_completed', { id: userProfile.uid, name: userProfile.displayName, role: userProfile.occupation || 'staff', hotelId: userProfile.hotelId },
       { type: 'request', id: task.id }, { service: task.type, room: task.roomNumber });
     const { data: sr } = await supabase.from('staff').select('tasks_completed,tasks_on_time').eq('id', userProfile.uid).single();
@@ -2460,7 +2501,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
 
   const handleCompleteWithReason = async () => {
     if (!delayReason || !delayModalTask) return;
-    await supabase.from('requests').update({ status: 'Completed', closed_at: new Date().toISOString(), late_reason: delayReason }).eq('id', delayModalTask.id);
+    const closedAtR = await getServerTime();
+    await supabase.from('requests').update({ status: 'Completed', closed_at: closedAtR, late_reason: delayReason }).eq('id', delayModalTask.id);
     const { data: sr } = await supabase.from('staff').select('tasks_completed,violations').eq('id', userProfile.uid).single();
     if (sr) await supabase.from('staff').update({ tasks_completed: (sr.tasks_completed || 0) + 1, violations: (sr.violations || 0) + 1 }).eq('id', userProfile.uid);
     setDelayModalTask(null); setDelayReason('');
@@ -2560,7 +2602,33 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
       </AnimatePresence>
       {/* Delay Modal */}
       <AnimatePresence>
-        {delayModalTask && (
+        {/* ACCEPT DELAY MODAL — SLA exceeded before staff accepted */}
+      {acceptDelayTask && (
+        <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
+          <div className="bg-[#001c36] p-8 max-w-md w-full border-t-4 border-orange-500 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <AlertCircle className="text-orange-400" size={24} />
+              <h2 className="text-xl font-serif text-white">Late Accept — Reason Required</h2>
+            </div>
+            <p className="text-sm text-white/60 mb-1">Task: <span className="text-gold font-bold">{acceptDelayTask.type}</span></p>
+            <p className="text-sm text-white/60 mb-4">Room: <span className="text-white font-bold">#{acceptDelayTask.roomNumber}</span></p>
+            <p className="text-[11px] text-orange-400 mb-4">⚠ SLA was already exceeded before you accepted this request. Please explain why.</p>
+            <select value={acceptDelayReason} onChange={e => setAcceptDelayReason(e.target.value)}
+              className="w-full p-4 bg-white border border-orange-400 mb-5 text-sm text-navy outline-none">
+              <option value="">-- Select Reason (Required) --</option>
+              {DELAY_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <div className="flex gap-3">
+              <button onClick={() => { setAcceptDelayTask(null); setAcceptDelayReason(''); }}
+                className="flex-1 py-3 border border-gold/20 text-gold text-[10px] font-bold uppercase">Cancel</button>
+              <button disabled={!acceptDelayReason} onClick={handleAcceptWithReason}
+                className="flex-1 py-3 bg-orange-600 text-white text-[10px] font-bold uppercase disabled:opacity-40">Accept & Log Reason</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {delayModalTask && (
           <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#001c36] p-8 max-w-md w-full border-t-4 border-red-600 shadow-2xl">
               <div className="flex items-center gap-3 mb-4"><AlertCircle className="text-red-500" size={24} /><h2 className="text-xl font-serif text-white">SLA Violation — Reason Required</h2></div>
@@ -3058,10 +3126,9 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
     let q = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(200);
     if (hId) q = q.eq('hotel_id', hId);
-    // Filter to this department's staff actions only
-    if (profile.department && profile.department !== 'None') {
-      q = q.or(`details->>'department'.eq.${profile.department},actor_role.eq.${profile.occupation}`);
-    }
+    // ✅ FIX: Show all staff in this hotel for this department
+    // Filter by hotel only — show all staff logins and actions, not just manager's own
+    // Department heads see their whole team's activity
     const { data } = await q;
     if (data) setStaffLogs(data);
     setLogsLoading(false);
