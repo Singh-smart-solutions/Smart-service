@@ -1,5 +1,5 @@
 // Sentinel Pro Service Worker
-const CACHE_NAME = 'sentinel-pro-v1';
+const CACHE_NAME = 'sentinel-pro-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
