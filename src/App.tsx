@@ -3077,13 +3077,12 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     setLogsLoading(true);
     const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
     let q = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(200);
-    if (hId) q = q.eq('hotel_id', hId);
-    // ✅ FIX: Manager sees dept staff logs only — get staff IDs in this dept first
+    if (hId) q = q.or(`hotel_id.eq.${hId},hotel_id.is.null`);
+    // ✅ Manager sees own dept staff only; Executive sees all
     const isExec = profile.occupation === 'Executive' || profile.department === 'None';
     if (!isExec && profile.department && profile.department !== 'None') {
-      // Fetch all staff in this department for this hotel
       const { data: deptStaff } = await supabase.from('staff')
-        .select('id').eq('hotel_id', hId).eq('department', profile.department);
+        .select('id').eq('department', profile.department);
       if (deptStaff && deptStaff.length > 0) {
         const staffIds = deptStaff.map((s: any) => s.id);
         q = q.in('actor_id', staffIds);
