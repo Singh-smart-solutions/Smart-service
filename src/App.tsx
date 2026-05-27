@@ -4447,7 +4447,8 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
       {/* SLA */}
       {activeTab === 'sla' && (
         <div className="space-y-4">
-          <h2 className="text-xl font-serif text-gold">SLA Monitoring — All Departments gap-3">
+          <h2 className="text-xl font-serif text-gold">SLA Monitoring — All Departments</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {slaSettings.map((s: any) => (
               <div key={s.department} className="bg-[#001c36] border border-gold/10 p-3 text-center">
                 <p className="text-[9px] text-white/40 uppercase">{s.department}</p>
