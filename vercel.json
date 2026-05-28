@@ -1,8 +1,10 @@
 {
   "rewrites": [
-    {
-      "source": "/((?!assets|icons|sw.js|manifest.json|favicon.ico|vite.svg).*)",
-      "destination": "/index.html"
-    }
+    { "source": "/assets/:path*", "destination": "/assets/:path*" },
+    { "source": "/icons/:path*", "destination": "/icons/:path*" },
+    { "source": "/sw.js", "destination": "/sw.js" },
+    { "source": "/manifest.json", "destination": "/manifest.json" },
+    { "source": "/favicon.ico", "destination": "/favicon.ico" },
+    { "source": "/:path*", "destination": "/index.html" }
   ]
 }
