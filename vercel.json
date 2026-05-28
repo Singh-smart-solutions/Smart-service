@@ -1,7 +1,8 @@
 {
   "rewrites": [
-    { "source": "/sw.js", "destination": "/sw.js" },
-    { "source": "/manifest.json", "destination": "/manifest.json" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/((?!assets|icons|sw.js|manifest.json|favicon.ico|vite.svg).*)",
+      "destination": "/index.html"
+    }
   ]
 }
