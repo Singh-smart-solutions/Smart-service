@@ -2290,11 +2290,10 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   // ✅ FIX: Get server time via Supabase to avoid browser timezone issues
   const getServerTime = async (): Promise<string> => {
     try {
-      // Use a lightweight query to get server timestamp
-      const { data } = await supabase.from('sla_settings').select('now()' as any).limit(1);
-      if (data && data[0] && data[0]['now()']) return data[0]['now()'];
+      // ✅ Use Supabase rpc to get server time — guaranteed correct regardless of device clock
+      const { data, error } = await supabase.rpc('get_server_time') as any;
+      if (!error && data) return String(data);
     } catch { /* fallback */ }
-    // Fallback: use client time with explicit UTC marker
     return new Date().toISOString();
   };
 
@@ -2692,8 +2691,10 @@ const mapRow = (row: any) => ({
                   </div>
                 </div>
                 <div className="pt-3 space-y-2">
-                  {task.status === 'Pending' ? (
-                    <button onClick={() => handleAccept(task.id)} className="gold-button w-full m-0 py-2.5 text-[10px]">Accept Task</button>
+                  {(task.status === 'Pending' || task.status === 'Violated') ? (
+                    <button onClick={() => handleAccept(task.id)} className={cn('w-full m-0 py-2.5 text-[10px] font-bold uppercase', task.status === 'Violated' ? 'bg-orange-600 text-white' : 'gold-button')}>
+                      {task.status === 'Violated' ? '⚠ Accept Task (SLA Exceeded)' : 'Accept Task'}
+                    </button>
                   ) : (
                     <button onClick={() => handleComplete(task)} className={cn('w-full py-2.5 font-bold uppercase text-[10px]', isViolated ? 'bg-red-600 text-white' : 'bg-green-600 text-white')}>
                       {isViolated ? '⚠ Close (Reason Required)' : '✓ Mark Completed'}
@@ -3076,20 +3077,91 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const fetchStaffLogs = async () => {
     setLogsLoading(true);
     const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
-    let q = supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(200);
-    if (hId) q = q.or(`hotel_id.eq.${hId},hotel_id.is.null`);
-    // ✅ Manager sees own dept staff only; Executive sees all
     const isExec = profile.occupation === 'Executive' || profile.department === 'None';
-    if (!isExec && profile.department && profile.department !== 'None') {
+    const dept = profile.department;
+
+    // ✅ Pull COMPLETED requests as activity — this is real staff activity data
+    let rQ = supabase.from('requests').select('*')
+      .not('closed_at', 'is', null)
+      .order('closed_at', { ascending: false }).limit(200);
+    if (hId) rQ = rQ.eq('hotel_id', hId);
+    if (!isExec && dept && dept !== 'None') rQ = rQ.eq('department', dept);
+
+    // ✅ Also pull pending/in-progress requests for full picture
+    let aQ = supabase.from('requests').select('*')
+      .in('status', ['Pending','In Progress','Violated'])
+      .order('created_at', { ascending: false }).limit(100);
+    if (hId) aQ = aQ.eq('hotel_id', hId);
+    if (!isExec && dept && dept !== 'None') aQ = aQ.eq('department', dept);
+
+    // ✅ Also pull audit_logs for login/approval events
+    let lQ = supabase.from('audit_logs').select('*')
+      .order('created_at', { ascending: false }).limit(100);
+    if (hId) lQ = lQ.or(`hotel_id.eq.${hId},hotel_id.is.null`);
+    if (!isExec && dept && dept !== 'None') {
       const { data: deptStaff } = await supabase.from('staff')
-        .select('id').eq('department', profile.department);
+        .select('id, name').eq('department', dept);
       if (deptStaff && deptStaff.length > 0) {
-        const staffIds = deptStaff.map((s: any) => s.id);
-        q = q.in('actor_id', staffIds);
+        lQ = lQ.in('actor_id', deptStaff.map((s: any) => s.id));
       }
     }
-    const { data } = await q;
-    if (data) setStaffLogs(data);
+
+    const [{ data: completedReqs }, { data: activeReqs }, { data: auditData }] = await Promise.all([rQ, aQ, lQ]);
+
+    // Combine into unified log format
+    const combined: any[] = [];
+
+    // Map completed requests to log entries
+    (completedReqs || []).forEach((r: any) => {
+      combined.push({
+        id: r.id + '-complete',
+        created_at: r.closed_at,
+        actor_name: r.assigned_to || 'Unknown Staff',
+        actor_role: r.department,
+        action: 'request_completed',
+        details: {
+          service: r.service,
+          room: r.guest_room,
+          accepted: r.accepted_at ? new Date(r.accepted_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dubai' }) : '—',
+          completed: r.closed_at ? new Date(r.closed_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dubai' }) : '—',
+          late_reason: r.late_reason || null,
+        },
+        _type: 'request',
+        _raw: r,
+      });
+      if (r.accepted_at) {
+        combined.push({
+          id: r.id + '-accept',
+          created_at: r.accepted_at,
+          actor_name: r.assigned_to || 'Unknown Staff',
+          actor_role: r.department,
+          action: 'request_accepted',
+          details: { service: r.service, room: r.guest_room },
+          _type: 'request',
+        });
+      }
+    });
+
+    // Map active requests
+    (activeReqs || []).forEach((r: any) => {
+      combined.push({
+        id: r.id + '-active',
+        created_at: r.accepted_at || r.created_at,
+        actor_name: r.assigned_to || 'Unassigned',
+        actor_role: r.department,
+        action: r.status === 'Violated' ? 'sla_violated' : r.status === 'In Progress' ? 'request_accepted' : 'request_pending',
+        details: { service: r.service, room: r.guest_room, status: r.status },
+        _type: 'request',
+      });
+    });
+
+    // Add audit logs (logins, approvals etc)
+    (auditData || []).forEach((l: any) => combined.push({ ...l, _type: 'audit' }));
+
+    // Sort by time desc
+    combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    setStaffLogs(combined.slice(0, 300));
     setLogsLoading(false);
   };
 
