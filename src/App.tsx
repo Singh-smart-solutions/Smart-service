@@ -3385,6 +3385,16 @@ const RoomLiveBoard: React.FC<{ rooms: any[]; onReactivate?: (roomId: string) =>
                     || (room.cleaning_at && !room.cleaned_at ? `Cleaning since ${formatTime(room.cleaning_at)}` : '')
                     || (room.status === 'Dirty' && !room.cleaned_by ? 'Not yet assigned' : '')}
                 </td>
+                {onReactivate && (
+                  <td className="py-1.5 px-2">
+                    {room.status === 'Checked Out' && (
+                      <button onClick={() => onReactivate(room.id)}
+                        className="px-2 py-1 bg-green-700 text-white text-[8px] font-bold uppercase">
+                        ✅ Re-activate
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
             {filtered.length === 0 && (
@@ -5003,17 +5013,7 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
                         <td className="p-3 text-center text-sm font-bold text-white">{staff.tasks_completed || 0}</td>
                         <td className="p-3 text-center"><span className="bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">{staff.violations || 0}</span></td>
                         <td className="p-3 text-right"><button onClick={() => forceLogout(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Force Logout</button></td>
-                        {onReactivate && (
-                          <td className="py-1.5 px-2">
-                            {room.status === 'Checked Out' && (
-                              <button onClick={() => onReactivate(room.id)}
-                                className="px-2 py-1 bg-green-700 text-white text-[8px] font-bold uppercase hover:bg-green-600 whitespace-nowrap">
-                                ✅ Re-activate
-                              </button>
-                            )}
-                          </td>
-                        )}
-                      </tr>
+
                     ))}
                   </tbody>
                 </table>
