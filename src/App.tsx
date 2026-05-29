@@ -2540,6 +2540,8 @@ const mapRow = (row: any) => ({
 
   const staffLogout = async () => {
   await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid);
+  logAudit('staff_logout', { id: userProfile.uid, name: userProfile.displayName, role: userProfile.occupation || 'staff', hotelId: userProfile.hotelId },
+    { type: 'staff', id: userProfile.uid }, { department: userProfile.department });
   localStorage.clear(); window.location.replace('/');
 };
 
@@ -2949,10 +2951,12 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const [slaConfig, setSlaConfig] = useState<any>({});
   const [staffLogs, setStaffLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [liveData, setLiveData] = useState<{ onlineStaff: any[], activeRequests: any[] }>({ onlineStaff: [], activeRequests: [] });
+  const [liveLoading, setLiveLoading] = useState(false);
   const [rooms, setRooms] = useState<any[]>([]);
   const [roomSearch, setRoomSearch] = useState('');
   const [repPeriod, setRepPeriod] = useState<'daily'|'weekly'|'monthly'>('daily');
-  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants' | 'rooms' | 'report' | 'concierge' | 'stafflogs'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants' | 'rooms' | 'report' | 'concierge' | 'stafflogs' | 'live'>('requests');
   const [now, setNow] = useState(Date.now());
   const [editSLA, setEditSLA] = useState<number>(5);
   const [showMgrRestaurant, setShowMgrRestaurant] = useState(false);
@@ -3031,6 +3035,24 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const rejectStaff = async (id: string) => { if (window.confirm('Are you sure you want to reject and delete this profile?')) { await supabase.from('staff').delete().eq('id', id); showToast('Staff profile rejected and deleted', 'info'); } };
   const terminateStaff = async (id: string) => { await supabase.from('staff').update({ approved: false, logged_in: false }).eq('id', id); };
   const forceLogout = async (id: string) => { await supabase.from('staff').update({ logged_in: false, device_id: null }).eq('id', id); showToast('Staff member logged out successfully', 'success'); };
+  const fetchLiveData = async () => {
+    setLiveLoading(true);
+    const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    const isExec = profile.occupation === 'Executive' || profile.department === 'None';
+    const dept = profile.department;
+    // Fetch online staff
+    let sQ = supabase.from('staff').select('id, name, occupation, department, logged_in, tasks_completed, violations').eq('logged_in', true);
+    if (hId) sQ = sQ.eq('hotel_id', hId);
+    if (!isExec && dept && dept !== 'None') sQ = sQ.eq('department', dept);
+    // Fetch active requests
+    let rQ = supabase.from('requests').select('*').in('status', ['Pending', 'In Progress', 'Violated']).order('created_at', { ascending: false });
+    if (hId) rQ = rQ.eq('hotel_id', hId);
+    if (!isExec && dept && dept !== 'None') rQ = rQ.eq('department', dept);
+    const [{ data: staffData }, { data: reqData }] = await Promise.all([sQ, rQ]);
+    setLiveData({ onlineStaff: staffData || [], activeRequests: reqData || [] });
+    setLiveLoading(false);
+  };
+
   const handlePrintStaffLogs = () => {
     const win = window.open('', '_blank');
     if (!win) return;
@@ -3115,35 +3137,33 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         details: {
           service: r.service,
           room: r.guest_room,
-          accepted: r.accepted_at ? new Date(r.accepted_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dubai' }) : '—',
-          completed: r.closed_at ? new Date(r.closed_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Dubai' }) : '—',
+          guest: r.guest_name || '—',
+          requested: formatTime(r.created_at),
+          accepted: formatTime(r.accepted_at),
+          completed: formatTime(r.closed_at),
           late_reason: r.late_reason || null,
         },
         _type: 'request',
         _raw: r,
       });
-      if (r.accepted_at) {
-        combined.push({
-          id: r.id + '-accept',
-          created_at: r.accepted_at,
-          actor_name: r.assigned_to || 'Unknown Staff',
-          actor_role: r.department,
-          action: 'request_accepted',
-          details: { service: r.service, room: r.guest_room },
-          _type: 'request',
-        });
-      }
     });
 
     // Map active requests
     (activeReqs || []).forEach((r: any) => {
       combined.push({
         id: r.id + '-active',
-        created_at: r.accepted_at || r.created_at,
+        created_at: r.created_at,
         actor_name: r.assigned_to || 'Unassigned',
         actor_role: r.department,
-        action: r.status === 'Violated' ? 'sla_violated' : r.status === 'In Progress' ? 'request_accepted' : 'request_pending',
-        details: { service: r.service, room: r.guest_room, status: r.status },
+        action: r.status === 'Violated' ? 'sla_violated' : r.status === 'In Progress' ? 'request_in_progress' : 'request_pending',
+        details: {
+          service: r.service,
+          room: r.guest_room,
+          guest: r.guest_name || '—',
+          status: r.status,
+          requested: formatTime(r.created_at),
+          accepted: formatTime(r.accepted_at),
+        },
         _type: 'request',
       });
     });
@@ -3152,7 +3172,11 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     (auditData || []).forEach((l: any) => combined.push({ ...l, _type: 'audit' }));
 
     // Sort by time desc
-    combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    combined.sort((a, b) => {
+      const ta = a.created_at ? new Date(String(a.created_at).trim().replace(' ','T')).getTime() : 0;
+      const tb = b.created_at ? new Date(String(b.created_at).trim().replace(' ','T')).getTime() : 0;
+      return tb - ta;
+    });
 
     setStaffLogs(combined.slice(0, 300));
     setLogsLoading(false);
@@ -3202,12 +3226,13 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               { key: 'staff', label: `Staff${pendingStaff.length > 0 ? ` (${pendingStaff.length})` : ''}` },
               { key: 'settings', label: '⚙ Settings' },
               { key: 'report', label: '📊 Report' },
+              { key: 'live', label: '🟢 Live' },
               { key: 'stafflogs', label: '📋 Staff Logs' },
               ...(profile.department === 'F&B' ? [{ key: 'restaurants', label: '🍽 Restaurants' }] : []),
               ...(profile.department === 'Housekeeping' ? [{ key: 'rooms', label: '🛏 Rooms' }] : []),
               ...(profile.department === 'Concierge' ? [{ key: 'concierge', label: '🔑 Services' }] : []),
             ].map(tab => (
-              <button key={tab.key} onClick={() => { const k = tab.key as any; setActiveTab(k); if (k === 'stafflogs') fetchStaffLogs(); }} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
+              <button key={tab.key} onClick={() => { const k = tab.key as any; setActiveTab(k); if (k === 'stafflogs') fetchStaffLogs(); if (k === 'live') fetchLiveData(); }} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
           <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
@@ -3511,7 +3536,97 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         );
       })()}
 
-            {/* Staff Logs Tab */}
+            {/* Live Dashboard Tab */}
+      {activeTab === 'live' && (
+        <div className="space-y-4 p-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-serif text-gold">🟢 Live Dashboard</h2>
+              <p className="text-white/40 text-[9px] uppercase tracking-widest mt-1">
+                {profile.department !== 'None' ? profile.department + ' Department · ' : 'All Departments · '}{profile.hotelName}
+              </p>
+            </div>
+            <button onClick={fetchLiveData} className="px-4 py-2 border border-gold/30 text-gold text-[9px] uppercase tracking-widest hover:bg-gold/10">
+              🔄 Refresh
+            </button>
+          </div>
+
+          {liveLoading ? (
+            <div className="text-center py-12 text-white/30 text-sm">Loading live data...</div>
+          ) : (
+            <div className="space-y-6">
+
+              {/* Online Staff */}
+              <div>
+                <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold border-b border-gold/20 pb-2 mb-3">
+                  👥 Online Staff ({liveData.onlineStaff.length})
+                </h3>
+                {liveData.onlineStaff.length === 0 ? (
+                  <p className="text-white/30 text-[11px]">No staff currently logged in</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {liveData.onlineStaff.map((s: any) => (
+                      <div key={s.id} className="bg-[#001c36] border border-green-500/20 p-3 flex items-center gap-3">
+                        <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-[11px] font-bold truncate">{s.name}</p>
+                          <p className="text-white/40 text-[9px]">{s.occupation} · {s.department}</p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-green-400 text-[9px] font-bold">ONLINE</p>
+                          <p className="text-white/30 text-[8px]">{s.tasks_completed || 0} tasks</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Active Requests */}
+              <div>
+                <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold border-b border-gold/20 pb-2 mb-3">
+                  📋 Active Requests ({liveData.activeRequests.length})
+                </h3>
+                {liveData.activeRequests.length === 0 ? (
+                  <p className="text-white/30 text-[11px]">No active requests</p>
+                ) : (
+                  <div className="space-y-2">
+                    {liveData.activeRequests.map((r: any) => (
+                      <div key={r.id} className={cn('bg-[#001c36] border p-3 space-y-1',
+                        r.status === 'Violated' ? 'border-red-500/40' :
+                        r.status === 'In Progress' ? 'border-blue-500/20' : 'border-gold/10')}>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="text-white text-[11px] font-bold">{r.service}</span>
+                            <span className="text-white/40 text-[9px] mx-2">·</span>
+                            <span className="text-gold text-[9px]">Room {r.guest_room}</span>
+                          </div>
+                          <span className={cn('text-[8px] font-bold px-2 py-0.5',
+                            r.status === 'Violated' ? 'bg-red-900/40 text-red-400' :
+                            r.status === 'In Progress' ? 'bg-blue-900/40 text-blue-400' :
+                            'bg-yellow-900/40 text-yellow-400')}>
+                            {r.status}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 text-[9px] text-white/50">
+                          <p>👤 Guest: <span className="text-white/70">{r.guest_name || '—'}</span></p>
+                          <p>🏨 Dept: <span className="text-white/70">{r.department}</span></p>
+                          <p>🕐 Requested: <span className="text-white/70">{formatTime(r.created_at)}</span></p>
+                          <p>✅ Accepted: <span className="text-white/70">{formatTime(r.accepted_at)}</span></p>
+                          {r.assigned_to && <p className="col-span-2">👷 Assigned: <span className="text-white/70">{r.assigned_to}</span></p>}
+                          {r.late_reason && <p className="col-span-2 text-red-400">⚠ {r.late_reason}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Staff Logs Tab */}
       {activeTab === 'stafflogs' && (
         <div className="space-y-4 p-4">
           <div className="flex justify-between items-center">
@@ -3562,13 +3677,27 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                         {new Date(log.created_at).toLocaleString('en-US', { timeZone: 'Asia/Dubai', hour12: true, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
-                    <p className="text-gold/80 text-[9px] uppercase tracking-wider mt-0.5">
+                    <p className={cn('text-[9px] uppercase tracking-wider mt-0.5 font-bold',
+                      log.action === 'request_completed' ? 'text-blue-400' :
+                      log.action === 'staff_login' ? 'text-green-400' :
+                      log.action === 'staff_logout' ? 'text-white/40' :
+                      log.action === 'sla_violated' ? 'text-red-400' :
+                      log.action === 'request_in_progress' ? 'text-yellow-400' :
+                      log.action === 'request_pending' ? 'text-white/50' : 'text-gold/80')}>
                       {log.action.replace(/_/g, ' ')}
                     </p>
                     {log.details && (
-                      <p className="text-white/30 text-[8px] mt-0.5">
-                        {Object.entries(log.details).map(([k,v]) => `${k.replace(/_/g,' ')}: ${v}`).join(' · ')}
-                      </p>
+                      <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5">
+                        {log.details.service && <p className="text-[8px] text-white/50 col-span-2">📋 <span className="text-white/70">{log.details.service}</span></p>}
+                        {log.details.room && <p className="text-[8px] text-white/50">🏨 Room: <span className="text-white/70">{log.details.room}</span></p>}
+                        {log.details.guest && <p className="text-[8px] text-white/50">👤 Guest: <span className="text-white/70">{log.details.guest}</span></p>}
+                        {log.details.requested && log.details.requested !== '—' && <p className="text-[8px] text-white/50">🕐 Requested: <span className="text-white/70">{log.details.requested}</span></p>}
+                        {log.details.accepted && log.details.accepted !== '—' && <p className="text-[8px] text-white/50">✅ Accepted: <span className="text-white/70">{log.details.accepted}</span></p>}
+                        {log.details.completed && log.details.completed !== '—' && <p className="text-[8px] text-white/50">🏁 Completed: <span className="text-white/70">{log.details.completed}</span></p>}
+                        {log.details.status && <p className="text-[8px] text-white/50">Status: <span className="text-white/70">{log.details.status}</span></p>}
+                        {log.details.department && <p className="text-[8px] text-white/50">Dept: <span className="text-white/70">{log.details.department}</span></p>}
+                        {log.details.late_reason && <p className="text-[8px] text-red-400 col-span-2">⚠ {log.details.late_reason}</p>}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -4402,6 +4531,7 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
               { key: 'staff', label: `Staff${allPendingCount > 0 ? `(${allPendingCount})` : ''}` },
               { key: 'qr', label: '📱 QR' },
               { key: 'restaurants', label: '🍽 Restaurants' },
+              { key: 'live', label: '🟢 Live' },
               { key: 'stafflogs', label: '📋 Staff Logs' },
             ].map(tab => (
               <button key={tab.key} onClick={() => { const k = tab.key as any; setActiveTab(k); if (k === 'stafflogs') fetchExecStaffLogs(); }} className={cn('px-2 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60 hover:text-gold')}>{tab.label}</button>
