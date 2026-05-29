@@ -3067,7 +3067,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const [slaConfig, setSlaConfig] = useState<any>({});
   const [staffLogs, setStaffLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
-  const [liveData, setLiveData] = useState<{ onlineStaff: any[], activeRequests: any[] }>({ onlineStaff: [], activeRequests: [] });
+  const [liveData, setLiveData] = useState<{ onlineStaff: any[], activeRequests: any[], rooms: any[] }>({ onlineStaff: [], activeRequests: [], rooms: [] });
   const [liveLoading, setLiveLoading] = useState(false);
   const [rooms, setRooms] = useState<any[]>([]);
   const [roomSearch, setRoomSearch] = useState('');
