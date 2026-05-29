@@ -2286,6 +2286,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const [conciergeBookings, setConciergeBookings] = useState<any[]>([]);
   const [roomReasonModal, setRoomReasonModal] = useState<{ roomId: string; status: string; label: string } | null>(null);
   const [roomReason, setRoomReason] = useState('');
+  const [checkoutConfirm, setCheckoutConfirm] = useState<{ roomId: string; roomNumber: string } | null>(null);
+  const [checkoutConfirmed, setCheckoutConfirmed] = useState(false);
   const [conciergeCancelModal, setConciergeCancelModal] = useState<{ id: string; service: string; guest: string } | null>(null);
   const [conciergeRejectReason, setConciergeRejectReason] = useState('');
   const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
@@ -2569,15 +2571,23 @@ const mapRow = (row: any) => ({
         const hId = userProfile.hotelId || (() => {
           try { return JSON.parse(localStorage.getItem('sentinel_hotel') || '{}').id; } catch { return null; }
         })();
-        // Delete guest record from guests table — invalidates their session
-        // Delete guest record — they must re-enter name on next QR scan
-        await supabase.from('guests').delete()
-          .eq('room', room.room_number);
-        // Clear room assignment fields on checkout
-        update.assigned_to = null;
-        update.cleaning_at = null;
-        update.cleaned_at = null;
-        update.inspected_at = null;
+        // Delete guest record — triggers instant logout via realtime
+        await supabase.from('guests').delete().eq('room', room.room_number);
+        // Delete ACTIVE requests only — completed requests stay in department history
+        if (hId) {
+          await supabase.from('requests').delete()
+            .eq('guest_room', room.room_number)
+            .eq('hotel_id', hId)
+            .in('status', ['Pending', 'In Progress', 'Violated']);
+        }
+        // Reset room fields — clean slate for next guest
+        update.assigned_to   = null;
+        update.cleaning_at   = null;
+        update.cleaned_at    = null;
+        update.cleaned_by    = null;
+        update.inspected_at  = null;
+        update.inspected_by  = null;
+        update.status_reason = null;
       }
     }
     await supabase.from('rooms').update(update).eq('id', roomId);
@@ -2844,6 +2854,49 @@ const mapRow = (row: any) => ({
         </div>
       )}
 
+      {/* CHECKOUT CONFIRMATION MODAL */}
+      {checkoutConfirm && (
+        <div className="fixed inset-0 z-[20001] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+          <div className="bg-[#001c36] p-8 max-w-sm w-full border-t-4 border-red-600 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🚪</span>
+              <div>
+                <h2 className="text-xl font-serif text-white">Confirm Check Out</h2>
+                <p className="text-red-400 text-[10px] font-bold uppercase tracking-wider">Room {checkoutConfirm.roomNumber}</p>
+              </div>
+            </div>
+            <div className="bg-red-900/20 border border-red-500/30 p-3 rounded space-y-1">
+              <p className="text-white/70 text-[11px]">⚠ This will permanently:</p>
+              <p className="text-white/60 text-[10px]">• Log out the current guest immediately</p>
+              <p className="text-white/60 text-[10px]">• Delete all pending guest requests</p>
+              <p className="text-white/60 text-[10px]">• Reset room for next guest</p>
+              <p className="text-green-400/80 text-[10px]">• Completed requests remain in history ✓</p>
+            </div>
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <input type="checkbox" checked={checkoutConfirmed}
+                onChange={e => setCheckoutConfirmed(e.target.checked)}
+                className="w-4 h-4 accent-red-500" />
+              <span className="text-white text-[11px]">I confirm this guest is checking out</span>
+            </label>
+            <div className="flex gap-3">
+              <button onClick={() => { setCheckoutConfirm(null); setCheckoutConfirmed(false); }}
+                className="flex-1 py-3 border border-gold/20 text-gold text-[10px] font-bold uppercase">
+                Cancel
+              </button>
+              <button disabled={!checkoutConfirmed}
+                onClick={() => {
+                  updateRoomStatus(checkoutConfirm.roomId, 'Checked Out');
+                  setCheckoutConfirm(null);
+                  setCheckoutConfirmed(false);
+                }}
+                className="flex-1 py-3 bg-red-600 text-white text-[10px] font-bold uppercase disabled:opacity-40">
+                Confirm Check Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HK ROOM REASON MODAL */}
       {roomReasonModal && (
         <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
@@ -3000,12 +3053,18 @@ const mapRow = (row: any) => ({
                   {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
                   {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected at: {new Date(room.inspected_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
                   <select value={room.status} onChange={e => {
-                      const sel = ROOM_STATUSES.find(s => s.key === e.target.value);
+                      const newVal = e.target.value;
+                      if (newVal === 'Checked Out') {
+                        setCheckoutConfirm({ roomId: room.id, roomNumber: room.room_number });
+                        setCheckoutConfirmed(false);
+                        return;
+                      }
+                      const sel = ROOM_STATUSES.find(s => s.key === newVal);
                       if (sel?.requireReason) {
-                        setRoomReasonModal({ roomId: room.id, status: e.target.value, label: sel.label });
+                        setRoomReasonModal({ roomId: room.id, status: newVal, label: sel.label });
                         setRoomReason('');
                       } else {
-                        updateRoomStatus(room.id, e.target.value);
+                        updateRoomStatus(room.id, newVal);
                       }
                     }} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none">
                     {ROOM_STATUSES.filter(s => {
@@ -4014,7 +4073,19 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                     {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
                     {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
                     {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected by: {room.assigned_to} at {new Date(room.inspected_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
-                    <select value={room.status} onChange={async e => {
+                    {room.status === 'Checked Out' ? (
+                      <button onClick={async () => {
+                        await supabase.from('rooms').update({
+                          status: 'Clean',
+                          assigned_to: profile.displayName,
+                          last_updated: new Date().toISOString(),
+                        }).eq('id', room.id);
+                        fetchRoomsMgr();
+                      }} className="w-full mt-1 py-2 bg-green-700 text-white text-[9px] font-bold uppercase hover:bg-green-600">
+                        ✅ Re-activate Room (Set to Clean)
+                      </button>
+                    ) : (
+                      <select value={room.status} onChange={async e => {
                         const newStatus = e.target.value;
                         const now = new Date().toISOString();
                         const upd: any = {
@@ -4022,14 +4093,24 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                           assigned_to: profile.displayName,
                           last_updated: now,
                         };
-                        if (newStatus === 'Cleaning')  upd.cleaning_at  = now;
-                        if (newStatus === 'Clean')     upd.cleaned_at   = now;
-                        if (newStatus === 'Inspected') upd.inspected_at = now;
+                        if (newStatus === 'Cleaning')   upd.cleaning_at  = now;
+                        if (newStatus === 'Clean')      upd.cleaned_at   = now;
+                        if (newStatus === 'Inspected')  { upd.inspected_at = now; upd.inspected_by = profile.displayName; }
+                        if (newStatus === 'Checked Out') {
+                          if (!window.confirm(`Confirm Check Out for Room ${room.room_number}? This will log out the current guest.`)) return;
+                          const hId = profile.hotelId;
+                          await supabase.from('guests').delete().eq('room', room.room_number);
+                          if (hId) await supabase.from('requests').delete().eq('guest_room', room.room_number).eq('hotel_id', hId).in('status', ['Pending','In Progress','Violated']);
+                          upd.assigned_to = null; upd.cleaning_at = null; upd.cleaned_at = null;
+                          upd.cleaned_by = null; upd.inspected_at = null; upd.inspected_by = null; upd.status_reason = null;
+                          upd.checked_out_by = profile.displayName; upd.checked_out_at = now;
+                        }
                         await supabase.from('rooms').update(upd).eq('id', room.id);
                         fetchRoomsMgr();
                       }} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none mt-1">
-                      {ROOM_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-                    </select>
+                        {ROOM_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                      </select>
+                    )}
 
                   </div>
                 );
@@ -5118,8 +5199,9 @@ export default function App() {
     if (!profile || !activeRoom) { showToast('Room number is required', 'error'); return; }
     // ✅ Verify guest session still valid (not checked out)
     if (profile.role === 'guest' && profile.uid) {
-      const { data: guestStillValid } = await supabase.from('guests').select('id').eq('id', profile.uid).single();
-      if (!guestStillValid) {
+      const { data: guestStillValid, error: guestErr } = await supabase
+        .from('guests').select('id').eq('id', profile.uid).maybeSingle();
+      if (!guestErr && guestStillValid === null) {
         localStorage.removeItem('sentinel_local_session');
         localStorage.removeItem('sentinel_hotel');
         window.location.reload();
