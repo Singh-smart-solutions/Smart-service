@@ -2171,12 +2171,13 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         const { error } = await supabase.from('staff').insert({
           name: fullName, staff_id: staffIdNumber, email, password: hashedPassword,
           department: derivedDept, occupation, approved: false,
-          needs_executive_approval: isManagerOccupation,
+          needs_executive_approval: ['Housekeeping Manager','F&B Manager','Concierge Manager','Security Manager','Front Office Manager','Executive'].includes(occupation),
           logged_in: false, tasks_completed: 0, tasks_on_time: 0, violations: 0, failed_attempts: 0,
           hotel_id: hotelCtx?.id || null,
         });
         if (error) throw error;
-        setPendingMessage(isManagerOccupation ? `Your ${occupation} profile has been submitted for Executive approval.` : `Your profile has been submitted for Department Manager approval.`);
+        const needsExecApproval = ['Housekeeping Manager','F&B Manager','Concierge Manager','Security Manager','Front Office Manager','Executive'].includes(occupation);
+        setPendingMessage(needsExecApproval ? `Your ${occupation} profile has been submitted for Executive approval.` : isManagerOccupation ? `Your ${occupation} profile has been submitted for Department Manager approval.` : `Your profile has been submitted for Department Manager approval.`);
         setShowPending(true);
       } else {
         const { data: staffData, error } = await supabase.from('staff').select('*').eq('email', email).single();
@@ -2260,7 +2261,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
                   <optgroup label="── Executive"><option>Executive</option></optgroup>
                 </select>
                 <div className="mt-1 flex items-center gap-2"><span className="text-[8px] text-white/40">Department:</span><span className="text-[8px] text-gold font-bold">{derivedDept === 'None' ? 'All Departments' : derivedDept}</span></div>
-                {isManagerOccupation && <p className="text-[8px] text-gold font-bold">⚡ Requires Executive approval</p>}
+                {isManagerOccupation && <p className="text-[8px] text-gold font-bold">⚡ Requires {['Housekeeping Manager','F&B Manager','Concierge Manager','Security Manager','Front Office Manager','Executive'].includes(occupation) ? 'Executive' : 'Manager'} approval</p>}
               </div>
             </>
           )}
@@ -3016,54 +3017,27 @@ const mapRow = (row: any) => ({
 
       {/* ROOM STATUS */}
       {activeTab === 'rooms' && isHousekeeping && (
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-serif text-gold flex items-center gap-2"><BedDouble size={18} /> Room Status Board</h2>
             <button onClick={fetchRooms} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
           </div>
-
-          {/* Status update panel — compact list */}
-          <div className="space-y-1">
-            <p className="text-[9px] text-white/40 uppercase tracking-widest font-bold mb-2">Update Room Status</p>
-            {rooms.map(room => {
-              const statusObj = ROOM_STATUSES.find(s => s.key === room.status) || ROOM_STATUSES[0];
-              return (
-                <div key={room.id} className="flex items-center gap-2 py-1.5 border-b border-white/5">
-                  <span className="text-white font-bold text-[10px] w-12 flex-shrink-0">R {room.room_number}</span>
-                  <span className={cn('text-[8px] font-bold px-1.5 py-0.5 text-white rounded-full flex-shrink-0', statusObj.color)}>
-                    {room.status}
-                  </span>
-                  <select value={room.status} onChange={e => {
-                    const newVal = e.target.value;
-                    if (newVal === 'Checked Out') {
-                      setCheckoutConfirm({ roomId: room.id, roomNumber: room.room_number });
-                      setCheckoutConfirmed(false);
-                      return;
-                    }
-                    const sel = ROOM_STATUSES.find(s => s.key === newVal);
-                    if (sel?.requireReason) {
-                      setRoomReasonModal({ roomId: room.id, status: newVal, label: sel.label });
-                      setRoomReason('');
-                    } else {
-                      updateRoomStatus(room.id, newVal);
-                    }
-                  }} className="flex-1 bg-navy/50 border border-gold/20 text-white text-[9px] p-1 outline-none">
-                    {ROOM_STATUSES.filter(s => {
-                      const isSupervisor = userProfile.occupation === 'Housekeeping Supervisor';
-                      if (s.supervisorOnly && !isSupervisor) return false;
-                      return true;
-                    }).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-                  </select>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Live row view with filters */}
-          <div>
-            <p className="text-[9px] text-white/40 uppercase tracking-widest font-bold mb-2">Room Overview</p>
-            <RoomLiveBoard rooms={rooms} />
-          </div>
+          <RoomLiveBoard rooms={rooms} occupation={userProfile.occupation}
+            onStatusChange={(roomId: string, roomNumber: string, newStatus: string) => {
+              if (newStatus === 'Checked Out') {
+                setCheckoutConfirm({ roomId, roomNumber });
+                setCheckoutConfirmed(false);
+                return;
+              }
+              const sel = ROOM_STATUSES.find((s: any) => s.key === newStatus);
+              if ((sel as any)?.requireReason) {
+                setRoomReasonModal({ roomId, status: newStatus, label: (sel as any).label });
+                setRoomReason('');
+              } else {
+                updateRoomStatus(roomId, newStatus);
+              }
+            }}
+          />
         </div>
       )}
 
@@ -3332,7 +3306,12 @@ const BADGE_COLOR = (s: string) =>
   s === 'Guest Refused' ? 'bg-pink-600' : s === 'Different Time' ? 'bg-cyan-600' :
   s === 'Out of Order' ? 'bg-gray-600' : 'bg-gray-500';
 
-const RoomLiveBoard: React.FC<{ rooms: any[]; onReactivate?: (roomId: string) => void }> = ({ rooms, onReactivate }) => {
+const RoomLiveBoard: React.FC<{
+  rooms: any[];
+  onReactivate?: (roomId: string) => void;
+  onStatusChange?: (roomId: string, roomNumber: string, newStatus: string) => void;
+  occupation?: string;
+}> = ({ rooms, onReactivate, onStatusChange, occupation }) => {
   const [filter, setFilter] = useState('All');
   const filtered = filter === 'All' ? rooms : rooms.filter(r => r.status === filter);
   return (
@@ -3364,7 +3343,8 @@ const RoomLiveBoard: React.FC<{ rooms: any[]; onReactivate?: (roomId: string) =>
               <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Inspect Time</th>
               <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Notes</th>
             
-                      {onReactivate && <th className="py-2 px-2 w-24"></th>}
+                      {onStatusChange && <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Action</th>}
+                      {onReactivate && !onStatusChange && <th className="py-2 px-2 w-24"></th>}
                     </tr>
           </thead>
           <tbody>
@@ -3385,7 +3365,27 @@ const RoomLiveBoard: React.FC<{ rooms: any[]; onReactivate?: (roomId: string) =>
                     || (room.cleaning_at && !room.cleaned_at ? `Cleaning since ${formatTime(room.cleaning_at)}` : '')
                     || (room.status === 'Dirty' && !room.cleaned_by ? 'Not yet assigned' : '')}
                 </td>
-                {onReactivate && (
+                {onStatusChange && (
+                  <td className="py-1.5 px-1.5">
+                    {room.status === 'Checked Out' ? (
+                      <button onClick={() => onReactivate && onReactivate(room.id)}
+                        className="w-full px-2 py-1.5 bg-green-700 text-white text-[8px] font-bold uppercase">
+                        ✅ Re-activate
+                      </button>
+                    ) : (
+                      <select value={room.status}
+                        onChange={e => onStatusChange(room.id, room.room_number, e.target.value)}
+                        className="w-full bg-navy/60 border border-gold/30 text-white text-[9px] p-1 outline-none min-w-[130px]">
+                        {(ROOM_STATUSES as any[]).filter((s: any) => {
+                          const isSup = occupation === 'Housekeeping Supervisor' || occupation === 'Housekeeping Manager';
+                          if (s.supervisorOnly && !isSup) return false;
+                          return true;
+                        }).map((s: any) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                      </select>
+                    )}
+                  </td>
+                )}
+                {!onStatusChange && onReactivate && (
                   <td className="py-1.5 px-2">
                     {room.status === 'Checked Out' && (
                       <button onClick={() => onReactivate(room.id)}
@@ -3490,7 +3490,8 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     } catch { return 0; }
   };
   const violations = requests.filter(r => getSLAExceeded(r));
-  const pendingStaff = staffList.filter(s => !s.approved && !MANAGER_OCCUPATIONS.includes(s.occupation || ''));
+  // Pending staff: unapproved staff in this dept (excluding Executive-level)
+  const pendingStaff = staffList.filter(s => !s.approved && s.occupation !== 'Executive');
   const approvedStaff = staffList.filter(s => s.approved);
 
   const approveStaff = async (id: string) => {
@@ -4208,15 +4209,39 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
             <h2 className="text-lg font-serif text-gold flex items-center gap-2"><BedDouble size={18} /> Room Status Board</h2>
             <button onClick={fetchRoomsMgr} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
           </div>
-          {/* Row view with filters + Re-activate */}
-          <RoomLiveBoard rooms={rooms} onReactivate={async (roomId: string) => {
-            await supabase.from('rooms').update({
-              status: 'Clean',
-              assigned_to: profile.displayName,
-              last_updated: new Date().toISOString(),
-            }).eq('id', roomId);
-            fetchRoomsMgr();
-          }} />
+          {/* Row view with inline status dropdown */}
+          <RoomLiveBoard rooms={rooms} occupation={profile.occupation}
+            onStatusChange={async (roomId: string, roomNumber: string, newStatus: string) => {
+              if (newStatus === 'Checked Out') {
+                if (!window.confirm(`Confirm Check Out for Room ${roomNumber}?`)) return;
+                const hId = profile.hotelId;
+                const now = new Date().toISOString();
+                await supabase.from('guests').delete().eq('room', roomNumber);
+                if (hId) await supabase.from('requests').delete().eq('guest_room', roomNumber).eq('hotel_id', hId).in('status', ['Pending','In Progress','Violated']);
+                await supabase.from('rooms').update({
+                  status: 'Checked Out', last_updated: now,
+                  checked_out_by: profile.displayName, checked_out_at: now,
+                  assigned_to: null, cleaning_at: null, cleaned_at: null, cleaned_by: null,
+                  inspected_at: null, inspected_by: null, status_reason: null,
+                  guest_name: null, arrival_date: null, checkout_date: null,
+                }).eq('id', roomId);
+              } else {
+                const now = new Date().toISOString();
+                const upd: any = { status: newStatus, last_updated: now, assigned_to: profile.displayName };
+                if (newStatus === 'Clean') { upd.cleaned_at = now; upd.cleaned_by = profile.displayName; }
+                if (newStatus === 'Cleaning') upd.cleaning_at = now;
+                if (newStatus === 'Inspected') { upd.inspected_at = now; upd.inspected_by = profile.displayName; }
+                if (newStatus === 'Do Not Disturb' || newStatus === 'Out of Order' || newStatus === 'Guest Refused' || newStatus === 'Different Time') {
+                  upd.status_reason = newStatus;
+                }
+                await supabase.from('rooms').update(upd).eq('id', roomId);
+              }
+              fetchRoomsMgr();
+            }}
+            onReactivate={async (roomId: string) => {
+              await supabase.from('rooms').update({ status: 'Clean', assigned_to: profile.displayName, last_updated: new Date().toISOString() }).eq('id', roomId);
+              fetchRoomsMgr();
+            }} />
         </div>
       )}
 
