@@ -1,42 +1,22 @@
-// Sentinel Pro Service Worker
-const CACHE_NAME = 'sentinel-pro-v2';
-const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-];
+// Sentinel Pro Service Worker v3
+// Minimal SW — network first for everything, no caching of assets
+const CACHE_NAME = 'sentinel-pro-v3';
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
+  // Delete ALL old caches on activate
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    caches.keys().then(keys =>
+      Promise.all(keys.map(key => caches.delete(key)))
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
+// Network only — no caching at all
+// Vercel CDN handles caching, we don't need SW cache
 self.addEventListener('fetch', (event) => {
-  // Network first — always get fresh data from Supabase
-  if (event.request.url.includes('supabase.co')) {
-    event.respondWith(fetch(event.request));
-    return;
-  }
-  // Cache first for static assets
-  event.respondWith(
-    caches.match(event.request).then((cached) =>
-      cached || fetch(event.request).then((response) => {
-        if (response.status === 200) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }
-        return response;
-      })
-    )
-  );
+  event.respondWith(fetch(event.request));
 });
