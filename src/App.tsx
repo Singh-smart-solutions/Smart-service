@@ -3021,61 +3021,48 @@ const mapRow = (row: any) => ({
             <h2 className="text-lg font-serif text-gold flex items-center gap-2"><BedDouble size={18} /> Room Status Board</h2>
             <button onClick={fetchRooms} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
           </div>
-          {/* Search bar */}
-          <div className="relative">
-            <input
-              type="text"
-              value={roomSearch || ''}
-              onChange={e => setRoomSearch(e.target.value)}
-              placeholder="Search by room number or status (e.g. Clean, Dirty...)"
-              className="w-full bg-[#001c36] border border-gold/20 text-white text-[11px] p-2 pl-8 outline-none placeholder:text-white/30"
-            />
-            <Search size={13} className="absolute left-2.5 top-2.5 text-gold/40" />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {rooms
-              .filter(room => {
-                if (!roomSearch || !roomSearch.trim()) return true;
-                const q = (roomSearch || '').toLowerCase();
-                return room.room_number?.toString().toLowerCase().includes(q)
-                  || (room.status || '').toLowerCase().includes(q);
-              })
-              .map(room => {
+
+          {/* Status update panel — compact list */}
+          <div className="space-y-1">
+            <p className="text-[9px] text-white/40 uppercase tracking-widest font-bold mb-2">Update Room Status</p>
+            {rooms.map(room => {
               const statusObj = ROOM_STATUSES.find(s => s.key === room.status) || ROOM_STATUSES[0];
               return (
-                <div key={room.id} className="bg-[#001c36] border border-gold/10 p-3 space-y-2">
-                  <div className="flex justify-between items-start">
-                    <div><p className="text-gold font-bold text-sm">Room {room.room_number}</p><p className="text-[8px] text-white/40">{room.room_type} · Floor {room.floor}</p></div>
-                    <span className={cn('text-[8px] font-bold px-2 py-0.5 text-white rounded-full', statusObj.color)}>{room.status}</span>
-                  </div>
-                  {room.assigned_to && <p className="text-[8px] text-green-400/80 italic">✏ {room.assigned_to}</p>}
-                  {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
-                  {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
-                  {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected at: {new Date(room.inspected_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
+                <div key={room.id} className="flex items-center gap-2 py-1.5 border-b border-white/5">
+                  <span className="text-white font-bold text-[10px] w-12 flex-shrink-0">R {room.room_number}</span>
+                  <span className={cn('text-[8px] font-bold px-1.5 py-0.5 text-white rounded-full flex-shrink-0', statusObj.color)}>
+                    {room.status}
+                  </span>
                   <select value={room.status} onChange={e => {
-                      const newVal = e.target.value;
-                      if (newVal === 'Checked Out') {
-                        setCheckoutConfirm({ roomId: room.id, roomNumber: room.room_number });
-                        setCheckoutConfirmed(false);
-                        return;
-                      }
-                      const sel = ROOM_STATUSES.find(s => s.key === newVal);
-                      if (sel?.requireReason) {
-                        setRoomReasonModal({ roomId: room.id, status: newVal, label: sel.label });
-                        setRoomReason('');
-                      } else {
-                        updateRoomStatus(room.id, newVal);
-                      }
-                    }} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none">
+                    const newVal = e.target.value;
+                    if (newVal === 'Checked Out') {
+                      setCheckoutConfirm({ roomId: room.id, roomNumber: room.room_number });
+                      setCheckoutConfirmed(false);
+                      return;
+                    }
+                    const sel = ROOM_STATUSES.find(s => s.key === newVal);
+                    if (sel?.requireReason) {
+                      setRoomReasonModal({ roomId: room.id, status: newVal, label: sel.label });
+                      setRoomReason('');
+                    } else {
+                      updateRoomStatus(room.id, newVal);
+                    }
+                  }} className="flex-1 bg-navy/50 border border-gold/20 text-white text-[9px] p-1 outline-none">
                     {ROOM_STATUSES.filter(s => {
-                        const isSupervisor = userProfile.occupation === 'Housekeeping Supervisor';
-                        if (s.supervisorOnly && !isSupervisor) return false;
-                        return true;
-                      }).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                      const isSupervisor = userProfile.occupation === 'Housekeeping Supervisor';
+                      if (s.supervisorOnly && !isSupervisor) return false;
+                      return true;
+                    }).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
                 </div>
               );
             })}
+          </div>
+
+          {/* Live row view with filters */}
+          <div>
+            <p className="text-[9px] text-white/40 uppercase tracking-widest font-bold mb-2">Room Overview</p>
+            <RoomLiveBoard rooms={rooms} />
           </div>
         </div>
       )}
@@ -3213,15 +3200,16 @@ const PDFRoomImport: React.FC<{ profile: UserProfile; rooms: any[]; onDone: () =
     setApplying(true);
     const now = new Date().toISOString();
     const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
-    // Mark rooms as Dirty for Arrivals and In-house
-    for (const room of matched) {
+    // Bulk update — mark all matched rooms as Dirty in one query
+    const roomIds = matched.map((r: any) => r.roomId).filter(Boolean);
+    if (roomIds.length > 0) {
       await supabase.from('rooms').update({
         status: 'Dirty',
         last_updated: now,
         cleaned_by: null, cleaned_at: null,
         inspected_by: null, inspected_at: null,
-        status_reason: pdfType === 'arrivals' ? 'Arrival — ready for cleaning' : 'In-house — ready for cleaning',
-      }).eq('id', room.roomId).eq('hotel_id', hId);
+        status_reason: pdfType === 'arrivals' ? 'Arrival - ready for cleaning' : 'In-house - ready for cleaning',
+      }).in('id', roomIds);
     }
     setApplying(false);
     setDone(true);
@@ -4200,202 +4188,15 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
       )}
 
       {/* HK Manager — Rooms Tab */}
-      {activeTab === 'rooms' && profile.department === 'Housekeeping' && (
-        <div className="p-4 space-y-4">
-          {/* PDF Import */}
-          <PDFRoomImport profile={profile} rooms={rooms} onDone={fetchRoomsMgr} />
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-serif text-gold flex items-center gap-2"><BedDouble size={18} /> Room Status Board</h2>
-            <div className="flex gap-2 items-center">
-              <button onClick={() => {
-                const today = new Date().toLocaleDateString('en-GB');
-                const d = new Date();
-                const dateStr = d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-                const statusColor: Record<string,string> = {
-                  'Clean':'#166534','Dirty':'#991b1b','Cleaning':'#92400e',
-                  'Inspected':'#7c2d12','Do Not Disturb':'#4c1d95','Out of Order':'#374151','Checked Out':'#1e40af',
-                };
-                const t = (ts: string|null) => ts ? new Date(ts).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'}) : '—';
-                const rows = rooms.map((r,i) => `
-                  <tr style="background:${i%2===0?'#f9f8f5':'#fff'}">
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;color:#C5A059;font-weight:bold">${i+1}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-weight:bold">Room ${r.room_number}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${r.room_type||''} · Fl.${r.floor||''}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee">
-                      <span style="background:${statusColor[r.status]||'#374151'};color:#fff;padding:2px 8px;border-radius:9px;font-size:9px;font-weight:bold">${r.status||''}</span>
-                    </td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${r.assigned_to||'—'}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${t(r.cleaning_at)}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${t(r.cleaned_at)}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${r.inspected_at ? (r.assigned_to||'—') : '—'}</td>
-                    <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:10px">${t(r.inspected_at)}</td>
-                  </tr>`).join('');
-                const totalClean = rooms.filter(r=>r.status==='Clean'||r.status==='Inspected').length;
-                const totalDirty = rooms.filter(r=>r.status==='Dirty').length;
-                const totalInspected = rooms.filter(r=>r.status==='Inspected').length;
-                // Build staff performance from rooms data
-                const staffMap: Record<string, {name:string,cleaned:number,inspected:number,lastSeen:string}> = {};
-                rooms.forEach(r => {
-                  if (r.assigned_to && r.cleaned_at) {
-                    if (!staffMap[r.assigned_to]) staffMap[r.assigned_to] = {name:r.assigned_to,cleaned:0,inspected:0,lastSeen:r.cleaned_at};
-                    staffMap[r.assigned_to].cleaned++;
-                    if (r.cleaned_at > staffMap[r.assigned_to].lastSeen) staffMap[r.assigned_to].lastSeen = r.cleaned_at;
-                  }
-                  if (r.assigned_to && r.inspected_at) {
-                    if (!staffMap[r.assigned_to]) staffMap[r.assigned_to] = {name:r.assigned_to,cleaned:0,inspected:0,lastSeen:r.inspected_at};
-                    staffMap[r.assigned_to].inspected++;
-                  }
-                });
-                const ranked = Object.values(staffMap).sort((a,b)=>(b.cleaned+b.inspected)-(a.cleaned+a.inspected));
-                const medals = [
-                  {title:'⭐ The Supernova',color:'#C5A059',bg:'rgba(197,160,89,0.15)',border:'#C5A059'},
-                  {title:'🌟 The North Star',color:'#94a3b8',bg:'rgba(148,163,184,0.15)',border:'#94a3b8'},
-                  {title:'🚀 The Rising Comet',color:'#cd7c2f',bg:'rgba(205,124,47,0.15)',border:'#cd7c2f'},
-                ];
-                const podiumHtml = ranked.slice(0,3).map((s,i)=>
-                  `<div style="background:${medals[i].bg};border:1px solid ${medals[i].border};padding:12px 18px;min-width:100px;text-align:center">
-                    <div style="font-size:22px;margin-bottom:4px">${i===0?'🥇':i===1?'🥈':'🥉'}</div>
-                    <div style="font-size:11px;font-weight:bold;color:${medals[i].color}">${medals[i].title}</div>
-                    <div style="font-size:13px;font-weight:bold;color:#001529;margin-top:4px">${s.name}</div>
-                    <div style="font-size:9px;color:#666;margin-top:2px">${s.cleaned} cleaned · ${s.inspected} inspected</div>
-                  </div>`
-                ).join('');
-                const html = `<!DOCTYPE html><html><head><title>Housekeeping Report ${today}</title>
-                <style>
-                  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600&display=swap');
-                  *{margin:0;padding:0;box-sizing:border-box}
-                  body{font-family:Inter,sans-serif;background:#fff;padding:20px;font-size:11px}
-                  @media print{body{padding:6px}}
-                </style></head><body>
-                <div style="background:#001529;color:#fff;padding:16px 20px;margin-bottom:14px">
-                  <div style="font-family:'Playfair Display',serif;font-size:22px;color:#C5A059;letter-spacing:3px">SENTINEL PRO</div>
-                  <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-top:4px;letter-spacing:1px">HOUSEKEEPING PERFORMANCE REPORT · ${dateStr}</div>
-                  <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
-                    <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
-                      <div style="font-size:20px;font-weight:bold;color:#C5A059">${rooms.length}</div>
-                      <div style="font-size:8px;color:rgba(255,255,255,0.5)">TOTAL ROOMS</div></div>
-                    <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
-                      <div style="font-size:20px;font-weight:bold;color:#C5A059">${totalClean}</div>
-                      <div style="font-size:8px;color:rgba(255,255,255,0.5)">CLEAN / READY</div></div>
-                    <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
-                      <div style="font-size:20px;font-weight:bold;color:#C5A059">${totalInspected}</div>
-                      <div style="font-size:8px;color:rgba(255,255,255,0.5)">INSPECTED</div></div>
-                    <div style="background:rgba(197,160,89,0.15);border:1px solid #C5A059;padding:6px 14px;text-align:center">
-                      <div style="font-size:20px;font-weight:bold;color:#C5A059">${totalDirty}</div>
-                      <div style="font-size:8px;color:rgba(255,255,255,0.5)">DIRTY</div></div>
-                  </div>
-                </div>
-                ${ranked.length > 0 ? `
-                <div style="margin-bottom:16px">
-                  <div style="font-size:13px;font-weight:bold;color:#001529;margin-bottom:8px;letter-spacing:1px">🏆 HEROES OF THE DAY</div>
-                  <div style="display:flex;gap:10px;flex-wrap:wrap">${podiumHtml}</div>
-                </div>` : ''}
-                <table style="width:100%;border-collapse:collapse">
-                  <thead><tr style="background:#f4f2ec">
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">S/No</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Room</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Type / Floor</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Status</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Staff</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Cleaning Started</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Cleaned At</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Inspected By</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:9px;text-transform:uppercase;color:#666;border-bottom:2px solid #C5A059">Inspected At</th>
-                  </tr></thead>
-                  <tbody>${rows}</tbody>
-                </table>
-                <div style="text-align:center;color:#999;font-size:8px;margin-top:16px;border-top:1px solid #eee;padding-top:8px">
-                  SENTINEL PRO · Housekeeping Report · Generated ${new Date().toLocaleString()}</div>
-                <scr` + `ipt>setTimeout(()=>window.print(),500)</scr` + `ipt>
-                </body></html>`;
-                const w = window.open('','_blank');
-                if(w){w.document.open();w.document.write(html);w.document.close();}
-                else showToast('Allow popups to print report','error');
-              }} className="text-[8px] bg-gold text-navy font-bold px-2 py-1 flex items-center gap-1">
-                <Download size={10}/> PDF Report
-              </button>
-              <button onClick={fetchRoomsMgr} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
-            </div>
-          </div>
-          {/* Search bar */}
-          <div className="relative">
-            <input
-              type="text"
-              value={roomSearch}
-              onChange={e => setRoomSearch(e.target.value)}
-              placeholder="Search by room number or status (e.g. Clean, Dirty...)"
-              className="w-full bg-[#001c36] border border-gold/20 text-white text-[11px] p-2 pl-8 outline-none placeholder:text-white/30"
-            />
-            <Search size={13} className="absolute left-2.5 top-2.5 text-gold/40" />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {rooms
-              .filter(room => {
-                if (!roomSearch.trim()) return true;
-                const q = roomSearch.toLowerCase();
-                return room.room_number?.toString().toLowerCase().includes(q)
-                  || (room.status || '').toLowerCase().includes(q);
-              })
-              .map(room => {
-                const statusObj = ROOM_STATUSES.find(s => s.key === room.status) || ROOM_STATUSES[0];
-                return (
-                  <div key={room.id} className="bg-[#001c36] border border-gold/10 p-3 space-y-2">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="text-gold font-bold text-sm">Room {room.room_number}</p>
-                        <p className="text-[8px] text-white/40">{room.room_type} · Floor {room.floor}</p>
-                      </div>
-                      <span className={cn('text-[8px] font-bold px-2 py-0.5 text-white rounded-full', statusObj.color)}>{room.status}</span>
-                    </div>
-                    {room.assigned_to && (
-                      <p className="text-[8px] text-white/60 italic">✏ {room.assigned_to}</p>
-                    )}
-                    {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
-                    {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
-                    {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected by: {room.assigned_to} at {new Date(room.inspected_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
-                    {room.status === 'Checked Out' ? (
-                      <button onClick={async () => {
-                        await supabase.from('rooms').update({
-                          status: 'Clean',
-                          assigned_to: profile.displayName,
-                          last_updated: new Date().toISOString(),
-                        }).eq('id', room.id);
-                        fetchRoomsMgr();
-                      }} className="w-full mt-1 py-2 bg-green-700 text-white text-[9px] font-bold uppercase hover:bg-green-600">
-                        ✅ Re-activate Room (Set to Clean)
-                      </button>
-                    ) : (
-                      <select value={room.status} onChange={async e => {
-                        const newStatus = e.target.value;
-                        const now = new Date().toISOString();
-                        const upd: any = {
-                          status: newStatus,
-                          assigned_to: profile.displayName,
-                          last_updated: now,
-                        };
-                        if (newStatus === 'Cleaning')   upd.cleaning_at  = now;
-                        if (newStatus === 'Clean')      upd.cleaned_at   = now;
-                        if (newStatus === 'Inspected')  { upd.inspected_at = now; upd.inspected_by = profile.displayName; }
-                        if (newStatus === 'Checked Out') {
-                          if (!window.confirm(`Confirm Check Out for Room ${room.room_number}? This will log out the current guest.`)) return;
-                          const hId = profile.hotelId;
-                          await supabase.from('guests').delete().eq('room', room.room_number);
-                          if (hId) await supabase.from('requests').delete().eq('guest_room', room.room_number).eq('hotel_id', hId).in('status', ['Pending','In Progress','Violated']);
-                          upd.assigned_to = null; upd.cleaning_at = null; upd.cleaned_at = null;
-                          upd.cleaned_by = null; upd.inspected_at = null; upd.inspected_by = null; upd.status_reason = null;
-                          upd.checked_out_by = profile.displayName; upd.checked_out_at = now;
-                        }
-                        await supabase.from('rooms').update(upd).eq('id', room.id);
-                        fetchRoomsMgr();
-                      }} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none mt-1">
-                        {ROOM_STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-                      </select>
-                    )}
-
-                  </div>
-                );
-              })}
-          </div>
+                {/* Row view with filters + Re-activate */}
+          <RoomLiveBoard rooms={rooms} onReactivate={async (roomId: string) => {
+            await supabase.from('rooms').update({
+              status: 'Clean',
+              assigned_to: profile.displayName,
+              last_updated: new Date().toISOString(),
+            }).eq('id', roomId);
+            fetchRoomsMgr();
+          }} />
         </div>
       )}
 
