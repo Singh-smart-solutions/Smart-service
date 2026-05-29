@@ -1,22 +1,17 @@
-// Sentinel Pro Service Worker v3
-// Minimal SW — network first for everything, no caching of assets
+
+// Sentinel Pro Service Worker
+// Strategy: Network first, no asset caching — Vercel CDN handles performance
 const CACHE_NAME = 'sentinel-pro-v3';
-
-self.addEventListener('install', () => {
-  self.skipWaiting();
-});
-
+ 
+self.addEventListener('install', () => self.skipWaiting());
+ 
 self.addEventListener('activate', (event) => {
-  // Delete ALL old caches on activate
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.map(key => caches.delete(key)))
-    ).then(() => self.clients.claim())
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
-
-// Network only — no caching at all
-// Vercel CDN handles caching, we don't need SW cache
+ 
 self.addEventListener('fetch', (event) => {
   event.respondWith(fetch(event.request));
 });
