@@ -43,13 +43,15 @@ const DELAY_REASONS = [
 ];
 
 const ROOM_STATUSES = [
-  { key: 'Clean', color: 'bg-green-500', label: '🟢 Clean' },
-  { key: 'Dirty', color: 'bg-red-500', label: '🔴 Dirty' },
-  { key: 'Cleaning', color: 'bg-yellow-500', label: '🟡 Cleaning' },
-  { key: 'Inspected', color: 'bg-orange-500', label: '🟠 Inspected' },
-  { key: 'Do Not Disturb', color: 'bg-purple-500', label: '🟣 Do Not Disturb' },
-  { key: 'Out of Order', color: 'bg-gray-500', label: '⚫ Out of Order' },
-  { key: 'Checked Out', color: 'bg-blue-500', label: '🔵 Checked Out' },
+  { key: 'Clean',           color: 'bg-green-500',  label: '🟢 Clean',             requireReason: false, supervisorOnly: false },
+  { key: 'Dirty',           color: 'bg-red-500',    label: '🔴 Dirty',             requireReason: false, supervisorOnly: false },
+  { key: 'Cleaning',        color: 'bg-yellow-500', label: '🟡 Cleaning',          requireReason: false, supervisorOnly: false },
+  { key: 'Do Not Disturb',  color: 'bg-purple-500', label: '🟣 Do Not Disturb',    requireReason: true,  supervisorOnly: false },
+  { key: 'Out of Order',    color: 'bg-gray-500',   label: '⚫ Out of Order',       requireReason: true,  supervisorOnly: false },
+  { key: 'Guest Refused',   color: 'bg-pink-500',   label: '🚫 Guest Refused',     requireReason: true,  supervisorOnly: false },
+  { key: 'Different Time',  color: 'bg-cyan-500',   label: '🕐 Different Time',    requireReason: true,  supervisorOnly: false },
+  { key: 'Inspected',       color: 'bg-orange-500', label: '🟠 Inspected',         requireReason: false, supervisorOnly: true  },
+  { key: 'Checked Out',     color: 'bg-blue-500',   label: '🔵 Checked Out',       requireReason: false, supervisorOnly: true  },
 ];
 
 const MAINTENANCE_CATEGORIES = [
@@ -438,7 +440,11 @@ const RestaurantBooking: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubm
         {[{ label: 'Number of Guests', key: 'pax', type: 'number' }, { label: 'Date', key: 'date', type: 'date' }, { label: 'Time', key: 'time', type: 'time' }].map(f => (
           <div key={f.key} className="space-y-1">
             <label className="text-[9px] uppercase tracking-widest text-gold font-bold">{f.label}</label>
-            <input type={f.type} value={(data as any)[f.key]} onChange={e => setData({ ...data, [f.key]: e.target.value })} className="w-full bg-white text-navy border border-gold p-3 text-sm" />
+            <input type={f.type}
+              value={(data as any)[f.key]}
+              min={f.key === 'date' ? new Date().toISOString().split('T')[0] : undefined}
+              onChange={e => setData({ ...data, [f.key]: e.target.value })}
+              className="w-full bg-white text-navy border border-gold p-3 text-sm" />
           </div>
         ))}
         <textarea value={data.notes} onChange={e => setData({ ...data, notes: e.target.value })} placeholder="Special requests, dietary requirements..." className="h-20 resize-none w-full bg-white text-navy border border-gold p-3 text-sm" />
@@ -933,14 +939,21 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
 
   const submitBooking = async () => {
     if (!date || !time || !pax) { showToast('Please fill in date, time and number of guests', 'error'); return; }
-    // ✅ ISSUE 4 FIX: Validate against restaurant opening hours and closed days
+    // ✅ Past date check
+    const today = new Date().toISOString().split('T')[0];
+    if (date < today) { showToast('Please select today or a future date.', 'error'); return; }
+
     const settings = restSettings[selectedRestaurant];
+    const selRestaurant = restaurants.find((r: any) => r.id === selectedRestaurant);
+
     if (settings) {
-      const bookingDay = new Date(date).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Dubai' });
+      // ✅ Closed day check
+      const bookingDay = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Dubai' });
       const closedDays: string[] = settings.closed_days || [];
       if (closedDays.includes(bookingDay)) {
-        showToast(`Sorry, this restaurant is closed on ${bookingDay}s. Please choose another date.`, 'error'); return;
+        showToast(`Sorry, ${selRestaurant?.name || 'this restaurant'} is closed on ${bookingDay}s. Please choose another date.`, 'error'); return;
       }
+      // ✅ Opening hours check
       if (settings.opening_time && settings.closing_time) {
         const [openH, openM] = settings.opening_time.split(':').map(Number);
         const [closeH, closeM] = settings.closing_time.split(':').map(Number);
@@ -949,7 +962,39 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
         const closeMins = closeH * 60 + closeM;
         const bookMins = bookH * 60 + bookM;
         if (bookMins < openMins || bookMins >= closeMins) {
-          showToast(`Sorry, this restaurant is open from ${settings.opening_time} to ${settings.closing_time}. Please choose a time within opening hours.`, 'error'); return;
+          showToast(`${selRestaurant?.name || 'This restaurant'} is open from ${settings.opening_time} to ${settings.closing_time}. Please choose a time within opening hours.`, 'error'); return;
+        }
+      }
+      // ✅ Table availability check
+      const totalTables = settings.total_tables || 0;
+      if (totalTables > 0) {
+        // Count bookings within 2-hour window of requested time
+        const { data: existingBookings } = await supabase
+          .from('restaurant_bookings')
+          .select('id, time')
+          .eq('restaurant', selectedRestaurant)
+          .eq('date', date)
+          .in('status', ['Pending', 'Confirmed']);
+        const [reqH, reqM] = time.split(':').map(Number);
+        const reqMins = reqH * 60 + reqM;
+        const conflicting = (existingBookings || []).filter((b: any) => {
+          const [bH, bM] = (b.time || '00:00').split(':').map(Number);
+          const bMins = bH * 60 + bM;
+          return Math.abs(bMins - reqMins) < 120; // within 2 hours
+        });
+        if (conflicting.length >= totalTables) {
+          // Build suggestion message
+          const otherRestaurants = restaurants
+            .filter((r: any) => r.id !== selectedRestaurant && r.active)
+            .map((r: any) => r.name).slice(0, 2).join(' or ');
+          const suggestion = otherRestaurants
+            ? `You may also try ${otherRestaurants}.`
+            : 'Please try a different date or time.';
+          showToast(
+            `Dear ${profile.displayName}, we regret that ${selRestaurant?.name || 'this restaurant'} is fully booked for ${date} around ${time}. Please try a different time or date. ${suggestion}`,
+            'error'
+          );
+          return;
         }
       }
     }
@@ -1233,8 +1278,11 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   };
 
   const saveRestaurantSettings = async (restaurantId: string, settings: any) => {
+    // Pick up total_tables from the input field
+    const tablesInput = document.getElementById(`tables-${restaurantId}`) as HTMLInputElement;
+    const totalTables = tablesInput ? parseInt(tablesInput.value) || 0 : (settings.total_tables || 0);
     await supabase.from('restaurant_settings').upsert(
-      { restaurant: restaurantId, ...settings, hotel_id: profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })() },
+      { restaurant: restaurantId, ...settings, total_tables: totalTables, hotel_id: profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })() },
       { onConflict: 'restaurant' }
     );
     showToast('Settings saved!', 'success'); fetchSettings();
@@ -1869,6 +1917,14 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
                     </div>
                   </div>
                   <div>
+                    <label className="text-[8px] text-white/50 uppercase font-bold block mb-1">Total Tables</label>
+                    <input type="number" min="0" max="500"
+                      defaultValue={s.total_tables || 0}
+                      id={`tables-${r.id}`}
+                      className="w-full bg-white border border-gold p-2 text-sm text-navy outline-none"
+                      placeholder="e.g. 20" />
+                  </div>
+                  <div>
                     <label className="text-[8px] text-white/50 uppercase font-bold block mb-2">Closed Days</label>
                     <div className="flex flex-wrap gap-2">
                       {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => {
@@ -2228,6 +2284,8 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   const [history, setHistory] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
   const [conciergeBookings, setConciergeBookings] = useState<any[]>([]);
+  const [roomReasonModal, setRoomReasonModal] = useState<{ roomId: string; status: string; label: string } | null>(null);
+  const [roomReason, setRoomReason] = useState('');
   const [conciergeCancelModal, setConciergeCancelModal] = useState<{ id: string; service: string; guest: string } | null>(null);
   const [conciergeRejectReason, setConciergeRejectReason] = useState('');
   const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
@@ -2490,16 +2548,19 @@ const mapRow = (row: any) => ({
     await fetchTasks();
   };
 
-  const updateRoomStatus = async (roomId: string, status: string) => {
+  const updateRoomStatus = async (roomId: string, status: string, reason?: string) => {
     const now = new Date().toISOString();
     const update: any = {
       status,
-      assigned_to: userProfile.displayName,
       last_updated: now,
     };
-    if (status === 'Cleaning')   update.cleaning_at  = now;
-    if (status === 'Clean')      update.cleaned_at   = now;
-    if (status === 'Inspected')  update.inspected_at = now;
+    // Track who did what
+    if (status === 'Cleaning')  { update.cleaning_at = now;   update.cleaned_by = userProfile.displayName; }
+    if (status === 'Clean')     { update.cleaned_at = now;    update.cleaned_by = userProfile.displayName; update.assigned_to = userProfile.displayName; }
+    if (status === 'Inspected') { update.inspected_at = now;  update.inspected_by = userProfile.displayName; }
+    if (status === 'Checked Out') { update.checked_out_by = userProfile.displayName; update.checked_out_at = now; }
+    if (reason) update.status_reason = reason;
+    if (!['Checked Out'].includes(status)) update.assigned_to = userProfile.displayName;
     // ✅ FIX 2: Checked Out — clear guest session so they cannot re-login without QR
     if (status === 'Checked Out') {
       // Find the room to get room_number
@@ -2783,6 +2844,55 @@ const mapRow = (row: any) => ({
         </div>
       )}
 
+      {/* HK ROOM REASON MODAL */}
+      {roomReasonModal && (
+        <div className="fixed inset-0 z-[20000] flex items-center justify-center p-6 bg-navy/90 backdrop-blur-md">
+          <div className="bg-[#001c36] p-8 max-w-sm w-full border-t-4 border-purple-500 shadow-2xl">
+            <h2 className="text-xl font-serif text-white mb-2">{roomReasonModal.label}</h2>
+            <p className="text-white/50 text-[10px] mb-4">Please select a reason before updating the room status.</p>
+            <select value={roomReason} onChange={e => setRoomReason(e.target.value)}
+              className="w-full p-3 bg-white border border-purple-400 mb-5 text-sm text-navy outline-none">
+              <option value="">-- Select Reason (Required) --</option>
+              {roomReasonModal.status === 'Do Not Disturb' && <>
+                <option>Guest requested DND</option>
+                <option>Guest sleeping</option>
+                <option>Guest privacy requested</option>
+              </>}
+              {roomReasonModal.status === 'Out of Order' && <>
+                <option>Maintenance required</option>
+                <option>Deep cleaning in progress</option>
+                <option>Plumbing issue</option>
+                <option>AC / Electrical issue</option>
+                <option>Awaiting inspection</option>
+              </>}
+              {roomReasonModal.status === 'Guest Refused' && <>
+                <option>Guest refused housekeeping service</option>
+                <option>Guest was present and declined</option>
+                <option>Guest requested no entry</option>
+              </>}
+              {roomReasonModal.status === 'Different Time' && <>
+                <option>Guest requested service after 2 PM</option>
+                <option>Guest requested service after 4 PM</option>
+                <option>Guest requested service tomorrow morning</option>
+                <option>Guest will call when ready</option>
+              </>}
+            </select>
+            <div className="flex gap-3">
+              <button onClick={() => { setRoomReasonModal(null); setRoomReason(''); }}
+                className="flex-1 py-3 border border-gold/20 text-gold text-[10px] font-bold uppercase">Cancel</button>
+              <button disabled={!roomReason}
+                onClick={() => {
+                  updateRoomStatus(roomReasonModal.roomId, roomReasonModal.status, roomReason);
+                  setRoomReasonModal(null); setRoomReason('');
+                }}
+                className="flex-1 py-3 bg-purple-600 text-white text-[10px] font-bold uppercase disabled:opacity-40">
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CONCIERGE REJECTION MODAL */}
       {conciergeCancelModal && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.8)' }}>
@@ -2889,12 +2999,18 @@ const mapRow = (row: any) => ({
                   {room.cleaning_at  && <p className="text-[8px] text-yellow-400/80">🟡 Cleaning started: {new Date(room.cleaning_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
                   {room.cleaned_at   && <p className="text-[8px] text-green-400/80">🟢 Cleaned at: {new Date(room.cleaned_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
                   {room.inspected_at && <p className="text-[8px] text-orange-400/80">🟠 Inspected at: {new Date(room.inspected_at).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',hour12:true,timeZone:'Asia/Dubai'})}</p>}
-                  <select value={room.status} onChange={e => updateRoomStatus(room.id, e.target.value)} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none">
+                  <select value={room.status} onChange={e => {
+                      const sel = ROOM_STATUSES.find(s => s.key === e.target.value);
+                      if (sel?.requireReason) {
+                        setRoomReasonModal({ roomId: room.id, status: e.target.value, label: sel.label });
+                        setRoomReason('');
+                      } else {
+                        updateRoomStatus(room.id, e.target.value);
+                      }
+                    }} className="w-full bg-navy/50 border border-gold/20 text-white text-[9px] p-1.5 outline-none">
                     {ROOM_STATUSES.filter(s => {
-                        // ✅ FIX: Only HK Supervisor can mark Inspected — not HK Attendant
-                        if (s.key === 'Inspected') {
-                          return userProfile.occupation === 'Housekeeping Supervisor';
-                        }
+                        const isSupervisor = userProfile.occupation === 'Housekeeping Supervisor';
+                        if (s.supervisorOnly && !isSupervisor) return false;
                         return true;
                       }).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                   </select>
@@ -3048,8 +3164,16 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     let rQ = supabase.from('requests').select('*').in('status', ['Pending', 'In Progress', 'Violated']).order('created_at', { ascending: false });
     if (hId) rQ = rQ.eq('hotel_id', hId);
     if (!isExec && dept && dept !== 'None') rQ = rQ.eq('department', dept);
+    // Also fetch rooms for HK dept
+    let roomsData: any[] = [];
+    if (!isExec && dept === 'Housekeeping' || isExec) {
+      let rmQ = supabase.from('rooms').select('*').order('room_number');
+      if (hId) rmQ = rmQ.eq('hotel_id', hId);
+      const { data: rd } = await rmQ;
+      roomsData = rd || [];
+    }
     const [{ data: staffData }, { data: reqData }] = await Promise.all([sQ, rQ]);
-    setLiveData({ onlineStaff: staffData || [], activeRequests: reqData || [] });
+    setLiveData({ onlineStaff: staffData || [], activeRequests: reqData || [], rooms: roomsData } as any);
     setLiveLoading(false);
   };
 
@@ -3581,6 +3705,32 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                   </div>
                 )}
               </div>
+
+              {/* HK Room Status — only for Housekeeping dept */}
+              {profile.department === 'Housekeeping' && liveData.onlineStaff.length >= 0 && (
+                <div>
+                  <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold border-b border-gold/20 pb-2 mb-3">
+                    🛏 Room Status Board
+                  </h3>
+                  <button onClick={fetchLiveData} className="text-[9px] text-gold/60 underline mb-2 block">Refresh rooms</button>
+                  {liveData.rooms && liveData.rooms.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {liveData.rooms.map((room: any) => (
+                        <div key={room.id} className="bg-[#001c36] border border-gold/10 p-3 space-y-1">
+                          <div className="flex justify-between">
+                            <p className="text-white font-bold text-[11px]">Room {room.room_number}</p>
+                            <span className="text-[9px] text-white/50">{room.status}</span>
+                          </div>
+                          {room.cleaned_by && <p className="text-[9px] text-white/50">🧹 Cleaned by: <span className="text-white/80">{room.cleaned_by}</span>{room.cleaned_at ? ` at ${formatTime(room.cleaned_at)}` : ''}</p>}
+                          {room.inspected_by && <p className="text-[9px] text-white/50">🔍 Inspected by: <span className="text-white/80">{room.inspected_by}</span>{room.inspected_at ? ` at ${formatTime(room.inspected_at)}` : ''}</p>}
+                          {room.checked_out_by && <p className="text-[9px] text-white/50">🚪 Checked out by: <span className="text-white/80">{room.checked_out_by}</span>{room.checked_out_at ? ` at ${formatTime(room.checked_out_at)}` : ''}</p>}
+                          {room.status_reason && <p className="text-[9px] text-yellow-400/80">⚠ {room.status_reason}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="text-white/30 text-[11px]">No rooms data — click Refresh</p>}
+                </div>
+              )}
 
               {/* Active Requests */}
               <div>
@@ -4966,6 +5116,16 @@ export default function App() {
   const submitRequest = async (customData?: any) => {
     const activeRoom = profile?.roomNumber || roomNumber;
     if (!profile || !activeRoom) { showToast('Room number is required', 'error'); return; }
+    // ✅ Verify guest session still valid (not checked out)
+    if (profile.role === 'guest' && profile.uid) {
+      const { data: guestStillValid } = await supabase.from('guests').select('id').eq('id', profile.uid).single();
+      if (!guestStillValid) {
+        localStorage.removeItem('sentinel_local_session');
+        localStorage.removeItem('sentinel_hotel');
+        window.location.reload();
+        return;
+      }
+    }
     // ✅ ISSUE 3 FIX: 30-second cooldown to prevent request spam
     const svcKey = customData?.serviceKey || 'general';
     const cooldownKey = `sentinel_cooldown_${profile.uid}_${svcKey}`;
