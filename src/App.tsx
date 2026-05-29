@@ -4188,7 +4188,15 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
       )}
 
       {/* HK Manager — Rooms Tab */}
-                {/* Row view with filters + Re-activate */}
+      {activeTab === 'rooms' && profile.department === 'Housekeeping' && (
+        <div className="p-4 space-y-4">
+          {/* PDF Import */}
+          <PDFRoomImport profile={profile} rooms={rooms} onDone={fetchRoomsMgr} />
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-serif text-gold flex items-center gap-2"><BedDouble size={18} /> Room Status Board</h2>
+            <button onClick={fetchRoomsMgr} className="text-gold/60 hover:text-gold"><RefreshCw size={16} /></button>
+          </div>
+          {/* Row view with filters + Re-activate */}
           <RoomLiveBoard rooms={rooms} onReactivate={async (roomId: string) => {
             await supabase.from('rooms').update({
               status: 'Clean',
