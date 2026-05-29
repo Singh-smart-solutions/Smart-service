@@ -2484,12 +2484,11 @@ const mapRow = (row: any) => ({
   const getElapsed = (ts: any) => {
     if (!ts) return 0;
     try {
-      // Replace space separator with T so JS Date can parse it
-      // Do NOT strip timezone — JS Date handles +04:00 correctly internally
-      const normalized = String(ts).trim().replace(' ', 'T');
+      let normalized = String(ts).trim().replace(' ', 'T');
+      // Add Z if no timezone suffix — same fix as formatTime
+      if (!/([Z]|[+\-]\d{2}(:\d{2})?)$/.test(normalized)) normalized += 'Z';
       const created = new Date(normalized).getTime();
       if (isNaN(created)) return 0;
-      // Use `now` state so React re-renders every second and timer ticks
       const diff = Math.floor((now - created) / 1000);
       return diff < 0 ? 0 : diff;
     } catch {
@@ -2502,9 +2501,12 @@ const mapRow = (row: any) => ({
 
   const getDuration = (from: any, to: any) => {
     if (!from || !to) return null;
-    const fromParsed = from.replace(' ', 'T');
-    const toParsed = to.replace(' ', 'T');
-    const mins = Math.floor((new Date(toParsed).getTime() - new Date(fromParsed).getTime()) / 60000);
+    const fixTz = (ts: string) => {
+      let n = ts.trim().replace(' ', 'T');
+      if (!/([Z]|[+\-]\d{2}(:\d{2})?)$/.test(n)) n += 'Z';
+      return n;
+    };
+    const mins = Math.floor((new Date(fixTz(to)).getTime() - new Date(fixTz(from)).getTime()) / 60000);
     return mins < 60 ? `${mins}m` : `${Math.floor(mins/60)}h ${mins%60}m`;
   };
 
@@ -2580,12 +2582,11 @@ const mapRow = (row: any) => ({
         })();
         // Delete guest record — triggers instant logout via realtime
         await supabase.from('guests').delete().eq('room', room.room_number);
-        // Delete ACTIVE requests only — completed requests stay in department history
+        // Delete ALL requests for this room — clean slate for next guest
         if (hId) {
           await supabase.from('requests').delete()
             .eq('guest_room', room.room_number)
-            .eq('hotel_id', hId)
-            .in('status', ['Pending', 'In Progress', 'Violated']);
+            .eq('hotel_id', hId);
         }
         // Reset room fields — clean slate for next guest
         update.assigned_to   = null;
@@ -3490,7 +3491,8 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const getElapsedMin = (ts: any) => {
     if (!ts) return 0;
     try {
-      const normalized = String(ts).trim().replace(' ', 'T');
+      let normalized = String(ts).trim().replace(' ', 'T');
+      if (!/([Z]|[+\-]\d{2}(:\d{2})?)$/.test(normalized)) normalized += 'Z';
       const created = new Date(normalized).getTime();
       if (isNaN(created)) return 0;
       return Math.floor((Date.now() - created) / 60000);
@@ -4603,7 +4605,8 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const getElapsedMin = (ts: any) => {
     if (!ts) return 0;
     try {
-      const normalized = String(ts).trim().replace(' ', 'T');
+      let normalized = String(ts).trim().replace(' ', 'T');
+      if (!/([Z]|[+\-]\d{2}(:\d{2})?)$/.test(normalized)) normalized += 'Z';
       const created = new Date(normalized).getTime();
       if (isNaN(created)) return 0;
       return Math.floor((Date.now() - created) / 60000);
