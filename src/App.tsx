@@ -18,9 +18,14 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const MANAGER_OCCUPATIONS = [
-  'Housekeeping Manager', 'Housekeeping Supervisor',
+  'Housekeeping Manager',
   'F&B Manager', 'Concierge Manager',
   'Security Manager', 'Front Office Manager', 'Executive',
+];
+
+// Supervisor occupations — get role='staff' but with supervisor-level room access
+const SUPERVISOR_OCCUPATIONS = [
+  'Housekeeping Supervisor', 'Reservation Agent',
 ];
 
 const DEPT_FROM_OCCUPATION: Record<string, Department> = {
@@ -2199,6 +2204,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         if (!staffData.approved) { showToast('Your account is pending manager approval. Please wait.', 'info'); setLoading(false); return; }
         await supabase.from('staff').update({ logged_in: true, failed_attempts: 0, locked_until: null, device_id: null }).eq('id', staffData.id);
         const isManager = MANAGER_OCCUPATIONS.includes(staffData.occupation || '');
+        // Supervisors get staff role (not manager dashboard)
         const hotelCtxRaw2 = localStorage.getItem('sentinel_hotel');
         const hotelCtx2 = hotelCtxRaw2 ? JSON.parse(hotelCtxRaw2) : null;
         // ✅ Staff must belong to this hotel — block NULL hotel_id too
@@ -2599,6 +2605,7 @@ const mapRow = (row: any) => ({
     if (!maintenanceForm.room || !maintenanceForm.description) { showToast('Please fill in both room/location and description fields.', 'error'); return; }
     const maintHotelId = userProfile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
     const { error: maintErr } = await supabase.from('requests').insert({
+      created_at: new Date().toISOString(),
       guest_room: maintenanceForm.room, guest_id: userProfile.uid, guest_name: userProfile.displayName,
       service: `Maintenance: ${maintenanceForm.category}`,
       notes: `${maintenanceForm.description} [Priority: ${maintenanceForm.priority}]`,
@@ -5353,6 +5360,7 @@ export default function App() {
     const department = getDepartmentFromServiceKey(serviceKey, service.dept || customData?.dept);
     try {
       const { error } = await supabase.from('requests').insert({
+        created_at: new Date().toISOString(),
         guest_room: activeRoom,
         guest_id: profile.uid,
         guest_name: profile.displayName,
