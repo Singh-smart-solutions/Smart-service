@@ -3332,7 +3332,7 @@ const BADGE_COLOR = (s: string) =>
   s === 'Guest Refused' ? 'bg-pink-600' : s === 'Different Time' ? 'bg-cyan-600' :
   s === 'Out of Order' ? 'bg-gray-600' : 'bg-gray-500';
 
-const RoomLiveBoard: React.FC<{ rooms: any[] }> = ({ rooms }) => {
+const RoomLiveBoard: React.FC<{ rooms: any[]; onReactivate?: (roomId: string) => void }> = ({ rooms, onReactivate }) => {
   const [filter, setFilter] = useState('All');
   const filtered = filter === 'All' ? rooms : rooms.filter(r => r.status === filter);
   return (
@@ -3363,7 +3363,9 @@ const RoomLiveBoard: React.FC<{ rooms: any[] }> = ({ rooms }) => {
               <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Inspected By</th>
               <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Inspect Time</th>
               <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Notes</th>
-            </tr>
+            
+                      {onReactivate && <th className="py-2 px-2 w-24"></th>}
+                    </tr>
           </thead>
           <tbody>
             {filtered.map((room: any, i: number) => (
@@ -5001,6 +5003,16 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
                         <td className="p-3 text-center text-sm font-bold text-white">{staff.tasks_completed || 0}</td>
                         <td className="p-3 text-center"><span className="bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">{staff.violations || 0}</span></td>
                         <td className="p-3 text-right"><button onClick={() => forceLogout(staff.id)} className="px-2 py-1 bg-orange-600 text-white text-[8px] font-bold uppercase">Force Logout</button></td>
+                        {onReactivate && (
+                          <td className="py-1.5 px-2">
+                            {room.status === 'Checked Out' && (
+                              <button onClick={() => onReactivate(room.id)}
+                                className="px-2 py-1 bg-green-700 text-white text-[8px] font-bold uppercase hover:bg-green-600 whitespace-nowrap">
+                                ✅ Re-activate
+                              </button>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
