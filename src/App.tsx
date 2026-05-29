@@ -2288,14 +2288,7 @@ const StaffPortal: React.FC<{ userProfile: UserProfile }> = ({ userProfile }) =>
   };
 
   // ✅ FIX: Get server time via Supabase to avoid browser timezone issues
-  const getServerTime = async (): Promise<string> => {
-    try {
-      // ✅ Use Supabase rpc to get server time — guaranteed correct regardless of device clock
-      const { data, error } = await supabase.rpc('get_server_time') as any;
-      if (!error && data) return String(data);
-    } catch { /* fallback */ }
-    return new Date().toISOString();
-  };
+  
 
 const mapRow = (row: any) => ({
     id: row.id, roomNumber: row.guest_room || '', type: row.service || '',
@@ -2450,7 +2443,7 @@ const mapRow = (row: any) => ({
 
   const handleAccept = async (id: string) => {
     // ✅ Staff can always accept freely — delay reason only required on CLOSE
-    const acceptedAt = await getServerTime();
+    const acceptedAt = new Date().toISOString();
     await supabase.from('requests').update({ status: 'In Progress', accepted_at: acceptedAt, assigned_to: userProfile.displayName, assigned_to_email: userProfile.email }).eq('id', id);
     await fetchTasks();
   };
@@ -2464,7 +2457,7 @@ const mapRow = (row: any) => ({
       setDelayReason('');
       return;
     }
-    const closedAt = await getServerTime();
+    const closedAt = new Date().toISOString();
     await supabase.from('requests').update({ status: 'Completed', closed_at: closedAt }).eq('id', task.id);
     logAudit('request_completed', { id: userProfile.uid, name: userProfile.displayName, role: userProfile.occupation || 'staff', hotelId: userProfile.hotelId },
       { type: 'request', id: task.id }, { service: task.type, room: task.roomNumber });
@@ -2476,7 +2469,7 @@ const mapRow = (row: any) => ({
 
   const handleCompleteWithReason = async () => {
     if (!delayReason || !delayModalTask) return;
-    const closedAtR = await getServerTime();
+    const closedAtR = new Date().toISOString();
     await supabase.from('requests').update({ status: 'Completed', closed_at: closedAtR, late_reason: delayReason }).eq('id', delayModalTask.id);
     const { data: sr } = await supabase.from('staff').select('tasks_completed,violations').eq('id', userProfile.uid).single();
     if (sr) await supabase.from('staff').update({ tasks_completed: (sr.tasks_completed || 0) + 1, violations: (sr.violations || 0) + 1 }).eq('id', userProfile.uid);
