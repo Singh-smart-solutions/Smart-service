@@ -3116,6 +3116,298 @@ const mapRow = (row: any) => ({
 };
 
 // ─── DEPT MANAGER DASHBOARD ───────────────────────────────────────────────────
+// ─── PDF ROOM IMPORT ─────────────────────────────────────────────────────────
+const PDFRoomImport: React.FC<{ profile: UserProfile; rooms: any[]; onDone: () => void }> = ({ profile, rooms, onDone }) => {
+  const [pdfType, setPdfType] = useState<'arrivals' | 'inhouse' | 'checkouts' | ''>('');
+  const [parsing, setParsing] = useState(false);
+  const [parsed, setParsed] = useState<{ roomNumber: string; guestName: string; arrival: string; checkout: string }[]>([]);
+  const [matched, setMatched] = useState<{ roomNumber: string; guestName: string; arrival: string; checkout: string; roomId: string }[]>([]);
+  const [unmatched, setUnmatched] = useState<string[]>([]);
+  const [applying, setApplying] = useState(false);
+  const [done, setDone] = useState(false);
+  const fileRef = React.useRef<HTMLInputElement>(null);
+
+  const extractRoomsFromText = (text: string) => {
+    const results: { roomNumber: string; guestName: string; arrival: string; checkout: string }[] = [];
+    const lines = text.split(/\n/).map(l => l.trim()).filter(Boolean);
+    // Common hotel PMS patterns:
+    // Pattern 1: "101  John Smith  29/05/2026  30/05/2026"
+    // Pattern 2: "Room 101 - John Smith"
+    // Pattern 3: Table rows with room in first column
+    const roomPattern = /\b(\d{3,4})\b/;
+    const datePattern = /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/g;
+    const seen = new Set<string>();
+    for (const line of lines) {
+      const roomMatch = line.match(roomPattern);
+      if (!roomMatch) continue;
+      const roomNum = roomMatch[1];
+      if (seen.has(roomNum)) continue;
+      // Skip lines that are clearly headers or page numbers
+      if (/total|page|date|room no|room number|property|hotel|report/i.test(line) && !roomMatch) continue;
+      // Extract dates
+      const dates = [...line.matchAll(datePattern)].map(m => m[1]);
+      // Extract guest name — text between room number and first date (or end of line)
+      let guestName = '';
+      const afterRoom = line.slice(line.indexOf(roomNum) + roomNum.length);
+      const beforeDate = dates.length > 0 ? afterRoom.slice(0, afterRoom.indexOf(dates[0])) : afterRoom;
+      guestName = beforeDate.replace(/[^a-zA-Z ]/g, '').trim();
+      if (!guestName && lines.indexOf(line) < lines.length - 1) {
+        // Try next line for guest name
+        const nextLine = lines[lines.indexOf(line) + 1];
+        if (!/\d{3,4}/.test(nextLine)) guestName = nextLine.replace(/[^a-zA-Z ]/g, '').trim().slice(0, 40);
+      }
+      seen.add(roomNum);
+      results.push({
+        roomNumber: roomNum,
+        guestName: guestName || '—',
+        arrival: dates[0] || '—',
+        checkout: dates[1] || '—',
+      });
+    }
+    return results;
+  };
+
+  const handleFile = async (file: File) => {
+    if (!pdfType) { alert('Please select PDF type first'); return; }
+    setParsing(true);
+    setParsed([]); setMatched([]); setUnmatched([]); setDone(false);
+    try {
+      // Load PDF.js dynamically
+      const pdfjsLib = (window as any).pdfjsLib || await new Promise<any>((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        script.onload = () => {
+          const lib = (window as any).pdfjsLib;
+          lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          resolve(lib);
+        };
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+      const buffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+      let fullText = '';
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        fullText += content.items.map((item: any) => item.str).join(' ') + '\n';
+      }
+      const extracted = extractRoomsFromText(fullText);
+      setParsed(extracted);
+      // Match against hotel rooms
+      const hotelRoomNumbers = new Set(rooms.map(r => String(r.room_number)));
+      const matchedRooms = extracted
+        .filter(e => hotelRoomNumbers.has(e.roomNumber))
+        .map(e => ({ ...e, roomId: rooms.find(r => String(r.room_number) === e.roomNumber)?.id || '' }));
+      const unmatchedRooms = extracted.filter(e => !hotelRoomNumbers.has(e.roomNumber)).map(e => e.roomNumber);
+      setMatched(matchedRooms);
+      setUnmatched(unmatchedRooms);
+    } catch (err) {
+      alert('Failed to parse PDF. Please check the file and try again.');
+    }
+    setParsing(false);
+  };
+
+  const applyChanges = async () => {
+    if (pdfType === 'checkouts') { setDone(true); return; }
+    setApplying(true);
+    const now = new Date().toISOString();
+    const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+    // Mark rooms as Dirty for Arrivals and In-house
+    for (const room of matched) {
+      await supabase.from('rooms').update({
+        status: 'Dirty',
+        last_updated: now,
+        cleaned_by: null, cleaned_at: null,
+        inspected_by: null, inspected_at: null,
+        status_reason: pdfType === 'arrivals' ? 'Arrival — ready for cleaning' : 'In-house — ready for cleaning',
+      }).eq('id', room.roomId).eq('hotel_id', hId);
+    }
+    setApplying(false);
+    setDone(true);
+    onDone();
+  };
+
+  return (
+    <div className="bg-[#001c36] border border-gold/20 p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-[11px] font-bold uppercase tracking-widest text-gold">📄 PDF Room Import</h3>
+          <p className="text-white/40 text-[9px] mt-0.5">Upload front office PDF to update room statuses</p>
+        </div>
+      </div>
+
+      {/* Step 1: Select type */}
+      <div className="space-y-2">
+        <p className="text-[9px] text-white/50 uppercase font-bold">Step 1 — Select PDF Type</p>
+        <div className="flex gap-2 flex-wrap">
+          {(['arrivals', 'inhouse', 'checkouts'] as const).map(t => (
+            <button key={t} onClick={() => { setPdfType(t); setParsed([]); setMatched([]); setUnmatched([]); setDone(false); }}
+              className={cn('px-3 py-2 text-[9px] font-bold uppercase border',
+                pdfType === t ? 'bg-gold text-navy border-gold' : 'border-gold/30 text-gold/70 hover:bg-gold/10')}>
+              {t === 'arrivals' ? '🛬 Arrivals' : t === 'inhouse' ? '🏨 In-House' : '🛫 Checkouts'}
+            </button>
+          ))}
+        </div>
+        {pdfType === 'arrivals' && <p className="text-[9px] text-yellow-400">→ Will mark rooms as Dirty for cleaning</p>}
+        {pdfType === 'inhouse' && <p className="text-[9px] text-yellow-400">→ Will mark rooms as Dirty for cleaning</p>}
+        {pdfType === 'checkouts' && <p className="text-[9px] text-white/40">→ Preview only — staff handle manually</p>}
+      </div>
+
+      {/* Step 2: Upload */}
+      {pdfType && (
+        <div className="space-y-2">
+          <p className="text-[9px] text-white/50 uppercase font-bold">Step 2 — Upload PDF</p>
+          <input ref={fileRef} type="file" accept=".pdf" onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])}
+            className="hidden" />
+          <button onClick={() => fileRef.current?.click()}
+            className="w-full py-3 border-2 border-dashed border-gold/30 text-gold text-[10px] hover:border-gold/60 hover:bg-gold/5">
+            {parsing ? '⏳ Parsing PDF...' : '📁 Click to upload PDF'}
+          </button>
+        </div>
+      )}
+
+      {/* Step 3: Preview */}
+      {matched.length > 0 && !done && (
+        <div className="space-y-3">
+          <p className="text-[9px] text-white/50 uppercase font-bold">
+            Step 3 — Preview ({matched.length} rooms found{unmatched.length > 0 ? `, ${unmatched.length} unrecognised` : ''})
+          </p>
+          {unmatched.length > 0 && (
+            <p className="text-[9px] text-red-400/70">⚠ Unrecognised rooms (not in hotel): {unmatched.join(', ')}</p>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[9px] border-collapse min-w-[400px]">
+              <thead>
+                <tr className="border-b border-gold/20">
+                  <th className="text-left py-1.5 px-2 text-gold/60 font-bold uppercase text-[8px]">Room</th>
+                  <th className="text-left py-1.5 px-2 text-gold/60 font-bold uppercase text-[8px]">Guest</th>
+                  <th className="text-left py-1.5 px-2 text-gold/60 font-bold uppercase text-[8px]">Arrival</th>
+                  <th className="text-left py-1.5 px-2 text-gold/60 font-bold uppercase text-[8px]">Checkout</th>
+                  <th className="text-left py-1.5 px-2 text-gold/60 font-bold uppercase text-[8px]">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matched.map((r, i) => (
+                  <tr key={r.roomNumber} className={cn('border-b border-white/5', i % 2 === 0 ? '' : 'bg-white/[0.02]')}>
+                    <td className="py-1.5 px-2 text-white font-bold">{r.roomNumber}</td>
+                    <td className="py-1.5 px-2 text-white/70">{r.guestName}</td>
+                    <td className="py-1.5 px-2 text-white/50">{r.arrival}</td>
+                    <td className="py-1.5 px-2 text-white/50">{r.checkout}</td>
+                    <td className="py-1.5 px-2">
+                      {pdfType !== 'checkouts'
+                        ? <span className="text-yellow-400 font-bold text-[8px]">→ DIRTY</span>
+                        : <span className="text-white/30 text-[8px]">View only</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => { setParsed([]); setMatched([]); setUnmatched([]); }}
+              className="flex-1 py-2.5 border border-gold/20 text-gold text-[9px] font-bold uppercase">
+              Cancel
+            </button>
+            <button onClick={applyChanges} disabled={applying}
+              className="flex-1 py-2.5 bg-gold text-navy text-[9px] font-bold uppercase disabled:opacity-40">
+              {applying ? 'Applying...' : pdfType === 'checkouts' ? 'Done (View Only)' : `Apply — Mark ${matched.length} Rooms Dirty`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {done && (
+        <div className="bg-green-900/20 border border-green-500/30 p-3 text-center">
+          <p className="text-green-400 font-bold text-[11px]">
+            {pdfType === 'checkouts' ? '✅ Checkout list reviewed' : `✅ ${matched.length} rooms marked as Dirty`}
+          </p>
+        </div>
+      )}
+
+      {parsed.length === 0 && !parsing && matched.length === 0 && pdfType && (
+        <p className="text-white/30 text-[10px] text-center py-2">Upload a PDF to see extracted room data</p>
+      )}
+    </div>
+  );
+};
+
+
+// ─── HK ROOM LIVE BOARD ───────────────────────────────────────────────────────
+const ROOM_STATUS_FILTERS = ['All','Clean','Dirty','Cleaning','Inspected',
+  'Do Not Disturb','Out of Order','Checked Out','Guest Refused','Different Time'];
+
+const BADGE_COLOR = (s: string) =>
+  s === 'Clean' ? 'bg-green-600' : s === 'Dirty' ? 'bg-red-600' :
+  s === 'Cleaning' ? 'bg-yellow-600' : s === 'Inspected' ? 'bg-orange-600' :
+  s === 'Do Not Disturb' ? 'bg-purple-600' : s === 'Checked Out' ? 'bg-blue-600' :
+  s === 'Guest Refused' ? 'bg-pink-600' : s === 'Different Time' ? 'bg-cyan-600' :
+  s === 'Out of Order' ? 'bg-gray-600' : 'bg-gray-500';
+
+const RoomLiveBoard: React.FC<{ rooms: any[] }> = ({ rooms }) => {
+  const [filter, setFilter] = useState('All');
+  const filtered = filter === 'All' ? rooms : rooms.filter(r => r.status === filter);
+  return (
+    <div className="space-y-3">
+      {/* Filter pills */}
+      <div className="flex flex-wrap gap-1.5">
+        {ROOM_STATUS_FILTERS.map(f => {
+          const count = f === 'All' ? rooms.length : rooms.filter(r => r.status === f).length;
+          if (f !== 'All' && count === 0) return null;
+          return (
+            <button key={f} onClick={() => setFilter(f)}
+              className={cn('px-2.5 py-1 text-[8px] font-bold uppercase rounded-full border transition-colors',
+                filter === f ? 'bg-gold text-navy border-gold' : 'border-white/20 text-white/50 hover:border-gold/50')}>
+              {f} ({count})
+            </button>
+          );
+        })}
+      </div>
+      {/* Row table */}
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-[10px] border-collapse min-w-[600px]">
+          <thead>
+            <tr className="border-b border-gold/20 bg-navy/40">
+              <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Room</th>
+              <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Status</th>
+              <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Cleaned By</th>
+              <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Clean Time</th>
+              <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Inspected By</th>
+              <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Inspect Time</th>
+              <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((room: any, i: number) => (
+              <tr key={room.id} className={cn('border-b border-white/[0.04]', i % 2 === 0 ? '' : 'bg-white/[0.02]')}>
+                <td className="py-2 px-2 text-white font-bold text-[11px]">{room.room_number}</td>
+                <td className="py-2 px-2">
+                  <span className={cn('px-2 py-0.5 text-[8px] font-bold text-white rounded-full whitespace-nowrap', BADGE_COLOR(room.status))}>
+                    {room.status}
+                  </span>
+                </td>
+                <td className="py-2 px-2 text-white/70">{room.cleaned_by || '—'}</td>
+                <td className="py-2 px-2 text-white/70 whitespace-nowrap">{formatTime(room.cleaned_at)}</td>
+                <td className="py-2 px-2 text-white/70">{room.inspected_by || '—'}</td>
+                <td className="py-2 px-2 text-white/70 whitespace-nowrap">{formatTime(room.inspected_at)}</td>
+                <td className="py-2 px-2 text-white/50 italic text-[9px] max-w-[120px]">
+                  {room.status_reason
+                    || (room.cleaning_at && !room.cleaned_at ? `Cleaning since ${formatTime(room.cleaning_at)}` : '')
+                    || (room.status === 'Dirty' && !room.cleaned_by ? 'Not yet assigned' : '')}
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={7} className="py-8 text-center text-white/30 text-[11px]">No rooms match this filter</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+
 const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => {
   const { t, language } = useLanguage();
   const [requests, setRequests] = useState<any[]>([]);
@@ -3771,23 +4063,9 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
                   <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold border-b border-gold/20 pb-2 mb-3">
                     🛏 Room Status Board
                   </h3>
-                  <button onClick={fetchLiveData} className="text-[9px] text-gold/60 underline mb-2 block">Refresh rooms</button>
-                  {liveData.rooms && liveData.rooms.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {liveData.rooms.map((room: any) => (
-                        <div key={room.id} className="bg-[#001c36] border border-gold/10 p-3 space-y-1">
-                          <div className="flex justify-between">
-                            <p className="text-white font-bold text-[11px]">Room {room.room_number}</p>
-                            <span className="text-[9px] text-white/50">{room.status}</span>
-                          </div>
-                          {room.cleaned_by && <p className="text-[9px] text-white/50">🧹 Cleaned by: <span className="text-white/80">{room.cleaned_by}</span>{room.cleaned_at ? ` at ${formatTime(room.cleaned_at)}` : ''}</p>}
-                          {room.inspected_by && <p className="text-[9px] text-white/50">🔍 Inspected by: <span className="text-white/80">{room.inspected_by}</span>{room.inspected_at ? ` at ${formatTime(room.inspected_at)}` : ''}</p>}
-                          {room.checked_out_by && <p className="text-[9px] text-white/50">🚪 Checked out by: <span className="text-white/80">{room.checked_out_by}</span>{room.checked_out_at ? ` at ${formatTime(room.checked_out_at)}` : ''}</p>}
-                          {room.status_reason && <p className="text-[9px] text-yellow-400/80">⚠ {room.status_reason}</p>}
-                        </div>
-                      ))}
-                    </div>
-                  ) : <p className="text-white/30 text-[11px]">No rooms data — click Refresh</p>}
+                  {liveData.rooms && liveData.rooms.length > 0
+                    ? <RoomLiveBoard rooms={liveData.rooms} />
+                    : <p className="text-white/30 text-[11px]">No rooms data — click Refresh</p>}
                 </div>
               )}
 
@@ -3924,6 +4202,8 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
       {/* HK Manager — Rooms Tab */}
       {activeTab === 'rooms' && profile.department === 'Housekeeping' && (
         <div className="p-4 space-y-4">
+          {/* PDF Import */}
+          <PDFRoomImport profile={profile} rooms={rooms} onDone={fetchRoomsMgr} />
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-serif text-gold flex items-center gap-2"><BedDouble size={18} /> Room Status Board</h2>
             <div className="flex gap-2 items-center">
