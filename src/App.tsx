@@ -326,7 +326,7 @@ const FeedbackModal: React.FC<{ request: any; onClose: () => void; onSubmit: (ra
 // ─── ROOM SERVICE ─────────────────────────────────────────────────────────────
 
 // ─── TELEGRAM NOTIFICATIONS ──────────────────────────────────────────────────
-const BOT_TOKEN = import.meta.env.VITE_TELEGRAM_BOT_TOKEN || '';
+const BOT_TOKEN = (import.meta as any).env?.VITE_TELEGRAM_BOT_TOKEN || '';
 const BOT_NAME  = 'SentinelPr0BoT';
 
 const sendTelegram = async (chatId: string, message: string): Promise<void> => {
@@ -5313,6 +5313,12 @@ const logAudit = async (
       details: details || null,
     });
   } catch { /* audit failure must never break the app */ }
+};
+
+// Language flag map
+const LANG_FLAG: Record<string, string> = {
+  English: '🇺🇸', Arabic: '🇦🇪', Russian: '🇷🇺',
+  Hindi: '🇮🇳', French: '🇫🇷', Turkish: '🇹🇷', Chinese: '🇨🇳',
 };
 
 export default function App() {
