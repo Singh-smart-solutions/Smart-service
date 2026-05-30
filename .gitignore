@@ -8,3 +8,9 @@ coverage/
 !.env.example
 SentinelProApp/
 SentinelProApp2/
+
+# Firebase (not used — Supabase only)
+firebase-applet-config.json
+firebase-blueprint.json
+firestore.rules
+src/firebase.ts
