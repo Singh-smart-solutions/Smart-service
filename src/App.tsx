@@ -324,6 +324,69 @@ const FeedbackModal: React.FC<{ request: any; onClose: () => void; onSubmit: (ra
 };
 
 // ─── ROOM SERVICE ─────────────────────────────────────────────────────────────
+
+// ─── TELEGRAM NOTIFICATIONS ──────────────────────────────────────────────────
+const BOT_TOKEN = import.meta.env.VITE_TELEGRAM_BOT_TOKEN || '';
+const BOT_NAME  = 'SentinelPr0BoT';
+
+const sendTelegram = async (chatId: string, message: string): Promise<void> => {
+  if (!BOT_TOKEN || !chatId) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'HTML',
+      }),
+    });
+  } catch { /* silent — notification failure should never break the app */ }
+};
+
+// Notify all online staff in a department
+const notifyDeptStaff = async (
+  hotelId: string,
+  department: string,
+  message: string,
+  excludeId?: string
+): Promise<void> => {
+  if (!BOT_TOKEN) return;
+  const { data: staff } = await supabase.from('staff')
+    .select('telegram_chat_id')
+    .eq('hotel_id', hotelId)
+    .eq('department', department)
+    .eq('logged_in', true)
+    .not('telegram_chat_id', 'is', null);
+  if (!staff) return;
+  for (const s of staff) {
+    if (s.telegram_chat_id && s.telegram_chat_id !== excludeId) {
+      await sendTelegram(s.telegram_chat_id, message);
+    }
+  }
+};
+
+// Notify department manager
+const notifyDeptManager = async (
+  hotelId: string,
+  department: string,
+  message: string
+): Promise<void> => {
+  if (!BOT_TOKEN) return;
+  const managerOccupations = ['Housekeeping Manager','F&B Manager','Concierge Manager',
+    'Security Manager','Front Office Manager'];
+  const { data: managers } = await supabase.from('staff')
+    .select('telegram_chat_id')
+    .eq('hotel_id', hotelId)
+    .eq('department', department)
+    .in('occupation', managerOccupations)
+    .not('telegram_chat_id', 'is', null);
+  if (!managers) return;
+  for (const m of managers) {
+    if (m.telegram_chat_id) await sendTelegram(m.telegram_chat_id, message);
+  }
+};
+
 // ─── SHARED UTILITY — used by StaffPortal, DeptManagerDashboard, ExecutiveDashboard
 const formatTime = (ts: any): string => {
   if (!ts) return '—';
@@ -2428,6 +2491,16 @@ const mapRow = (row: any) => ({
           playNotificationSound();
           showBrowserNotification('🚨 SLA EXCEEDED!', `Room #${task.roomNumber} · ${task.type} · Reason required to close!`);
           setNewOrderAlert(`🚨 SLA EXCEEDED — Room #${task.roomNumber} · Reason required!`);
+          // Notify manager via Telegram on SLA breach
+          try {
+            if (userProfile.hotelId) {
+              const slaMsg = '<b>⚠️ SLA Violated — ' + task.type + '</b>\n'
+                + '🏨 Room ' + task.roomNumber + ' · ' + (task.guestName || '') + '\n'
+                + '⏱ Limit exceeded · ' + Math.floor(elapsed/60) + ' min elapsed\n'
+                + '👷 ' + (task.assignedTo || 'Unassigned');
+              notifyDeptManager(userProfile.hotelId, userProfile.department, slaMsg);
+            }
+          } catch { /* never block SLA logic */ };
           setTimeout(() => setNewOrderAlert(null), 15000);
           // Mark as Violated in DB → visible to Manager & Executive in their SLA tab
           supabase.from('requests').update({ status: 'Violated' }).eq('id', task.id)
@@ -2618,6 +2691,11 @@ const mapRow = (row: any) => ({
     setMaintenanceForm({ room: '', category: 'AC / Heating Issue', description: '', priority: 'Normal' });
   };
 
+  const connectTelegram = () => {
+    const deepLink = `https://t.me/${BOT_NAME}?start=${userProfile.uid}`;
+    window.open(deepLink, '_blank');
+  };
+
   const staffLogout = async () => {
   await supabase.from('staff').update({ logged_in: false }).eq('id', userProfile.uid);
   logAudit('staff_logout', { id: userProfile.uid, name: userProfile.displayName, role: userProfile.occupation || 'staff', hotelId: userProfile.hotelId },
@@ -2717,6 +2795,10 @@ const mapRow = (row: any) => ({
             ))}
           </div>
           <button onClick={staffLogout} className="flex items-center gap-1 border border-gold/30 text-gold px-3 py-1.5 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
+          <button onClick={connectTelegram}
+            className={`flex items-center gap-1 border px-3 py-1.5 text-[9px] font-bold uppercase ${userProfile.telegram_chat_id ? 'border-green-500/50 text-green-400' : 'border-gold/20 text-gold/50 hover:text-gold'}`}>
+            {userProfile.telegram_chat_id ? '✅ Telegram On' : '🔔 Connect Telegram'}
+          </button>
         </div>
       </header>
 
@@ -3506,6 +3588,14 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const approveStaff = async (id: string) => {
     const s = staffList.find((x: any) => x.id === id);
     await supabase.from('staff').update({ approved: true }).eq('id', id);
+    // Notify approved staff via Telegram
+    const approvedStaff = staffList.find((x: any) => x.id === id);
+    if (approvedStaff?.telegram_chat_id) {
+      const approvalMsg = `✅ <b>Account Approved — Sentinel Pro</b>\n`
+        + `Welcome ${approvedStaff.name}! Your ${approvedStaff.occupation} account has been approved.\n`
+        + `Login at: smart-service-rho.vercel.app`;
+      sendTelegram(approvedStaff.telegram_chat_id, approvalMsg).catch(() => {});
+    }
     logAudit('staff_approved', { id: profile.uid, name: profile.displayName, role: profile.occupation || 'manager', hotelId: profile.hotelId },
       { type: 'staff', id }, { approved_name: s?.name, department: s?.department });
   };
@@ -4645,6 +4735,14 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
   const approveStaff = async (id: string) => {
     const s = staffList.find((x: any) => x.id === id);
     await supabase.from('staff').update({ approved: true }).eq('id', id);
+    // Notify approved staff via Telegram
+    const approvedStaff = staffList.find((x: any) => x.id === id);
+    if (approvedStaff?.telegram_chat_id) {
+      const approvalMsg = `✅ <b>Account Approved — Sentinel Pro</b>\n`
+        + `Welcome ${approvedStaff.name}! Your ${approvedStaff.occupation} account has been approved.\n`
+        + `Login at: smart-service-rho.vercel.app`;
+      sendTelegram(approvedStaff.telegram_chat_id, approvalMsg).catch(() => {});
+    }
     logAudit('staff_approved', { id: profile.uid, name: profile.displayName, role: profile.occupation || 'manager', hotelId: profile.hotelId },
       { type: 'staff', id }, { approved_name: s?.name, department: s?.department });
   };
@@ -5381,6 +5479,18 @@ export default function App() {
       setShowRequestModal(false); setMessage(''); setSelectedService(null);
       setCart({}); setDietaryRequirements(''); setGuestTab('services');
       showToast('Your request has been submitted successfully!', 'success');
+      // Notify dept staff via Telegram
+      try {
+        if (profile.hotelId) {
+          const dept = getDepartmentFromServiceKey(serviceKey);
+          const flag = LANG_FLAG[language] || '';
+          const msg = '<b>🔔 New Request — ' + (service.type || service.name) + '</b>\n'
+            + '🏨 Room ' + activeRoom + ' · ' + profile.displayName + ' ' + flag + '\n'
+            + '📝 ' + (customData?.notes || message || '—') + '\n'
+            + '⏰ SLA: ' + (slaSettings[dept] || 30) + ' min';
+          notifyDeptStaff(profile.hotelId, dept, msg);
+        }
+      } catch { /* never block request submission */ }
     } catch (e: any) { showToast(e.message || 'An error occurred. Please try again.', 'error'); }
   };
 
