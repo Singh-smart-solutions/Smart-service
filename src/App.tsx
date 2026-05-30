@@ -3183,37 +3183,32 @@ const PDFRoomImport: React.FC<{ profile: UserProfile; rooms: any[]; onDone: () =
 
   const extractRoomsFromText = (text: string) => {
     const results: { roomNumber: string; guestName: string; arrival: string; checkout: string }[] = [];
-    const lines = text.split(/\n/).map(l => l.trim()).filter(Boolean);
-    // Common hotel PMS patterns:
-    // Pattern 1: "101  John Smith  29/05/2026  30/05/2026"
-    // Pattern 2: "Room 101 - John Smith"
-    // Pattern 3: Table rows with room in first column
-    const roomPattern = /\b(\d{3,4})\b/;
-    const datePattern = /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/g;
+    const skipWords = /total|page|printed|property|hotel|report|date|room no|nights|adults|nationality|arrival|departure|check.?in|check.?out|status|guest name|sentinel|grand/i;
+    const dateRe = /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/g;
     const seen = new Set<string>();
+    const lines = text.split(/\n/).map(l => l.replace(/\s+/g, ' ').trim()).filter(l => l.length > 3);
     for (const line of lines) {
-      const roomMatch = line.match(roomPattern);
-      if (!roomMatch) continue;
-      const roomNum = roomMatch[1];
+      // Skip header/footer lines
+      if (skipWords.test(line) && !/^\d{3,4}/.test(line)) continue;
+      // Room number MUST be at start of line
+      const startMatch = line.match(/^(\d{3,4})(\s|$)/);
+      if (!startMatch) continue;
+      const roomNum = startMatch[1];
+      if (parseInt(roomNum) > 2099 || parseInt(roomNum) < 100) continue;
       if (seen.has(roomNum)) continue;
-      // Skip lines that are clearly headers or page numbers
-      if (/total|page|date|room no|room number|property|hotel|report/i.test(line) && !roomMatch) continue;
       // Extract dates
-      const dates = [...line.matchAll(datePattern)].map(m => m[1]);
-      // Extract guest name — text between room number and first date (or end of line)
-      let guestName = '';
-      const afterRoom = line.slice(line.indexOf(roomNum) + roomNum.length);
-      const beforeDate = dates.length > 0 ? afterRoom.slice(0, afterRoom.indexOf(dates[0])) : afterRoom;
-      guestName = beforeDate.replace(/[^a-zA-Z ]/g, '').trim();
-      if (!guestName && lines.indexOf(line) < lines.length - 1) {
-        // Try next line for guest name
-        const nextLine = lines[lines.indexOf(line) + 1];
-        if (!/\d{3,4}/.test(nextLine)) guestName = nextLine.replace(/[^a-zA-Z ]/g, '').trim().slice(0, 40);
-      }
+      const dates = [...line.matchAll(dateRe)].map(m => m[1]);
+      // Guest name: text after room number before first date
+      const afterRoom = line.slice(roomNum.length).trim();
+      const firstDateIdx = dates.length > 0 ? afterRoom.indexOf(dates[0]) : -1;
+      const nameSection = firstDateIdx > 0 ? afterRoom.slice(0, firstDateIdx) : afterRoom.slice(0, 50);
+      const guestName = nameSection
+        .replace(/\b(UAE|UK|USA|India|China|France|Germany|Russia|KSA|Saudi|Oman|Qatar|Kuwait|Bahrain|Jordan|Egypt|Lebanon)\b/gi, '')
+        .replace(/[^a-zA-Z ]/g, '').replace(/\s+/g, ' ').trim();
       seen.add(roomNum);
       results.push({
         roomNumber: roomNum,
-        guestName: guestName || '—',
+        guestName: guestName || 'Unknown',
         arrival: dates[0] || '—',
         checkout: dates[1] || '—',
       });
