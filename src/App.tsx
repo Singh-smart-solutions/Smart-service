@@ -4055,7 +4055,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
           </table>
           <div style="text-align:center;color:#999;font-size:8px;border-top:1px solid #eee;padding-top:8px">
             SENTINEL PRO · ${profile.department} Department · Generated ${now.toLocaleString()}</div>
-          <scr`+`ipt>setTimeout(()=>window.print(),500)</scr`+`ipt></body></html>`;
+          <scr'+'ipt>setTimeout(()=>window.print(),500)</scr'+'ipt></body></html>`;
           const w = window.open('','_blank');
           if(w){w.document.open();w.document.write(html);w.document.close();}
           else showToast('Allow popups to print report','error');
@@ -4324,7 +4324,7 @@ const ConciergeManagerTab: React.FC<{ profile: UserProfile }> = ({ profile }) =>
     <div className="p-4 space-y-4">
       {/* Section toggle */}
       <div className="flex gap-2">
-        {[{key:'services',label:'🔧 Manage Services'},{key:'bookings',label:`📋 Bookings (${bookings.filter(b=>b.status==='Pending').length} pending)`}].map(s => (
+        {[{key:'services',label:'🔧 Manage Services'},{key:'bookings',label:'📋 Bookings (' + bookings.filter((b:any)=>b.status==='Pending').length + ' pending)'}].map((s:any) => (
           <button key={s.key} onClick={() => setActiveSection(s.key as any)}
             className={cn('px-4 py-2 text-[9px] font-bold uppercase', activeSection===s.key?'bg-gold text-navy':'bg-[#001c36] text-gold/60 border border-gold/20')}>
             {s.label}
