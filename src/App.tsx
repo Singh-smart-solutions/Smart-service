@@ -3182,36 +3182,32 @@ const PDFRoomImport: React.FC<{ profile: UserProfile; rooms: any[]; onDone: () =
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   const extractRoomsFromText = (text: string) => {
+    // PDF.js outputs all text as one continuous string — no line breaks between table rows
     const results: { roomNumber: string; guestName: string; arrival: string; checkout: string }[] = [];
-    const skipWords = /total|page|printed|property|hotel|report|date|room no|nights|adults|nationality|arrival|departure|check.?in|check.?out|status|guest name|sentinel|grand/i;
-    const dateRe = /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/g;
     const seen = new Set<string>();
-    const lines = text.split(/\n/).map(l => l.replace(/\s+/g, ' ').trim()).filter(l => l.length > 3);
-    for (const line of lines) {
-      // Skip header/footer lines
-      if (skipWords.test(line) && !/^\d{3,4}/.test(line)) continue;
-      // Room number MUST be at start of line
-      const startMatch = line.match(/^(\d{3,4})(\s|$)/);
-      if (!startMatch) continue;
-      const roomNum = startMatch[1];
-      if (parseInt(roomNum) > 2099 || parseInt(roomNum) < 100) continue;
-      if (seen.has(roomNum)) continue;
-      // Extract dates
-      const dates = [...line.matchAll(dateRe)].map(m => m[1]);
-      // Guest name: text after room number before first date
-      const afterRoom = line.slice(roomNum.length).trim();
-      const firstDateIdx = dates.length > 0 ? afterRoom.indexOf(dates[0]) : -1;
-      const nameSection = firstDateIdx > 0 ? afterRoom.slice(0, firstDateIdx) : afterRoom.slice(0, 50);
-      const guestName = nameSection
-        .replace(/\b(UAE|UK|USA|India|China|France|Germany|Russia|KSA|Saudi|Oman|Qatar|Kuwait|Bahrain|Jordan|Egypt|Lebanon)\b/gi, '')
-        .replace(/[^a-zA-Z ]/g, '').replace(/\s+/g, ' ').trim();
-      seen.add(roomNum);
-      results.push({
-        roomNumber: roomNum,
-        guestName: guestName || 'Unknown',
-        arrival: dates[0] || '—',
-        checkout: dates[1] || '—',
-      });
+    const dateRe = /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/g;
+    const natRe = /\b(UAE|UK|USA|India|China|France|Germany|Russia|KSA|Saudi|Oman|Qatar|Kuwait|Bahrain|Jordan|Egypt|Lebanon|Filipino|Pakistani|Italian|Spanish|Turkish|Japanese|Korean|Australian|Canadian)\b/gi;
+    const roomRe = /(?<!\d)(\d{3,4})(?!\d)/g;
+    const flat = text.replace(/\s+/g, ' ').trim();
+    let m: RegExpExecArray | null;
+    while ((m = roomRe.exec(flat)) !== null) {
+      const num = m[1];
+      const val = parseInt(num);
+      if (val < 100 || (val >= 2000 && val <= 2100)) continue;
+      if (seen.has(num)) continue;
+      const after = flat.slice(m.index + num.length, m.index + num.length + 120);
+      if (!/^\s+[A-Za-z]/.test(after)) continue;
+      const afterDates: string[] = [];
+      const tmpRe = /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/g;
+      let dm: RegExpExecArray | null;
+      while ((dm = tmpRe.exec(after)) !== null) afterDates.push(dm[0]);
+      if (afterDates.length < 2) continue;
+      const firstDateIdx = after.indexOf(afterDates[0]);
+      const nameRaw = after.slice(0, firstDateIdx).trim();
+      const name = nameRaw.replace(natRe, '').replace(/[^a-zA-Z ]/g, '').replace(/\s+/g, ' ').trim();
+      if (!name) continue;
+      seen.add(num);
+      results.push({ roomNumber: num, guestName: name, arrival: afterDates[0], checkout: afterDates[1] });
     }
     return results;
   };
@@ -3511,7 +3507,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
   const [rooms, setRooms] = useState<any[]>([]);
   const [roomSearch, setRoomSearch] = useState('');
   const [repPeriod, setRepPeriod] = useState<'daily'|'weekly'|'monthly'>('daily');
-  const [activeTab, setActiveTab] = useState<'requests' | 'sla' | 'staff' | 'settings' | 'restaurants' | 'rooms' | 'report' | 'concierge' | 'stafflogs' | 'live'>('requests');
+  const [activeTab, setActiveTab] = useState<'operations' | 'team' | 'reports' | 'settings' | 'rooms' | 'restaurants' | 'concierge'>('operations');
   const [now, setNow] = useState(Date.now());
   const [editSLA, setEditSLA] = useState<number>(5);
   const [showMgrRestaurant, setShowMgrRestaurant] = useState(false);
@@ -3794,18 +3790,15 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex bg-navy border border-gold/20 p-1 flex-wrap gap-0.5">
             {[
-              { key: 'requests', label: `Requests (${requests.filter(r => r.status !== 'Completed').length})` },
-              { key: 'sla', label: `SLA${violations.length > 0 ? ` (${violations.length})` : ''}` },
-              { key: 'staff', label: `Staff${pendingStaff.length > 0 ? ` (${pendingStaff.length})` : ''}` },
+              { key: 'operations', label: `📋 Operations${requests.filter(r=>r.status!=='Completed').length>0?' ('+requests.filter(r=>r.status!=='Completed').length+')':''}` },
+              { key: 'team', label: `👥 Team${pendingStaff.length>0?' ('+pendingStaff.length+')':''}` },
+              { key: 'reports', label: '📊 Reports' },
               { key: 'settings', label: '⚙ Settings' },
-              { key: 'report', label: '📊 Report' },
-              { key: 'live', label: '🟢 Live' },
-              { key: 'stafflogs', label: '📋 Staff Logs' },
-              ...(profile.department === 'F&B' ? [{ key: 'restaurants', label: '🍽 Restaurants' }] : []),
               ...(profile.department === 'Housekeeping' ? [{ key: 'rooms', label: '🛏 Rooms' }] : []),
+              ...(profile.department === 'F&B' ? [{ key: 'restaurants', label: '🍽 Restaurants' }] : []),
               ...(profile.department === 'Concierge' ? [{ key: 'concierge', label: '🔑 Services' }] : []),
             ].map(tab => (
-              <button key={tab.key} onClick={() => { const k = tab.key as any; setActiveTab(k); if (k === 'stafflogs') fetchStaffLogs(); if (k === 'live') fetchLiveData(); }} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
+              <button key={tab.key} onClick={() => { const k = tab.key as any; setActiveTab(k); if (k === 'reports') fetchStaffLogs(); }} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase', activeTab === tab.key ? 'bg-gold text-navy' : 'text-gold/60')}>{tab.label}</button>
             ))}
           </div>
           <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
@@ -3829,57 +3822,74 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         </div>
       )}
 
-      {activeTab === 'requests' && (
-        <div className="space-y-3">
-          <h2 className="text-lg font-serif text-gold">{profile.department} Requests</h2>
-          {requests.length === 0 && <p className="text-white/20 italic py-12 text-center">No requests yet.</p>}
-          {requests.map(req => {
-            const over = getSLAExceeded(req);
-            return (
-              <div key={req.id} className={cn('border p-4', over ? 'border-red-500 bg-red-900/10' : 'border-gold/10 bg-[#001c36]')}>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="flex gap-2 mb-1 flex-wrap">
-                      <span className={cn('text-[9px] font-bold px-2 py-0.5 border', req.status === 'Completed' ? 'border-green-500 text-green-400' : over ? 'border-red-500 text-red-400' : 'border-gold text-gold')}>{req.status}</span>
-                      {over && <span className="text-[9px] font-bold px-2 py-0.5 bg-red-600 text-white">⚠ SLA EXCEEDED</span>}
-                    </div>
-                    <p className="text-sm font-serif text-white">{req.service}</p>
-                    <p className="text-[9px] text-white/40 mt-1">Room {req.guest_room} · {req.guest_name} · {req.assigned_to || 'Unassigned'}</p>
-                    {req.line_items && req.line_items.map((li: any, i: number) => <p key={i} className="text-[8px] text-gold/60">{li.qty}x {li.name} — AED {li.total}</p>)}
-                    {req.late_reason && <p className="text-[9px] text-red-400 mt-1 font-bold">⚠ Late: {req.late_reason}</p>}
-                  </div>
-                  <div className="text-right ml-4 flex-shrink-0 space-y-0.5">
-                    <p className="text-[8px] text-white/60 font-bold">📥 {formatTime(req.created_at)}</p>
-                    {req.accepted_at && <p className="text-[8px] text-blue-400 font-bold">✓ {formatTime(req.accepted_at)}</p>}
-                    {req.closed_at && <p className="text-[8px] text-green-400 font-bold">✅ {formatTime(req.closed_at)}</p>}
-                    {req.closed_at && req.accepted_at && <p className="text-[8px] text-white/40">Total: {Math.floor((new Date(req.closed_at).getTime()-new Date(req.created_at).getTime())/60000)}m</p>}
-                    {req.total_price && <p className="text-gold font-bold">AED {req.total_price}</p>}
-                    {over && <p className="text-red-400 text-xs font-bold">{getElapsedMin(req.created_at)}m elapsed</p>}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {activeTab === 'sla' && (
-        <div className="bg-[#001c36] border border-gold/10 p-5">
-          <h3 className="text-base font-serif text-white mb-3">Currently Delayed — {profile.department}</h3>
-          {violations.length === 0 ? <p className="text-green-400 font-bold text-sm">✓ All within SLA ({slaConfig.sla_minutes || 5} min)</p> : (
-            <div className="space-y-2">
-              {violations.map(req => (
-                <div key={req.id} className="flex items-center justify-between p-3 bg-red-900/20 border border-red-500">
-                  <div><p className="text-white font-bold text-sm">{req.assigned_to || 'Unassigned'}</p><p className="text-[9px] text-red-400">Room {req.guest_room} · {req.service}</p></div>
-                  <p className="text-red-400 font-bold">{getElapsedMin(req.created_at)}m</p>
-                </div>
-              ))}
+      {/* Operations Tab — Requests + SLA */}
+      {activeTab === 'operations' && (
+        <div className="space-y-4 p-3">
+          {violations.length > 0 && (
+            <div className="bg-red-900/20 border border-red-500/30 p-3 flex items-center gap-2">
+              <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
+              <p className="text-red-400 text-[10px] font-bold uppercase tracking-wider">{violations.length} SLA violation{violations.length !== 1 ? 's' : ''} require immediate action</p>
             </div>
           )}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-serif text-gold">{profile.department} — Active Requests</h2>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] text-white/40">SLA: {slaConfig[profile.department] || 30}m</span>
+                <input type="number" min="5" max="120" value={editSLA}
+                  onChange={e => setEditSLA(Number(e.target.value))}
+                  className="w-14 bg-navy/50 border border-gold/20 text-white text-[9px] p-1 outline-none text-center" />
+                <button onClick={saveSLA} className="px-2 py-1 bg-gold text-navy text-[8px] font-bold uppercase">Save</button>
+              </div>
+            </div>
+            {requests.filter((r: any) => r.status !== 'Completed').length === 0 ? (
+              <p className="text-white/30 text-sm text-center py-12">No active requests</p>
+            ) : requests.filter((r: any) => r.status !== 'Completed').map((req: any) => {
+              const elapsedMin = getElapsedMin(req.created_at);
+              const slaLimitMin = slaConfig[req.department] || 30;
+              const pct = Math.min((elapsedMin / slaLimitMin) * 100, 100);
+              const isOver = elapsedMin > slaLimitMin;
+              return (
+                <div key={req.id} className={cn("bg-[#001c36] border p-3 mb-2 space-y-1.5", isOver ? "border-red-500/40" : "border-gold/10")}>
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-bold text-[11px] truncate">{req.service}</p>
+                      <p className="text-white/50 text-[9px]">
+                        Room {req.guest_room} · {req.guest_name}
+                        {req.language && req.language !== 'English' && <span className="ml-1">{LANG_FLAG[req.language]||'🌐'}</span>}
+                      </p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <span className={cn("text-[8px] font-bold px-2 py-0.5 rounded-full text-white",
+                        req.status === 'Violated' ? 'bg-red-600' :
+                        req.status === 'In Progress' ? 'bg-blue-600' : 'bg-yellow-600')}>
+                        {req.status}
+                      </span>
+                      <p className={cn("text-[10px] font-mono font-bold mt-0.5", isOver ? "text-red-400" : "text-gold")}>
+                        {elapsedMin}m / {slaLimitMin}m
+                      </p>
+                    </div>
+                  </div>
+                  <div className="h-1 bg-navy/50 rounded-full overflow-hidden">
+                    <div className={cn("h-full rounded-full transition-all",
+                      isOver ? "bg-red-500" : pct > 80 ? "bg-orange-400" : "bg-green-500")}
+                      style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="grid grid-cols-3 text-[8px] text-white/40 gap-1">
+                    <p>📥 {formatTime(req.created_at)}</p>
+                    <p>✅ {formatTime(req.accepted_at)}</p>
+                    <p className="text-right truncate">{req.assigned_to || '—'}</p>
+                  </div>
+                  {req.notes && <p className="text-[9px] text-white/50 italic truncate">"{req.notes}"</p>}
+                  {req.late_reason && <p className="text-[9px] text-red-400 font-bold">⚠ {req.late_reason}</p>}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {activeTab === 'staff' && (
+{activeTab === 'team' && (
         <div className="bg-[#001c36] border border-gold/10 p-5 space-y-5">
           <h2 className="text-lg font-serif text-gold">{profile.department} Staff</h2>
           {pendingStaff.length > 0 && (
@@ -3919,33 +3929,11 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
         </div>
       )}
 
-      {activeTab === 'settings' && (
-        <div className="bg-[#001c36] border border-gold/10 p-5 space-y-5">
-          <h2 className="text-lg font-serif text-gold flex items-center gap-2"><Settings size={18} /> SLA Settings — {profile.department}</h2>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">SLA Response Time (minutes)</label>
-              <div className="flex items-center gap-4">
-                <input type="number" min="1" max="120" value={editSLA} onChange={e => setEditSLA(Number(e.target.value))} className="w-32 bg-white border border-gold p-3 text-xl font-serif text-navy text-center outline-none" />
-                <span className="text-white/60 text-sm">minutes</span>
-              </div>
-              <div className="flex gap-2 flex-wrap mt-2">
-                {[5, 10, 15, 20, 30, 45, 60].map(min => (
-                  <button key={min} onClick={() => setEditSLA(min)} className={cn('px-3 py-1.5 text-[9px] font-bold uppercase border', editSLA === min ? 'bg-gold text-navy border-gold' : 'border-gold/30 text-gold/60')}>{min}m</button>
-                ))}
-              </div>
-            </div>
-            <button onClick={saveSLA} className="gold-button m-0">Save SLA Setting</button>
-            <div className="border border-gold/10 p-4 bg-navy/20">
-              <p className="text-white"><span className="text-gold font-bold text-2xl font-serif">{slaConfig.sla_minutes || 5}</span> minutes current SLA for {profile.department}</p>
-              {slaConfig.updated_by && <p className="text-[9px] text-white/30 mt-1">Last updated by: {slaConfig.updated_by}</p>}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* ALL MANAGERS — Performance Report Tab */}
-      {activeTab === 'report' && (() => {
+{/* Reports Tab */}
+      {activeTab === 'reports' && (
+        <div>
+          (() => {
         const now = new Date();
         const cutoff = new Date();
         if (repPeriod === 'weekly')  cutoff.setDate(now.getDate() - 7);
@@ -4108,112 +4096,9 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
           </div>
         );
       })()}
-
-            {/* Live Dashboard Tab */}
-      {activeTab === 'live' && (
-        <div className="space-y-4 p-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <h2 className="text-xl font-serif text-gold">🟢 Live Dashboard</h2>
-              <p className="text-white/40 text-[9px] uppercase tracking-widest mt-1">
-                {profile.department !== 'None' ? profile.department + ' Department · ' : 'All Departments · '}{profile.hotelName}
-              </p>
-            </div>
-            <button onClick={fetchLiveData} className="px-4 py-2 border border-gold/30 text-gold text-[9px] uppercase tracking-widest hover:bg-gold/10">
-              🔄 Refresh
-            </button>
-          </div>
-
-          {liveLoading ? (
-            <div className="text-center py-12 text-white/30 text-sm">Loading live data...</div>
-          ) : (
-            <div className="space-y-6">
-
-              {/* Online Staff */}
-              <div>
-                <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold border-b border-gold/20 pb-2 mb-3">
-                  👥 Online Staff ({liveData.onlineStaff.length})
-                </h3>
-                {liveData.onlineStaff.length === 0 ? (
-                  <p className="text-white/30 text-[11px]">No staff currently logged in</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {liveData.onlineStaff.map((s: any) => (
-                      <div key={s.id} className="bg-[#001c36] border border-green-500/20 p-3 flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-white text-[11px] font-bold truncate">{s.name}</p>
-                          <p className="text-white/40 text-[9px]">{s.occupation} · {s.department}</p>
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <p className="text-green-400 text-[9px] font-bold">ONLINE</p>
-                          <p className="text-white/30 text-[8px]">{s.tasks_completed || 0} tasks</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* HK Room Status — only for Housekeeping dept */}
-              {profile.department === 'Housekeeping' && liveData.onlineStaff.length >= 0 && (
-                <div>
-                  <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold border-b border-gold/20 pb-2 mb-3">
-                    🛏 Room Status Board
-                  </h3>
-                  {liveData.rooms && liveData.rooms.length > 0
-                    ? <RoomLiveBoard rooms={liveData.rooms} />
-                    : <p className="text-white/30 text-[11px]">No rooms data — click Refresh</p>}
-                </div>
-              )}
-
-              {/* Active Requests */}
-              <div>
-                <h3 className="text-[10px] uppercase tracking-widest text-gold font-bold border-b border-gold/20 pb-2 mb-3">
-                  📋 Active Requests ({liveData.activeRequests.length})
-                </h3>
-                {liveData.activeRequests.length === 0 ? (
-                  <p className="text-white/30 text-[11px]">No active requests</p>
-                ) : (
-                  <div className="space-y-2">
-                    {liveData.activeRequests.map((r: any) => (
-                      <div key={r.id} className={cn('bg-[#001c36] border p-3 space-y-1',
-                        r.status === 'Violated' ? 'border-red-500/40' :
-                        r.status === 'In Progress' ? 'border-blue-500/20' : 'border-gold/10')}>
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <span className="text-white text-[11px] font-bold">{r.service}</span>
-                            <span className="text-white/40 text-[9px] mx-2">·</span>
-                            <span className="text-gold text-[9px]">Room {r.guest_room}</span>
-                          </div>
-                          <span className={cn('text-[8px] font-bold px-2 py-0.5',
-                            r.status === 'Violated' ? 'bg-red-900/40 text-red-400' :
-                            r.status === 'In Progress' ? 'bg-blue-900/40 text-blue-400' :
-                            'bg-yellow-900/40 text-yellow-400')}>
-                            {r.status}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-4 text-[9px] text-white/50">
-                          <p>👤 Guest: <span className="text-white/70">{r.guest_name || '—'}</span></p>
-                          <p>🏨 Dept: <span className="text-white/70">{r.department}</span></p>
-                          <p>🕐 Requested: <span className="text-white/70">{formatTime(r.created_at)}</span></p>
-                          <p>✅ Accepted: <span className="text-white/70">{formatTime(r.accepted_at)}</span></p>
-                          {r.assigned_to && <p className="col-span-2">👷 Assigned: <span className="text-white/70">{r.assigned_to}</span></p>}
-                          {r.late_reason && <p className="col-span-2 text-red-400">⚠ {r.late_reason}</p>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Staff Logs Tab */}
-      {activeTab === 'stafflogs' && (
-        <div className="space-y-4 p-4">
+          {/* Staff Logs */}
+          <div className="mt-4 border-t border-gold/10 pt-4">
+            <div className="space-y-4 p-4">
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-xl font-serif text-gold">Staff Activity Logs</h2>
@@ -4290,7 +4175,11 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
             </div>
           )}
         </div>
+      
+          </div>
+        </div>
       )}
+
 
       {/* Concierge Manager — Services Tab */}
       {activeTab === 'concierge' && profile.department === 'Concierge' && (
