@@ -3763,6 +3763,37 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
     fetchData();
   };
 
+  const handleRoomStatusChange = async (roomId: string, roomNumber: string, newStatus: string) => {
+    if (newStatus === 'Checked Out') {
+      if (!window.confirm(\`Confirm Check Out for Room \${roomNumber}?\`)) return;
+      const hId = profile.hotelId;
+      const nowTs = new Date().toISOString();
+      await supabase.from('guests').delete().eq('room', roomNumber);
+      if (hId) await supabase.from('requests').delete().eq('guest_room', roomNumber).eq('hotel_id', hId).in('status', ['Pending','In Progress','Violated']);
+      await supabase.from('rooms').update({
+        status: 'Checked Out', last_updated: nowTs,
+        checked_out_by: profile.displayName, checked_out_at: nowTs,
+        assigned_to: null, cleaning_at: null, cleaned_at: null, cleaned_by: null,
+        inspected_at: null, inspected_by: null, status_reason: null,
+        guest_name: null, arrival_date: null, checkout_date: null,
+      }).eq('id', roomId);
+    } else {
+      const nowTs = new Date().toISOString();
+      const upd: any = { status: newStatus, last_updated: nowTs, assigned_to: profile.displayName };
+      if (newStatus === 'Clean') { upd.cleaned_at = nowTs; upd.cleaned_by = profile.displayName; }
+      if (newStatus === 'Cleaning') upd.cleaning_at = nowTs;
+      if (newStatus === 'Inspected') { upd.inspected_at = nowTs; upd.inspected_by = profile.displayName; }
+      if (['Do Not Disturb','Out of Order','Guest Refused','Different Time'].includes(newStatus)) upd.status_reason = newStatus;
+      await supabase.from('rooms').update(upd).eq('id', roomId);
+    }
+    fetchRoomsMgr();
+  };
+
+  const handleRoomReactivate = async (roomId: string) => {
+    await supabase.from('rooms').update({ status: 'Clean', assigned_to: profile.displayName, last_updated: new Date().toISOString() }).eq('id', roomId);
+    fetchRoomsMgr();
+  };
+
   return (
     <div className="min-h-screen bg-[#001529] text-white p-4 sm:p-6 space-y-5">
       {/* Restaurant Portal Overlay */}
@@ -4197,37 +4228,8 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
           </div>
           {/* Row view with inline status dropdown */}
           <RoomLiveBoard rooms={rooms} occupation={profile.occupation}
-            onStatusChange={async (roomId: string, roomNumber: string, newStatus: string) => {
-              if (newStatus === 'Checked Out') {
-                if (!window.confirm(`Confirm Check Out for Room ${roomNumber}?`)) return;
-                const hId = profile.hotelId;
-                const now = new Date().toISOString();
-                await supabase.from('guests').delete().eq('room', roomNumber);
-                if (hId) await supabase.from('requests').delete().eq('guest_room', roomNumber).eq('hotel_id', hId).in('status', ['Pending','In Progress','Violated']);
-                await supabase.from('rooms').update({
-                  status: 'Checked Out', last_updated: now,
-                  checked_out_by: profile.displayName, checked_out_at: now,
-                  assigned_to: null, cleaning_at: null, cleaned_at: null, cleaned_by: null,
-                  inspected_at: null, inspected_by: null, status_reason: null,
-                  guest_name: null, arrival_date: null, checkout_date: null,
-                }).eq('id', roomId);
-              } else {
-                const now = new Date().toISOString();
-                const upd: any = { status: newStatus, last_updated: now, assigned_to: profile.displayName };
-                if (newStatus === 'Clean') { upd.cleaned_at = now; upd.cleaned_by = profile.displayName; }
-                if (newStatus === 'Cleaning') upd.cleaning_at = now;
-                if (newStatus === 'Inspected') { upd.inspected_at = now; upd.inspected_by = profile.displayName; }
-                if (newStatus === 'Do Not Disturb' || newStatus === 'Out of Order' || newStatus === 'Guest Refused' || newStatus === 'Different Time') {
-                  upd.status_reason = newStatus;
-                }
-                await supabase.from('rooms').update(upd).eq('id', roomId);
-              }
-              fetchRoomsMgr();
-            }}
-            onReactivate={async (roomId: string) => {
-              await supabase.from('rooms').update({ status: 'Clean', assigned_to: profile.displayName, last_updated: new Date().toISOString() }).eq('id', roomId);
-              fetchRoomsMgr();
-            }} />
+            onStatusChange={handleRoomStatusChange}
+            onReactivate={handleRoomReactivate} />
         </div>
       )}
 
