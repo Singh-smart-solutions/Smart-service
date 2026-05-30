@@ -24,6 +24,7 @@ export interface UserProfile {
   hotelId?: string;       // ✅ Hotel isolation
   hotelName?: string;     // ✅ Display name
   entryCode?: string;     // ✅ The code used to enter
+  telegram_chat_id?: string; // ✅ Telegram notification link
 }
 
 export interface ServiceRequest {
