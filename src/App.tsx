@@ -5494,7 +5494,7 @@ export default function App() {
           const msg = '<b>🔔 New Request — ' + (service.type || service.name) + '</b>\n'
             + '🏨 Room ' + activeRoom + ' · ' + profile.displayName + ' ' + flag + '\n'
             + '📝 ' + (customData?.notes || message || '—') + '\n'
-            + '⏰ SLA: ' + (slaSettings[dept] || 30) + ' min';
+            + '⏰ SLA: 30 min';
           notifyDeptStaff(profile.hotelId, dept, msg);
         }
       } catch { /* never block request submission */ }
