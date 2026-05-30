@@ -5490,15 +5490,20 @@ export default function App() {
       showToast('Your request has been submitted successfully!', 'success');
       // Notify dept staff via Telegram
       try {
+        const dept = getDepartmentFromServiceKey(serviceKey);
+        const flag = LANG_FLAG[language] || '';
+        // Fetch actual SLA limit for this dept
+        let slaMin = 30;
         if (profile.hotelId) {
-          const dept = getDepartmentFromServiceKey(serviceKey);
-          const flag = LANG_FLAG[language] || '';
-          const msg = '<b>🔔 New Request — ' + (service.type || service.name) + '</b>\n'
-            + '🏨 Room ' + activeRoom + ' · ' + profile.displayName + ' ' + flag + '\n'
-            + '📝 ' + (customData?.notes || message || '—') + '\n'
-            + '⏰ SLA: 30 min';
-          notifyDeptStaff(profile.hotelId, dept, msg);
+          const { data: slaDat } = await supabase.from('sla_settings')
+            .select('sla_minutes').eq('department', dept).eq('hotel_id', profile.hotelId).single();
+          if (slaDat?.sla_minutes) slaMin = slaDat.sla_minutes;
         }
+        const msg = '<b>🔔 New Request — ' + (service.type || service.name) + '</b>\n'
+          + '🏨 Room ' + activeRoom + ' · ' + profile.displayName + ' ' + flag + '\n'
+          + '📝 ' + (customData?.notes || message || '—') + '\n'
+          + '⏰ SLA: ' + slaMin + ' min';
+        notifyDeptStaff(profile.hotelId, dept, msg);
       } catch { /* never block request submission */ }
     } catch (e: any) { showToast(e.message || 'An error occurred. Please try again.', 'error'); }
   };
