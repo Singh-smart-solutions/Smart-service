@@ -3765,7 +3765,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
 
   const handleRoomStatusChange = async (roomId: string, roomNumber: string, newStatus: string) => {
     if (newStatus === 'Checked Out') {
-      if (!window.confirm(\`Confirm Check Out for Room \${roomNumber}?\`)) return;
+      if (!window.confirm(`Confirm Check Out for Room ${roomNumber}?`)) return;
       const hId = profile.hotelId;
       const nowTs = new Date().toISOString();
       await supabase.from('guests').delete().eq('room', roomNumber);
