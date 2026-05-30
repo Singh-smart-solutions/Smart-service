@@ -346,19 +346,20 @@ const sendTelegram = async (chatId: string, message: string): Promise<void> => {
 
 // Notify all online staff in a department
 const notifyDeptStaff = async (
-  hotelId: string,
+  hotelId: string | null | undefined,
   department: string,
   message: string,
   excludeId?: string
 ): Promise<void> => {
   if (!BOT_TOKEN) return;
-  const { data: staff } = await supabase.from('staff')
+  let q = supabase.from('staff')
     .select('telegram_chat_id')
-    .eq('hotel_id', hotelId)
     .eq('department', department)
-    .eq('logged_in', true)
     .not('telegram_chat_id', 'is', null);
-  if (!staff) return;
+  // Filter by hotel if available
+  if (hotelId) q = q.eq('hotel_id', hotelId);
+  const { data: staff } = await q;
+  if (!staff || staff.length === 0) return;
   for (const s of staff) {
     if (s.telegram_chat_id && s.telegram_chat_id !== excludeId) {
       await sendTelegram(s.telegram_chat_id, message);
@@ -368,19 +369,20 @@ const notifyDeptStaff = async (
 
 // Notify department manager
 const notifyDeptManager = async (
-  hotelId: string,
+  hotelId: string | null | undefined,
   department: string,
   message: string
 ): Promise<void> => {
   if (!BOT_TOKEN) return;
   const managerOccupations = ['Housekeeping Manager','F&B Manager','Concierge Manager',
     'Security Manager','Front Office Manager'];
-  const { data: managers } = await supabase.from('staff')
+  let q = supabase.from('staff')
     .select('telegram_chat_id')
-    .eq('hotel_id', hotelId)
     .eq('department', department)
     .in('occupation', managerOccupations)
     .not('telegram_chat_id', 'is', null);
+  if (hotelId) q = q.eq('hotel_id', hotelId);
+  const { data: managers } = await q;
   if (!managers) return;
   for (const m of managers) {
     if (m.telegram_chat_id) await sendTelegram(m.telegram_chat_id, message);
