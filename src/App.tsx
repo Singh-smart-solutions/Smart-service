@@ -2282,6 +2282,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
           role: isManager ? 'manager' : 'staff',
           department: (staffData.department as Department) || 'Front Office',
           staffIdNumber: staffData.staff_id, occupation: staffData.occupation, status: 'Approved',
+          telegram_chat_id: staffData.telegram_chat_id || null,
           hotelId: staffData.hotel_id || hotelCtx2?.id || null,
           hotelName: hotelCtx2?.hotel_name || null,
         };
