@@ -3964,7 +3964,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
 {/* Reports Tab */}
       {activeTab === 'reports' && (
         <div>
-          (() => {
+          {(() => {
         const now = new Date();
         const cutoff = new Date();
         if (repPeriod === 'weekly')  cutoff.setDate(now.getDate() - 7);
@@ -4218,6 +4218,24 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
       )}
 
       {/* HK Manager — Rooms Tab */}
+      {activeTab === 'settings' && (
+        <div className="p-4 space-y-4">
+          <h2 className="text-lg font-serif text-gold">⚙ Settings</h2>
+          <div className="bg-[#001c36] border border-gold/10 p-4 space-y-3">
+            <p className="text-[10px] uppercase tracking-widest text-gold font-bold">SLA Configuration</p>
+            <div className="flex items-center gap-3">
+              <span className="text-white/60 text-[10px]">{profile.department} SLA:</span>
+              <input type="number" min="5" max="120" value={editSLA}
+                onChange={e => setEditSLA(Number(e.target.value))}
+                className="w-20 bg-navy/50 border border-gold/20 text-white text-[10px] p-1.5 outline-none text-center" />
+              <span className="text-white/40 text-[9px]">minutes</span>
+              <button onClick={saveSLA} className="px-3 py-1.5 bg-gold text-navy text-[9px] font-bold uppercase">Save</button>
+            </div>
+            <p className="text-white/30 text-[9px]">Current: {slaConfig[profile.department] || 30} min · Affects SLA timer and violation alerts</p>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'rooms' && profile.department === 'Housekeeping' && (
         <div className="p-4 space-y-4">
           {/* PDF Import */}
