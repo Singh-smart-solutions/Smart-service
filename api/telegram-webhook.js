@@ -11,12 +11,8 @@ const supabase = createClient(
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  // Verify webhook secret
-  const secret = req.headers['x-webhook-secret'];
-  if (process.env.WEBHOOK_SECRET && secret !== process.env.WEBHOOK_SECRET) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
+  // No secret check needed — Telegram calls this directly
+  // (only notify-request.js needs secret verification from Supabase)
   try {
     const { message } = req.body;
     if (!message?.text || !message?.chat?.id) return res.status(200).end();
