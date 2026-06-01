@@ -1095,9 +1095,8 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
       // Notify F&B staff via Telegram
       try {
         const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
-        const flag = LANG_FLAG[language] || '';
         const restMsg = '<b>🍽 Restaurant Reservation</b>\n'
-          + '🏨 Room ' + (profile.roomNumber || '—') + ' · ' + profile.displayName + ' ' + flag + '\n'
+          + '🏨 Room ' + (profile.roomNumber || '—') + ' · ' + profile.displayName + '\n'
           + '🍴 ' + (selectedRestaurant || '') + ' · ' + pax + ' guests · ' + date + ' ' + time + '\n'
           + '📝 ' + (notes || '—') + '\n'
           + '🔖 Ref: ' + ref;
