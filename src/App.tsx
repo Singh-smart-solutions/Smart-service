@@ -18,7 +18,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const MANAGER_OCCUPATIONS = [
-  'Housekeeping Manager',
+  'Housekeeping Manager', 'Maintenance Manager',
   'F&B Manager', 'Concierge Manager',
   'Security Manager', 'Front Office Manager', 'Executive',
 ];
@@ -37,7 +37,7 @@ const DEPT_FROM_OCCUPATION: Record<string, Department> = {
   'Concierge Agent': 'Concierge', 'Concierge Supervisor': 'Concierge',
   'Security Officer': 'Security & Safety', 'Security Supervisor': 'Security & Safety',
   'Front Office Agent': 'Front Office', 'Front Office Supervisor': 'Front Office',
-  'Maintenance Technician': 'Maintenance', 'Maintenance Supervisor': 'Maintenance',
+  'Maintenance Technician': 'Maintenance', 'Maintenance Supervisor': 'Maintenance', 'Maintenance Manager': 'Maintenance',
 };
 
 const DEPARTMENTS: Department[] = ['Housekeeping', 'F&B', 'Concierge', 'Security & Safety', 'Front Office', 'Maintenance'];
@@ -1092,6 +1092,17 @@ const RestaurantPortal: React.FC<{ profile: UserProfile }> = ({ profile }) => {
         hotel_id: profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })(),
       }).select().single();
       if (error) throw error;
+      // Notify F&B staff via Telegram
+      try {
+        const hId = profile.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+        const flag = LANG_FLAG[language] || '';
+        const restMsg = '<b>🍽 Restaurant Reservation</b>\n'
+          + '🏨 Room ' + (profile.roomNumber || '—') + ' · ' + profile.displayName + ' ' + flag + '\n'
+          + '🍴 ' + (selectedRestaurant || '') + ' · ' + pax + ' guests · ' + date + ' ' + time + '\n'
+          + '📝 ' + (notes || '—') + '\n'
+          + '🔖 Ref: ' + ref;
+        notifyDeptStaff(hId, 'F&B', restMsg);
+      } catch { /* never block booking */ }
       showToast(`Reservation submitted! Ref: ${ref} — Our team will confirm shortly.`, 'success');
       setDate(''); setTime(''); setPax('2'); setNotes('');
       fetchBookings();
@@ -2241,7 +2252,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
         const { error } = await supabase.from('staff').insert({
           name: fullName, staff_id: staffIdNumber, email, password: hashedPassword,
           department: derivedDept, occupation, approved: false,
-          needs_executive_approval: ['Housekeeping Manager','F&B Manager','Concierge Manager','Security Manager','Front Office Manager','Executive'].includes(occupation),
+          needs_executive_approval: ['Housekeeping Manager','Maintenance Manager','F&B Manager','Concierge Manager','Security Manager','Front Office Manager','Executive'].includes(occupation),
           logged_in: false, tasks_completed: 0, tasks_on_time: 0, violations: 0, failed_attempts: 0,
           hotel_id: hotelCtx?.id || null,
         });
@@ -2554,7 +2565,28 @@ const mapRow = (row: any) => ({
         fetchTasks();
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    // F&B staff also listen for restaurant bookings
+    let restChannel: any = null;
+    if (userProfile.department === 'F&B') {
+      restChannel = supabase.channel(`rest-${userProfile.uid}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'restaurant_bookings' }, (payload) => {
+          const booking = payload.new as any;
+          const myHotelId = userProfile.hotelId;
+          if (myHotelId && booking.hotel_id && booking.hotel_id !== myHotelId) return;
+          const msg = `${booking.guest_name} · ${booking.pax} guests · ${booking.date} ${booking.time}`;
+          setNewOrderAlert(`🍽 New Reservation: ${msg}`);
+          playNotificationSound();
+          showBrowserNotification('🍽 Sentinel Pro — Restaurant Reservation', msg);
+          setTimeout(() => setNewOrderAlert(null), 15000);
+        })
+        .subscribe();
+    }
+
+    return () => {
+      supabase.removeChannel(channel);
+      if (restChannel) supabase.removeChannel(restChannel);
+    };
   }, [userProfile, fetchTasks, fetchRooms, isHousekeeping]);
 
   const getElapsed = (ts: any) => {
@@ -3833,6 +3865,10 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
             ))}
           </div>
           <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
+          <button onClick={() => window.open('https://t.me/SentinelPr0BoT?start=' + profile.uid, '_blank')}
+            className={(profile as any).telegram_chat_id ? 'flex items-center gap-1 border border-green-500/40 text-green-400 px-3 py-2 text-[9px] font-bold uppercase' : 'flex items-center gap-1 border border-gold/20 text-gold/50 hover:text-gold px-3 py-2 text-[9px] font-bold uppercase'}>
+            {(profile as any).telegram_chat_id ? '✅ Telegram' : '🔔 Telegram'}
+          </button>
         </div>
       </header>
 
@@ -4909,6 +4945,10 @@ ${requests.filter(r => r.rating).length > 0 ? `<div class="section">
             ))}
           </div>
           <button onClick={() => { localStorage.clear(); window.location.replace('/'); }} className="flex items-center gap-1 text-gold/60 hover:text-gold border border-gold/20 px-3 py-2 text-[9px] font-bold uppercase"><LogOut size={12} /> Logout</button>
+          <button onClick={() => window.open('https://t.me/SentinelPr0BoT?start=' + profile.uid, '_blank')}
+            className={(profile as any).telegram_chat_id ? 'flex items-center gap-1 border border-green-500/40 text-green-400 px-3 py-2 text-[9px] font-bold uppercase' : 'flex items-center gap-1 border border-gold/20 text-gold/50 hover:text-gold px-3 py-2 text-[9px] font-bold uppercase'}>
+            {(profile as any).telegram_chat_id ? '✅ Telegram' : '🔔 Telegram'}
+          </button>
         </div>
       </header>
 
@@ -5433,7 +5473,7 @@ export default function App() {
     { name: t('room_service'), icon: Coffee, dept: 'F&B', serviceKey: 'room_service', configKey: 'room_service' },
     { name: 'Restaurant Reservations', icon: UtensilsCrossed, dept: 'F&B', serviceKey: 'restaurant_portal', configKey: 'restaurant', isPortal: true },
     { name: t('concierge_services'), icon: Key, dept: 'Concierge', serviceKey: 'concierge_services', configKey: 'concierge' },
-    { name: 'Luggage Assistance', icon: Briefcase, dept: 'Concierge', serviceKey: 'luggage', configKey: 'concierge', options: ['Pickup from Room', 'Delivery to Room', 'Storage Request', 'Transfer to Lobby', 'Other'] },
+    { name: 'Luggage Assistance', icon: Briefcase, dept: 'Concierge', serviceKey: 'luggage', configKey: 'luggage', options: ['Pickup from Room', 'Delivery to Room', 'Storage Request', 'Transfer to Lobby', 'Other'] },
     { name: t('security'), icon: Shield, dept: 'Security & Safety', serviceKey: 'security', configKey: 'security', options: [t('emergency'), t('safe_box'), t('medical'), t('escort'), 'Lost & Found', 'Other'] },
     { name: 'Maintenance', icon: Wrench, dept: 'Maintenance', serviceKey: 'maintenance', configKey: 'maintenance', options: ['AC / Heating Issue', 'Plumbing Issue', 'Electrical Issue', 'TV / Electronics', 'Door / Lock Issue', 'Lighting Issue', 'Bathroom Issue', 'Other'] },
   ];
