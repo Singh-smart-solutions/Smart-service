@@ -3428,9 +3428,20 @@ const RoomLiveBoard: React.FC<{
   occupation?: string;
 }> = ({ rooms, onReactivate, onStatusChange, occupation }) => {
   const [filter, setFilter] = useState('All');
-  const filtered = filter === 'All' ? rooms : rooms.filter(r => r.status === filter);
+  const [roomSearch, setRoomSearch] = useState('');
+  const filtered = rooms
+    .filter(r => filter === 'All' || r.status === filter)
+    .filter(r => !roomSearch.trim() || String(r.room_number).includes(roomSearch.trim()));
   return (
     <div className="space-y-3">
+      {/* Search bar */}
+      <input
+        type="text"
+        value={roomSearch}
+        onChange={e => setRoomSearch(e.target.value)}
+        placeholder="Search room number..."
+        className="w-full bg-navy/50 border border-gold/20 text-white text-[10px] p-2 outline-none placeholder:text-white/30 mb-1"
+      />
       {/* Filter pills */}
       <div className="flex flex-wrap gap-1.5">
         {ROOM_STATUS_FILTERS.map(f => {
@@ -3890,68 +3901,84 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
 
       {/* Operations Tab — Requests + SLA */}
       {activeTab === 'operations' && (
-        <div className="space-y-4 p-3">
+        <div className="space-y-3 p-3">
           {violations.length > 0 && (
             <div className="bg-red-900/20 border border-red-500/30 p-3 flex items-center gap-2">
               <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
-              <p className="text-red-400 text-[10px] font-bold uppercase tracking-wider">{violations.length} SLA violation{violations.length !== 1 ? 's' : ''} require immediate action</p>
+              <p className="text-red-400 text-[10px] font-bold uppercase tracking-wider">
+                {violations.length} SLA violation{violations.length !== 1 ? 's' : ''} — immediate action required
+              </p>
             </div>
           )}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-serif text-gold">{profile.department} — Active Requests</h2>
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] text-white/40">SLA: {slaConfig?.sla_minutes || 30}m</span>
-                <input type="number" min="5" max="120" value={editSLA}
-                  onChange={e => setEditSLA(Number(e.target.value))}
-                  className="w-14 bg-navy/50 border border-gold/20 text-white text-[9px] p-1 outline-none text-center" />
-                <button onClick={saveSLA} className="px-2 py-1 bg-gold text-navy text-[8px] font-bold uppercase">Save</button>
-              </div>
-            </div>
-            {requests.filter((r: any) => r.status !== 'Completed').length === 0 ? (
-              <p className="text-white/30 text-sm text-center py-12">No active requests</p>
-            ) : requests.filter((r: any) => r.status !== 'Completed').map((req: any) => {
-              const elapsedMin = getElapsedMin(req.created_at);
-              const slaLimitMin = slaConfig?.sla_minutes || 30;
-              const pct = Math.min((elapsedMin / slaLimitMin) * 100, 100);
-              const isOver = elapsedMin > slaLimitMin;
-              return (
-                <div key={req.id} className={cn("bg-[#001c36] border p-3 mb-2 space-y-1.5", isOver ? "border-red-500/40" : "border-gold/10")}>
-                  <div className="flex justify-between items-start gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-bold text-[11px] truncate">{req.service}</p>
-                      <p className="text-white/50 text-[9px]">
-                        Room {req.guest_room} · {req.guest_name}
-                        {req.language && req.language !== 'English' && <span className="ml-1">{LANG_FLAG[req.language]||'🌐'}</span>}
-                      </p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <span className={cn("text-[8px] font-bold px-2 py-0.5 rounded-full text-white",
-                        req.status === 'Violated' ? 'bg-red-600' :
-                        req.status === 'In Progress' ? 'bg-blue-600' : 'bg-yellow-600')}>
-                        {req.status}
-                      </span>
-                      <p className={cn("text-[10px] font-mono font-bold mt-0.5", isOver ? "text-red-400" : "text-gold")}>
-                        {elapsedMin}m / {slaLimitMin}m
-                      </p>
-                    </div>
-                  </div>
-                  <div className="h-1 bg-navy/50 rounded-full overflow-hidden">
-                    <div className={cn("h-full rounded-full transition-all",
-                      isOver ? "bg-red-500" : pct > 80 ? "bg-orange-400" : "bg-green-500")}
-                      style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="grid grid-cols-3 text-[8px] text-white/40 gap-1">
-                    <p>📥 {formatTime(req.created_at)}</p>
-                    <p>✅ {formatTime(req.accepted_at)}</p>
-                    <p className="text-right truncate">{req.assigned_to || '—'}</p>
-                  </div>
-                  {req.notes && <p className="text-[9px] text-white/50 italic truncate">"{req.notes}"</p>}
-                  {req.late_reason && <p className="text-[9px] text-red-400 font-bold">⚠ {req.late_reason}</p>}
-                </div>
-              );
-            })}
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-serif text-gold">{profile.department} — All Requests</h2>
+            <p className="text-[9px] text-white/30">{requests.length} total</p>
           </div>
+          {requests.length === 0 ? (
+            <p className="text-white/30 text-sm text-center py-12">No requests yet</p>
+          ) : (
+            <div className="overflow-x-auto -mx-3">
+              <table className="w-full text-[9px] border-collapse min-w-[620px]">
+                <thead>
+                  <tr className="border-b border-gold/20 bg-navy/40">
+                    <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Room</th>
+                    <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Guest</th>
+                    <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Service / Notes</th>
+                    <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Status</th>
+                    <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Requested</th>
+                    <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Accepted By</th>
+                    <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Accept Time</th>
+                    <th className="text-left py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">Completed</th>
+                    <th className="text-right py-2 px-2 text-gold/60 font-bold uppercase text-[8px]">SLA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {requests.map((req: any, idx: number) => {
+                    const elapsedMin = getElapsedMin(req.created_at);
+                    const slaLimitMin = slaConfig?.sla_minutes || 30;
+                    const isOver = req.status !== 'Completed' && elapsedMin > slaLimitMin;
+                    const pct = Math.min((elapsedMin / slaLimitMin) * 100, 100);
+                    return (
+                      <tr key={req.id} className={cn('border-b border-white/[0.04]',
+                        idx % 2 === 0 ? '' : 'bg-white/[0.02]',
+                        isOver ? 'bg-red-900/10' : '')}>
+                        <td className="py-2 px-2 text-white font-bold">{req.guest_room}</td>
+                        <td className="py-2 px-2 text-white/70 whitespace-nowrap">
+                          {req.guest_name}
+                          {req.language && req.language !== 'English' &&
+                            <span className="ml-1">{LANG_FLAG[req.language] || '🌐'}</span>}
+                        </td>
+                        <td className="py-2 px-2 max-w-[120px]">
+                          <p className="text-white/80 truncate">{req.service}</p>
+                          {req.notes && <p className="text-white/40 italic truncate text-[8px]">{req.notes}</p>}
+                        </td>
+                        <td className="py-2 px-2">
+                          <span className={cn('px-1.5 py-0.5 text-[7px] font-bold text-white rounded-full whitespace-nowrap',
+                            req.status === 'Completed' ? 'bg-green-600' :
+                            req.status === 'Violated' ? 'bg-red-600' :
+                            req.status === 'In Progress' ? 'bg-blue-600' : 'bg-yellow-600')}>
+                            {req.status}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-white/50 whitespace-nowrap">{formatTime(req.created_at)}</td>
+                        <td className="py-2 px-2 text-white/70 whitespace-nowrap">{req.assigned_to || '—'}</td>
+                        <td className="py-2 px-2 text-white/50 whitespace-nowrap">{formatTime(req.accepted_at)}</td>
+                        <td className="py-2 px-2 text-white/50 whitespace-nowrap">{formatTime(req.closed_at)}</td>
+                        <td className="py-2 px-2 text-right">
+                          {req.status !== 'Completed' ? (
+                            <span className={cn('font-mono font-bold text-[9px]',
+                              isOver ? 'text-red-400' : 'text-gold')}>
+                              {elapsedMin}m/{slaLimitMin}m
+                            </span>
+                          ) : <span className="text-green-400 text-[9px]">✓</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -5443,7 +5470,7 @@ export default function App() {
         }
         const msg = '<b>🔔 New Request — ' + (service.type || service.name) + '</b>\n'
           + '🏨 Room ' + activeRoom + ' · ' + profile.displayName + ' ' + flag + '\n'
-          + '📝 ' + (customData?.notes || message || '—') + '\n'
+          + '📝 ' + (customData?.notes || [message, dietaryRequirements].filter(Boolean).join(', ') || (lineItems && lineItems.length > 0 ? lineItems.map((li: any) => li.name).join(', ') : '—')) + '\n'
           + '⏰ SLA: ' + slaMin + ' min';
         notifyDeptStaff(profile.hotelId, dept, msg);
       } catch { /* never block request submission */ }
