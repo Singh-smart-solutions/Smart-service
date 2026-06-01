@@ -3866,7 +3866,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-serif text-gold">{profile.department} — Active Requests</h2>
               <div className="flex items-center gap-2">
-                <span className="text-[9px] text-white/40">SLA: {slaConfig[profile.department] || 30}m</span>
+                <span className="text-[9px] text-white/40">SLA: {slaConfig?.sla_minutes || 30}m</span>
                 <input type="number" min="5" max="120" value={editSLA}
                   onChange={e => setEditSLA(Number(e.target.value))}
                   className="w-14 bg-navy/50 border border-gold/20 text-white text-[9px] p-1 outline-none text-center" />
@@ -3877,7 +3877,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               <p className="text-white/30 text-sm text-center py-12">No active requests</p>
             ) : requests.filter((r: any) => r.status !== 'Completed').map((req: any) => {
               const elapsedMin = getElapsedMin(req.created_at);
-              const slaLimitMin = slaConfig[req.department] || 30;
+              const slaLimitMin = slaConfig?.sla_minutes || 30;
               const pct = Math.min((elapsedMin / slaLimitMin) * 100, 100);
               const isOver = elapsedMin > slaLimitMin;
               return (
@@ -4231,7 +4231,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
               <span className="text-white/40 text-[9px]">minutes</span>
               <button onClick={saveSLA} className="px-3 py-1.5 bg-gold text-navy text-[9px] font-bold uppercase">Save</button>
             </div>
-            <p className="text-white/30 text-[9px]">Current: {slaConfig[profile.department] || 30} min · Affects SLA timer and violation alerts</p>
+            <p className="text-white/30 text-[9px]">Current: {slaConfig?.sla_minutes || 30} min · Affects SLA timer and violation alerts</p>
           </div>
         </div>
       )}
