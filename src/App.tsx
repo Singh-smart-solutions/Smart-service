@@ -5511,6 +5511,7 @@ export default function App() {
     { name: t('concierge_services'), icon: Key, dept: 'Concierge', serviceKey: 'concierge_services', configKey: 'concierge' },
 
     { name: t('security'), icon: Shield, dept: 'Security & Safety', serviceKey: 'security', configKey: 'security', options: [t('emergency'), t('safe_box'), t('medical'), t('escort'), 'Lost & Found', 'Other'] },
+    { name: 'Luggage Assistance', icon: Briefcase, dept: 'Concierge', serviceKey: 'luggage', configKey: 'luggage', options: ['Pickup from Room', 'Delivery to Room', 'Storage Request', 'Transfer to Lobby', 'Other'] },
     { name: 'Maintenance', icon: Wrench, dept: 'Maintenance', serviceKey: 'maintenance', configKey: 'maintenance', options: ['AC / Heating Issue', 'Plumbing Issue', 'Electrical Issue', 'TV / Electronics', 'Door / Lock Issue', 'Lighting Issue', 'Bathroom Issue', 'Other'] },
   ];
 
