@@ -593,6 +593,16 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void; profile?: UserProfile
     });
     setSubmitting(false);
     setView('mybookings'); fetchMyBookings();
+      // Notify Concierge staff via Telegram
+      try {
+        const hId = profile?.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
+        const catLabel: Record<string,string> = { tour: 'Tour', car_rental: 'Car Rental', taxi: 'Taxi/Transfer', luggage: 'Luggage' };
+        const catName = catLabel[form.category] || form.category;
+        const notifMsg = '<b>🔑 Concierge Request — ' + catName + '</b>\n'
+          + '🏨 Room ' + (profile?.roomNumber || '—') + ' · ' + (profile?.displayName || 'Guest') + '\n'
+          + '📝 ' + (form.notes || '—');
+        notifyDeptStaff(hId, 'Concierge', notifMsg);
+      } catch { /* never block */ }
     setForm({ guests_count:'1', pickup_date:'', pickup_time:'', return_date:'', return_time:'', special_requests:'' });
     setSelected(null);
   };
@@ -2338,7 +2348,7 @@ const StaffLogin: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; onR
                   <optgroup label="── F&B"><option>F&B Waiter</option><option>F&B Supervisor</option><option>Chef</option><option>F&B Manager</option><option>Reservation Agent</option></optgroup>
                   <optgroup label="── Concierge"><option>Concierge Agent</option><option>Concierge Supervisor</option><option>Concierge Manager</option></optgroup>
                   <optgroup label="── Security"><option>Security Officer</option><option>Security Supervisor</option><option>Security Manager</option></optgroup>
-                  <optgroup label="── Maintenance / Engineering"><option>Maintenance Technician</option><option>Maintenance Supervisor</option></optgroup>
+                  <optgroup label="── Maintenance / Engineering"><option>Maintenance Technician</option><option>Maintenance Supervisor</option><option>Maintenance Manager</option></optgroup>
                   <optgroup label="── Front Office"><option>Front Office Agent</option><option>Front Office Supervisor</option><option>Front Office Manager</option></optgroup>
                   <optgroup label="── Executive"><option>Executive</option></optgroup>
                 </select>
@@ -3613,7 +3623,7 @@ const DeptManagerDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) =
       if (!/([Z]|[+\-]\d{2}(:\d{2})?)$/.test(normalized)) normalized += 'Z';
       const created = new Date(normalized).getTime();
       if (isNaN(created)) return 0;
-      return Math.floor((Date.now() - created) / 60000);
+      return Math.floor((now - created) / 60000);
     } catch { return 0; }
   };
   const violations = requests.filter(r => getSLAExceeded(r));
@@ -4667,7 +4677,7 @@ const ExecutiveDashboard: React.FC<{ profile: UserProfile }> = ({ profile }) => 
       if (!/([Z]|[+\-]\d{2}(:\d{2})?)$/.test(normalized)) normalized += 'Z';
       const created = new Date(normalized).getTime();
       if (isNaN(created)) return 0;
-      return Math.floor((Date.now() - created) / 60000);
+      return Math.floor((now - created) / 60000);
     } catch { return 0; }
   };
 
@@ -5499,7 +5509,7 @@ export default function App() {
     { name: t('room_service'), icon: Coffee, dept: 'F&B', serviceKey: 'room_service', configKey: 'room_service' },
     { name: 'Restaurant Reservations', icon: UtensilsCrossed, dept: 'F&B', serviceKey: 'restaurant_portal', configKey: 'restaurant', isPortal: true },
     { name: t('concierge_services'), icon: Key, dept: 'Concierge', serviceKey: 'concierge_services', configKey: 'concierge' },
-    { name: 'Luggage Assistance', icon: Briefcase, dept: 'Concierge', serviceKey: 'luggage', configKey: 'luggage', options: ['Pickup from Room', 'Delivery to Room', 'Storage Request', 'Transfer to Lobby', 'Other'] },
+
     { name: t('security'), icon: Shield, dept: 'Security & Safety', serviceKey: 'security', configKey: 'security', options: [t('emergency'), t('safe_box'), t('medical'), t('escort'), 'Lost & Found', 'Other'] },
     { name: 'Maintenance', icon: Wrench, dept: 'Maintenance', serviceKey: 'maintenance', configKey: 'maintenance', options: ['AC / Heating Issue', 'Plumbing Issue', 'Electrical Issue', 'TV / Electronics', 'Door / Lock Issue', 'Lighting Issue', 'Bathroom Issue', 'Other'] },
   ];
