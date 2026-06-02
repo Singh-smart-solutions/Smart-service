@@ -596,11 +596,11 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void; profile?: UserProfile
       // Notify Concierge staff via Telegram
       try {
         const hId = profile?.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
-        const catLabel: Record<string,string> = { tour: 'Tour', car_rental: 'Car Rental', taxi: 'Taxi/Transfer', luggage: 'Luggage' };
-        const catName = catLabel[form.category] || form.category;
+        const catLabel: Record<string,string> = { tour: '🗺 Tour', car_rental: '🚗 Car Rental', taxi: '🚕 Taxi/Transfer', luggage: '🧳 Luggage' };
+        const catName = selected ? (catLabel[selected.category] || selected.category || selected.name) : 'Service';
         const notifMsg = '<b>🔑 Concierge Request — ' + catName + '</b>\n'
           + '🏨 Room ' + (profile?.roomNumber || '—') + ' · ' + (profile?.displayName || 'Guest') + '\n'
-          + '📝 ' + (form.notes || '—');
+          + '📝 ' + (form.special_requests || '—');
         notifyDeptStaff(hId, 'Concierge', notifMsg);
       } catch { /* never block */ }
     setForm({ guests_count:'1', pickup_date:'', pickup_time:'', return_date:'', return_time:'', special_requests:'' });
