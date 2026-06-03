@@ -3178,21 +3178,6 @@ const mapRow = (row: any) => ({
       {/* MAINTENANCE */}
       {activeTab === 'maintenance' && isMaintenance && (
         <div className="p-4 space-y-5">
-          <h2 className="text-lg font-serif text-gold flex items-center gap-2"><Wrench size={18} /> Maintenance Request</h2>
-          <div className="bg-[#001c36] border border-gold/10 p-5 space-y-4">
-            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Room / Location</label><input type="text" value={maintenanceForm.room} onChange={e => setMaintenanceForm({ ...maintenanceForm, room: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none" placeholder="e.g. Room 402, Lobby, Pool Area" /></div>
-            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Category</label><select value={maintenanceForm.category} onChange={e => setMaintenanceForm({ ...maintenanceForm, category: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none">{MAINTENANCE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-            <div className="space-y-1">
-              <label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Priority</label>
-              <div className="flex gap-2">
-                {['Low', 'Normal', 'High', 'Urgent'].map(p => (
-                  <button key={p} onClick={() => setMaintenanceForm({ ...maintenanceForm, priority: p })} className={cn('flex-1 py-2 text-[9px] font-bold uppercase border', maintenanceForm.priority === p ? (p === 'Urgent' ? 'bg-red-600 text-white border-red-600' : 'bg-gold text-navy border-gold') : 'border-gold/30 text-gold/60')}>{p}</button>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-1"><label className="text-[9px] uppercase tracking-widest text-gold font-bold block">Description</label><textarea value={maintenanceForm.description} onChange={e => setMaintenanceForm({ ...maintenanceForm, description: e.target.value })} className="w-full bg-white border border-gold p-3 text-sm text-navy outline-none h-24 resize-none" placeholder="Describe the issue in detail..." /></div>
-            <button onClick={submitMaintenanceRequest} className="gold-button w-full m-0">Submit Maintenance Request</button>
-          </div>
           <h3 className="text-base font-serif text-gold">Active Maintenance Requests</h3>
           {tasks.filter(t => t.type?.includes('Maintenance')).length === 0
             ? <p className="text-white/20 italic text-sm">No active maintenance requests.</p>
@@ -5305,7 +5290,8 @@ const LANG_FLAG: Record<string, string> = {
 export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [guestTab, setGuestTab] = useState<'services' | 'room-service' | 'restaurant-bookings' | 'concierge'>('services');
+  const [guestTab, setGuestTab] = useState<'services' | 'room-service' | 'restaurant-bookings' | 'concierge' | 'maintenance'>('services');
+  const [guestMaintForm, setGuestMaintForm] = useState({ category: 'AC / Heating Issue', description: '', priority: 'Normal' });
   const [showRestaurantPortal, setShowRestaurantPortal] = useState(false);
   const [guestNotification, setGuestNotification] = useState<{ type: 'confirmed' | 'cancelled'; message: string } | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
@@ -5512,7 +5498,7 @@ export default function App() {
 
     { name: t('security'), icon: Shield, dept: 'Security & Safety', serviceKey: 'security', configKey: 'security', options: [t('emergency'), t('safe_box'), t('medical'), t('escort'), 'Lost & Found', 'Other'] },
     { name: 'Luggage Assistance', icon: Briefcase, dept: 'Concierge', serviceKey: 'luggage', configKey: 'luggage', options: ['Pickup from Room', 'Delivery to Room', 'Storage Request', 'Transfer to Lobby', 'Other'] },
-    { name: 'Maintenance', icon: Wrench, dept: 'Maintenance', serviceKey: 'maintenance', configKey: 'maintenance', options: ['AC / Heating Issue', 'Plumbing Issue', 'Electrical Issue', 'TV / Electronics', 'Door / Lock Issue', 'Lighting Issue', 'Bathroom Issue', 'Other'] },
+    { name: 'Maintenance', icon: Wrench, dept: 'Maintenance', serviceKey: 'maintenance', configKey: 'maintenance' },
   ];
 
   // Filter services based on hotel config — if no config (testing/12345), show all
@@ -5598,6 +5584,7 @@ export default function App() {
                           if (service.serviceKey === 'room_service') setGuestTab('room-service');
                           else if (service.serviceKey === 'restaurant_portal') setShowRestaurantPortal(true);
                           else if (service.serviceKey === 'concierge_services') setGuestTab('concierge');
+                          else if (service.serviceKey === 'maintenance') setGuestTab('maintenance');
                           else { setSelectedService(service); if (service.options) setMessage(service.options[0]); setShowRequestModal(true); }
                         }} className="premium-card">
                           <div className="icon-wrapper"><service.icon size={24} className="text-gold" strokeWidth={1} /></div>
@@ -5639,6 +5626,42 @@ export default function App() {
                 )}
                 {/* restaurant-bookings moved to dedicated RestaurantPortal */}
                 {guestTab === 'concierge' && <Concierge profile={profile} onSubmit={data => submitRequest({ ...data, serviceKey: 'concierge_services', dept: 'Concierge' })} />}
+                {guestTab === 'maintenance' && (
+                  <div className="bg-[#FCF9F2] min-h-screen">
+                    <div className="bg-navy px-4 py-3 flex items-center gap-3 border-b border-gold/20 sticky top-0 z-10">
+                      <button onClick={() => setGuestTab('services')} className="text-gold hover:text-white">
+                        <ArrowRight size={20} className="rotate-180" />
+                      </button>
+                      <h2 className="text-gold font-serif text-lg flex items-center gap-2"><Wrench size={16} /> Maintenance Request</h2>
+                    </div>
+                    <div className="p-6 space-y-5 max-w-lg mx-auto">
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase tracking-widest text-navy/50 font-bold block">Category</label>
+                        <select value={guestMaintForm.category} onChange={e => setGuestMaintForm({ ...guestMaintForm, category: e.target.value })} className="w-full bg-white border border-gold/40 p-3 text-sm text-navy outline-none">
+                          {MAINTENANCE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase tracking-widest text-navy/50 font-bold block">Priority</label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {(['Low', 'Normal', 'High', 'Urgent'] as const).map(p => (
+                            <button key={p} onClick={() => setGuestMaintForm({ ...guestMaintForm, priority: p })} className={cn('py-2 text-[9px] font-bold uppercase border', guestMaintForm.priority === p ? (p === 'Urgent' ? 'bg-red-600 text-white border-red-600' : 'bg-gold text-navy border-gold') : 'border-gold/30 text-navy/40')}>{p}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase tracking-widest text-navy/50 font-bold block">Description</label>
+                        <textarea value={guestMaintForm.description} onChange={e => setGuestMaintForm({ ...guestMaintForm, description: e.target.value })} className="w-full bg-white border border-gold/40 p-3 text-sm text-navy outline-none h-28 resize-none" placeholder="Describe the issue in detail..." />
+                      </div>
+                      <button onClick={async () => {
+                        if (!guestMaintForm.description.trim()) { showToast('Please describe the issue.', 'error'); return; }
+                        await submitRequest({ type: `Maintenance: ${guestMaintForm.category}`, serviceKey: 'maintenance', dept: 'Maintenance', notes: `${guestMaintForm.description} [Priority: ${guestMaintForm.priority}]` });
+                        setGuestMaintForm({ category: 'AC / Heating Issue', description: '', priority: 'Normal' });
+                        setGuestTab('services');
+                      }} className="gold-button w-full m-0">Submit Maintenance Request</button>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
