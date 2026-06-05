@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
+import bcrypt from 'bcryptjs';
 import { cn } from './lib/utils';
 import {
   LogOut, Plus, Building2, Users, CheckCircle2, XCircle,
@@ -460,8 +461,10 @@ export default function SentinelAdmin() {
     setLoading(true);
     setLoginError('');
     try {
-      const { data, error } = await supabase.from('super_admin').select('*').eq('email', email).eq('password', password).single();
+      const { data, error } = await supabase.from('super_admin').select('*').eq('email', email).single();
       if (error || !data) { setLoginError('Invalid email or password.'); setLoading(false); return; }
+      const passwordMatch = await bcrypt.compare(password, data.password);
+      if (!passwordMatch) { setLoginError('Invalid email or password.'); setLoading(false); return; }
       localStorage.setItem('sentinel_admin_session', JSON.stringify({ email: data.email, name: data.name }));
       setAdminName(data.name);
       setAdminLoggedIn(true);
