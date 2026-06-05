@@ -542,36 +542,29 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void; profile?: UserProfile
 
   useEffect(() => {
     const fetchServices = async () => {
-      // If hotel has concierge_items config from Super Admin, use that
-      const configItems: string[] = hotelConfig?.concierge_items || [];
-      const itemToCategory: Record<string, string> = {
-        'Car Rental': 'car_rental',
-        'Taxi': 'taxi',
-        'Limo': 'taxi',
-        'Luggage Assistance': 'luggage',
-        'Tours': 'tour',
-        'City Guide': 'tour',
-      };
-      if (configItems.length > 0) {
-        // Build services from hotel config
-        const builtServices = configItems.map((item: string) => ({
-          id: item,
-          name: item,
-          category: itemToCategory[item] || 'tour',
-          active: true,
-          hotel_id: hotelId,
-          price: null,
-          description: '',
-        }));
-        setServices(builtServices);
-        setLoading(false);
-        return;
-      }
-      // Fallback: fetch from concierge_services DB table
+      // Fetch from concierge_services DB table
       let q = supabase.from('concierge_services').select('*').eq('active', true).order('category').order('name');
       if (hotelId) q = q.eq('hotel_id', hotelId);
       const { data } = await q;
-      if (data) setServices(data);
+      if (data && data.length > 0) {
+        setServices(data);
+        setLoading(false);
+        return;
+      }
+      // If no DB services, build from hotel config (Super Admin concierge_items)
+      const configItems: string[] = hotelConfig?.concierge_items || [];
+      const itemToCategory: Record<string, string> = {
+        'Car Rental': 'car_rental', 'Taxi': 'taxi', 'Limo': 'taxi',
+        'Luggage Assistance': 'luggage', 'Tours': 'tour', 'City Guide': 'tour',
+      };
+      if (configItems.length > 0) {
+        const builtServices = configItems.map((item: string) => ({
+          id: item, name: item,
+          category: itemToCategory[item] || 'tour',
+          active: true, hotel_id: hotelId, price: null, description: '',
+        }));
+        setServices(builtServices);
+      }
       setLoading(false);
     };
     fetchServices();
