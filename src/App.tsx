@@ -525,7 +525,7 @@ const RestaurantBooking: React.FC<{ onSubmit: (data: any) => void }> = ({ onSubm
 };
 
 // ─── CONCIERGE ────────────────────────────────────────────────────────────────
-const Concierge: React.FC<{ onSubmit: (data: any) => void; profile?: UserProfile }> = ({ onSubmit, profile }) => {
+const Concierge: React.FC<{ onSubmit: (data: any) => void; profile?: UserProfile; hotelConfig?: any }> = ({ onSubmit, profile, hotelConfig }) => {
   const { t } = useLanguage();
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -542,6 +542,32 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void; profile?: UserProfile
 
   useEffect(() => {
     const fetchServices = async () => {
+      // If hotel has concierge_items config from Super Admin, use that
+      const configItems: string[] = hotelConfig?.concierge_items || [];
+      const itemToCategory: Record<string, string> = {
+        'Car Rental': 'car_rental',
+        'Taxi': 'taxi',
+        'Limo': 'taxi',
+        'Luggage Assistance': 'luggage',
+        'Tours': 'tour',
+        'City Guide': 'tour',
+      };
+      if (configItems.length > 0) {
+        // Build services from hotel config
+        const builtServices = configItems.map((item: string) => ({
+          id: item,
+          name: item,
+          category: itemToCategory[item] || 'tour',
+          active: true,
+          hotel_id: hotelId,
+          price: null,
+          description: '',
+        }));
+        setServices(builtServices);
+        setLoading(false);
+        return;
+      }
+      // Fallback: fetch from concierge_services DB table
       let q = supabase.from('concierge_services').select('*').eq('active', true).order('category').order('name');
       if (hotelId) q = q.eq('hotel_id', hotelId);
       const { data } = await q;
@@ -5625,7 +5651,7 @@ export default function App() {
                   <RoomService cart={cart} updateCart={(id, delta) => setCart(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }))} onSubmit={(notes, items) => submitRequest({ type: t('room_service'), serviceKey: 'room_service', dept: 'F&B', notes, lineItems: items })} />
                 )}
                 {/* restaurant-bookings moved to dedicated RestaurantPortal */}
-                {guestTab === 'concierge' && <Concierge profile={profile} onSubmit={data => submitRequest({ ...data, serviceKey: 'concierge_services', dept: 'Concierge' })} />}
+                {guestTab === 'concierge' && <Concierge profile={profile} hotelConfig={hotelServicesConfig} onSubmit={data => submitRequest({ ...data, serviceKey: 'concierge_services', dept: 'Concierge' })} />}
                 {guestTab === 'maintenance' && (
                   <div className="bg-[#FCF9F2] min-h-screen">
                     <div className="bg-navy px-4 py-3 flex items-center gap-3 border-b border-gold/20 sticky top-0 z-10">
