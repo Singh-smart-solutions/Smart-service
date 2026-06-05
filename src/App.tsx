@@ -538,7 +538,7 @@ const Concierge: React.FC<{ onSubmit: (data: any) => void; profile?: UserProfile
 
   const hotelId = profile?.hotelId || (() => { try { return JSON.parse(localStorage.getItem('sentinel_hotel')||'{}').id; } catch { return null; } })();
 
-  const CATEGORY_LABELS: Record<string,string> = { tour: '🗺 Tours', car_rental: '🚗 Car Rental', taxi: '🚕 Taxi / Transfer', luggage: '🧳 Luggage' };
+  const CATEGORY_LABELS: Record<string,string> = { tour: '🗺 Tours', car_rental: '🚗 Car Rental', taxi: '🚕 Taxi / Transfer' };
 
   useEffect(() => {
     const fetchServices = async () => {
