@@ -2091,7 +2091,7 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
     if (hotelParam) {
       // Guest scanned QR — load fresh hotel data from DB
       supabase.from('hotel_clients')
-        .select('id, hotel_name, entry_code, executive_password, access_mode, status')
+        .select('id, hotel_name, entry_code, executive_password, access_mode, status, services_config')
         .eq('id', hotelParam).single()
         .then(({ data: h }) => {
           if (h && h.status !== 'suspended' && h.status !== 'inactive') {
@@ -2121,7 +2121,7 @@ const Auth: React.FC<{ onLoginSuccess: (profile: UserProfile) => void; initialRo
     if (typedCode === '12345') { setShowSecret(true); return; }
     // Check hotel_clients for matching entry_code
     const { data: hotelByCode } = await supabase.from('hotel_clients')
-      .select('id, hotel_name, entry_code, executive_password, access_mode, status')
+      .select('id, hotel_name, entry_code, executive_password, access_mode, status, services_config')
       .eq('entry_code', typedCode).single();
     if (hotelByCode) {
       // Check hotel is active before allowing access
